@@ -1686,15 +1686,35 @@ function updatePlayer(dt) {
 }
 
 const camPos = new THREE.Vector3(), camTgt = new THREE.Vector3(), _cp = new THREE.Vector3(), _ct = new THREE.Vector3(); let camInit = false, camSlope = 0.7;
+// Adelanto: la cámara mira hacia donde camina Tamachin, sobre todo al sur, donde la vista es corta (la cámara está al sur).
+// Metros a zoom 1 y fuera de casa. Solo cambia mientras camina: al detenerse se conserva, para poder mirar lo que viene.
+const LEAD = { south: 4.4, north: 1.4, side: 0.35, grow: 1.6, maxRate: 5, house: 0.3 };
+const camLead = { x: 0, z: 0, k: 1 }, CAM_D0 = Math.hypot(7.6, 11.2), CAM_SLOPE0 = 7.6 / 11.2;
+function updateLead(dt) {
+  const P = player;
+  if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly') {
+    const halfW = Math.tan(camera.fov * Math.PI / 360) * camera.aspect * CAM_D0;           // medio ancho visible a la distancia de Tamachin
+    const gx = clamp(P.vx / 8.6, -1, 1) * LEAD.side * halfW;
+    const gz = P.vz > 0 ? Math.min(P.vz / 5.2, 1.66) * LEAD.south : Math.max(P.vz / 5.2, -1.66) * LEAD.north;
+    const k = 1 - Math.exp(-LEAD.grow * dt), mx = LEAD.maxRate * dt;
+    camLead.x += clamp((gx - camLead.x) * k, -mx, mx); camLead.z += clamp((gz - camLead.z) * k, -mx, mx);
+  }
+  camLead.k = damp(camLead.k, P.inHouse ? LEAD.house : 1, 3, dt);
+}
 function updateCamera(dt) {
   const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, tx = P.pos.x, ty, tz = P.pos.z;
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
+  if (!camInit) camLead.x = camLead.z = 0;
+  updateLead(dt);
   if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) tx += 1.3; else { oy = 2.5; oz = 6.4; ty = P.pos.y - 0.5; } }
-  else { const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = Math.max(P.pos.y, -0.3) * 0.6 + 1.25; }
-  camSlope = oy / oz;
+  else {
+    const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = Math.max(P.pos.y, -0.3) * 0.6 + 1.25;
+    const f = z * camLead.k; tx = clamp(tx + camLead.x * f, -LIMIT, LIMIT); tz = clamp(tz + camLead.z * f, WORLD_N, LIMIT);   // sin mirar más allá del borde
+  }
   _ct.set(tx, ty, tz); _cp.set(tx, ty + oy, tz + oz);
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
+  camSlope = (camPos.y - ty) / Math.max(1, camPos.z - P.pos.z);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
   camera.position.copy(camPos); camera.lookAt(camTgt);
   skyMesh.position.copy(camPos);
   sun.target.position.set(P.pos.x, 0, P.pos.z - 6); sun.position.copy(sun.target.position).add(SUN_OFF);
@@ -1702,12 +1722,23 @@ function updateCamera(dt) {
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
 }
 
+// ¿El rayo cámara→Tamachin pasa sobre la planta del edificio por debajo de su altura? sx: deriva lateral del rayo por metro hacia el sur.
+// Edificio al sur de Tamachin: margen amplio (2.2 m), como siempre. Edificio a un lado: solo si el rayo entra (pasa con el adelanto lateral).
+function rayCrosses(o, x, z, sx, back) {
+  const m = o.z0 - z > -0.3 ? 2.2 : 0.8;
+  let a = Math.max(0, o.z0 - z), b = Math.min(o.z1 - z, back);                   // tramo en dz (metros al sur de Tamachin)
+  if (Math.abs(sx) > 1e-4) { const p = (o.x0 - m - x) / sx, q = (o.x1 + m - x) / sx; a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q)); }
+  else if (x < o.x0 - m || x > o.x1 + m) return false;
+  return a <= b && a * camSlope < o.h + 1.5;
+}
 function fadeMat(m, op) { m.opacity = op; const tr = op < 0.985; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
 const treeDirty = [false, false];
 function updateScenery(dt) {
   const P = player, x = P.pos.x, z = P.pos.z;
+  // Las pruebas siguen el rayo real cámara→Tamachin: con el adelanto la cámara puede quedar más lejos y de lado.
+  const back = Math.max(1, camPos.z - z), rayX = (dz) => x + (camPos.x - x) * Math.max(0, dz) / back;   // x del rayo a dz metros al sur
   // casa: sin techo ni fachada cuando Tamachin está dentro; transparente cuando pasa por detrás
-  const inside = P.inHouse, behind = !inside && z < HOUSE.z0 + 0.6 && z > HOUSE.z0 - 11 && Math.abs(x) < 9.5;
+  const inside = P.inHouse, behind = !inside && z < HOUSE.z0 + 0.6 && (HOUSE.z0 - z) * camSlope < 7.5 && Math.abs(rayX(HOUSE.z0 - z)) < 9.5;
   house.oWalls = damp(house.oWalls, behind ? 0.16 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : behind ? 0.12 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : behind ? 0.12 : 1, 9, dt);
   fadeMat(house.mWalls, house.oWalls); fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
   house.front.visible = house.oFront > 0.03; house.roof.visible = house.oRoof > 0.03; house.doorPivot.visible = house.oFront > 0.03;
@@ -1716,14 +1747,15 @@ function updateScenery(dt) {
   if (house.tvOn) house.tvMat.color.setHSL((clock * 0.23) % 1, 0.7, 0.55 + Math.sin(clock * 9) * 0.08);
   // edificios que tapan a Tamachin
   if (z > -70) for (const o of occluders) {
-    const dz = o.z0 - z, hide = dz > -0.3 && x > o.x0 - 2.2 && x < o.x1 + 2.2 && (ui.closeup ? dz < 7 : dz * camSlope < o.h + 1.5);
+    const dz = o.z0 - z, rx = rayX(dz), hide = ui.closeup ? dz > -0.3 && dz < 7 && rx > o.x0 - 2.2 && rx < o.x1 + 2.2 : rayCrosses(o, x, z, (camPos.x - x) / back, back);
     const t = hide ? 0.13 : 1; if (Math.abs(o.op - t) < 0.004) continue;
     o.op = damp(o.op, t, 9, dt); for (const m of o.mats) fadeMat(m, o.op);
   }
   // árboles: se agachan si quedan entre la cámara y Tamachin
+  const reach = ui.closeup ? 1 : Math.max(1, CAM_SLOPE0 / camSlope);   // con el rayo más plano, tapan árboles más lejanos
   for (const t of trees) {
     const dz = t.z - z; let target = 1;
-    if (dz > 0.5 && dz < 2.4 + TREE_H[t.type] * t.s && Math.abs(t.x - x) < TREE_R[t.type] * t.s + 0.9) target = 0.28;
+    if (dz > 0.5 && dz < (2.4 + TREE_H[t.type] * t.s) * reach && Math.abs(t.x - rayX(dz)) < TREE_R[t.type] * t.s + 0.9) target = 0.28;
     if (Math.abs(t.k - target) > 0.004) { t.k = damp(t.k, target, 9, dt); setTreeMatrix(t); treeDirty[t.type] = true; }
   }
   for (let i = 0; i < 2; i++) if (treeDirty[i]) { treeMesh[i].instanceMatrix.needsUpdate = true; treeDirty[i] = false; }

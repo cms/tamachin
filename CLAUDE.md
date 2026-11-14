@@ -23,6 +23,8 @@
 La cámara no gira. Lo que queda entre la cámara y Tamachin se aparta solo, en `updateScenery()`:
 edificios (`occluders`) se vuelven transparentes, los árboles se agachan y la casa pierde techo y fachada al entrar. Si agregas algo alto al sur de una zona caminable, regístralo ahí.
 
+La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead` en `05-main.js`), sobre todo al sur, y al detenerse conserva el adelanto. Por eso esas pruebas usan el rayo real cámara→Tamachin (`camPos`, `camSlope`, `rayX`), no una distancia fija detrás de él.
+
 ## Capas del panel
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
