@@ -21,9 +21,9 @@ function clearTemp() { player.tempMood = null; player.tempT = 0; player.onTempEn
 // ───────────────────────── necesidades: panza, energía, diversión ─────────────────────────
 // Bajan solas (más rápido al correr). Si una queda baja, manda en el ánimo hasta que se recupera. Nunca pasa nada peor.
 const NEEDS = {
-  panza: { label: 'Panza', drain: 1 / 720, mood: 'enojado', fill: 'el refri de casa y las bayas del bosque',
+  panza: { label: 'Panza', drain: 1 / 900, mood: 'enojado', fill: 'el refri de casa, las bayas del bosque y la fruta del norte',
     lines: ['¡Mi panza hace ruidos!', 'Tengo hambre…', 'Se me antoja algo rico…'], tip: 'Tamachin tiene hambre: abre el refri de casa o come bayas en el bosque.' },
-  energia: { label: 'Energía', drain: 1 / 1080, mood: 'dormido', fill: 'una siesta en su cama y la fogata del bosque',
+  energia: { label: 'Energía', drain: 1 / 1200, mood: 'dormido', fill: 'una siesta en su cama o en la hamaca de Valle Alegre, y la fogata del bosque',
     lines: ['¡Aaah… qué sueño!', 'Se me cierran los ojitos…', 'Una siesta me caería bien…'], tip: 'Tamachin tiene sueño: llévalo a dormir una siesta en su cama.' },
   diversion: { label: 'Diversión', drain: 1 / 600, mood: 'triste', fill: 'trucos, la tele, la fuente, platicar con los vecinos y acariciar animales',
     lines: ['Me aburro…', '¿Jugamos a algo?', 'Hazme un mimo…'], tip: 'Tamachin se aburre: hazle trucos, platica con los vecinos o mira la tele.' },
@@ -41,7 +41,7 @@ function updateNeeds(dt) {
   const P = player;
   if (P.state === 'sleep') gain('energia', dt / 9);
   else {
-    const act = P.speedN > 1.3 ? 1.6 : P.speedN > 0.1 ? 1.15 : 1;
+    const act = P.speedN > 1.3 ? 1.35 : P.speedN > 0.1 ? 1.1 : 1;   // cruzar las montañas corriendo (unos 5 min) gasta menos de la mitad
     needs.panza = Math.max(0, needs.panza - NEEDS.panza.drain * act * dt);
     needs.energia = Math.max(0, needs.energia - NEEDS.energia.drain * act * dt);
     needs.diversion = Math.max(0, needs.diversion - NEEDS.diversion.drain * dt);
@@ -65,8 +65,27 @@ const QUESTS = {
   peces: { title: 'Peces saltarines', hint: 'Quédate quieto en la orilla del río del bosque hasta ver saltar un pez de cerca.', done: 'Viste un pez saltarín de cerca.' },
   fuente: { title: 'Un paseo con Lulú', hint: 'Lulú camina contigo: llévala hasta la fuente del parque, al norte de tu casa.', done: 'Lulú se quedó admirando la fuente.' },
   gelatina: { title: 'Gelatina para Nube', hint: 'Saca una gelatina del refri y llévasela a Nube, en la manzana al este de tu casa.', done: 'Nube probó su gelatina y ya no tiene sueño.' },
+  cumbres: { title: 'Tres cumbres', hint: 'Sube a los picos Malvavisco, Gelatina y Turrón, al norte del bosque. Cada cima tiene una bandera.', done: 'Subiste a las tres cimas.', progress: () => summits.length + ' de 3' },
+  frutas: { title: 'Las siete frutas', hint: 'Prueba naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas del bosque sin fin, al norte de Valle Alegre.', done: 'Probaste las siete frutas del bosque sin fin.', progress: () => fruitsTasted.length + ' de 7' },
 };
-const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0 };
+function reachSummit(p) {
+  p.reached = true; if (summits.includes(p.name)) return;
+  summits.push(p.name); const P = player; say(P, '¡Llegué a la cima del ' + p.name + '!', 3); P.T.doTrick('dance'); burst('star', P.pos.x, P.pos.y + 2, P.pos.z, 8); gain('diversion', 0.25);
+  if (!quests.cumbres) startQuest('cumbres');
+  if (summits.length >= 3) finishQuest('cumbres'); else { toast('Cima del ' + p.name + ': ' + summits.length + ' de 3.', 3.5); SFX.yay(); renderDiary(); save(); }
+}
+function tasteFruit(kind) {
+  if (fruitsTasted.includes(kind)) return; fruitsTasted.push(kind);
+  if (!quests.frutas) startQuest('frutas');
+  if (fruitsTasted.length >= 7) finishQuest('frutas'); else { toast('Frutas del bosque probadas: ' + fruitsTasted.length + ' de 7.', 3); renderDiary(); save(); }
+}
+function discover(zone) {
+  const T = { montañas: 'Las montañas: tres picos de 400 m. Los postes rojos marcan el sendero al Pico Gelatina.', pueblo: '¡Llegaste a Valle Alegre! Hay mercado, una posada con hamaca y vecinos nuevos.',
+    bosque: 'El bosque sin fin: mientras más caminas, más bosque hay. Está lleno de fruta.' };
+  toast(T[zone], 5); gain('diversion', 0.12);
+}
+const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0 };
+const summits = [], fruitsTasted = [];          // nombres de las cimas alcanzadas y frutas probadas (claves de FRUITS)
 function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
 function finishQuest(id) {
   quests[id] = 2; toast('¡Encargo cumplido! ' + QUESTS[id].title, 4.5); SFX.yay(); gain('diversion', 0.3);
@@ -76,7 +95,7 @@ function finishQuest(id) {
 function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: player.T.shape, color: player.T.color, mood: player.baseMood,
-      needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests }));
+      needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -121,13 +140,19 @@ function land() {
   toast('¡Te atropelló un auto! Cruza por el paso de cebra cuando los autos tengan rojo.', 4.5);
 }
 function getUp() { const P = player; P.state = 'normal'; P.T.flat = false; P.T.poke(5); P.inv = 2.5; P.flySpin = 0; SFX.pop(); makeDizzy(3.6); }
-function goSleep() {
-  const P = player; P.state = 'sleep'; P.sleepT = 0; P.vx = P.vz = P.vy = 0; P.pos.set(-4.4, 1.46, -9.85); P.heading = 0; P.T.lie = 1;
+// dormir: en su cama o en la hamaca de Valle Alegre; mientras duerme recupera energía (updateNeeds)
+const BEDS = {
+  cama: { x: -4.4, y: 1.46, z: -9.85, exit: { x: -2.7, z: -10.4 }, line: '¡Qué buena siesta!' },
+  hamaca: { x: TOWN.hammock.x, y: 1.12, z: TOWN.hammock.z, exit: { x: TOWN.hammock.x, z: TOWN.hammock.z + 2.3 }, line: '¡Qué rico se mece la hamaca!' },
+};
+function goSleep(where) {
+  const P = player, b = BEDS[where] || BEDS.cama; P.sleepSpot = BEDS[where] ? where : 'cama';
+  P.state = 'sleep'; P.sleepT = 0; P.vx = P.vz = P.vy = 0; P.pos.set(b.x, b.y, b.z); P.heading = 0; P.T.lie = 1;
   setTemp('dormido', 999); say(P, 'Zzz…', 2);
 }
 function wake() {
-  const P = player; if (P.state !== 'sleep' || P.sleepT < 0.8) return;
-  P.state = 'normal'; P.T.lie = 0; P.pos.set(-2.7, 0, -10.4); clearTemp(); P.T.doTrick('hop'); say(P, '¡Qué buena siesta!', 2); SFX.nice();
+  const P = player; if (P.state !== 'sleep' || P.sleepT < 0.8) return; const b = BEDS[P.sleepSpot] || BEDS.cama;
+  P.state = 'normal'; P.T.lie = 0; P.pos.set(b.exit.x, groundY(b.exit.x, b.exit.z), b.exit.z); P.sleepSpot = null; clearTemp(); P.T.doTrick('hop'); say(P, b.line, 2); SFX.nice();
 }
 
 // ───────────────────────── comer ─────────────────────────
@@ -136,7 +161,7 @@ const FOODS = {
   gelatina: { line: '¡Ñam! Gelatina de mango.', from: [5.27, 0.2, -12.13], make: (b) => b.cyl('#ffffff', 0, 0.02, 0, 0.26, 0.26, 0.04, 18).cyl('#ffb347', 0, 0.15, 0, 0.15, 0.2, 0.24, 18).cyl('#ffd27a', 0, 0.275, 0, 0.14, 0.14, 0.02, 18).sph('#ff5d5d', 0, 0.31, 0, 0.05) },
   tamal: { line: '¡Ñam! Un tamalito recién hecho.', from: [4.85, 0.7, -12.13], make: (b) => b.rbox('#d9c27a', 0, 0.09, 0, 0.42, 0.16, 0.2, 0.07).rbox('#f2c94c', 0.02, 0.12, 0.01, 0.3, 0.12, 0.17, 0.05).cone('#c9b067', -0.26, 0.09, 0, 0.08, 0.14, 6) },
   sandia: { line: '¡Glup! Juguito de sandía.', from: [5.48, 0.72, -12.19], make: (b) => b.cyl('#dff6ff', 0, 0.15, 0, 0.11, 0.09, 0.3, 14).cyl('#ff5d73', 0, 0.13, 0, 0.1, 0.085, 0.24, 14).cyl('#ffffff', 0.05, 0.33, 0, 0.012, 0.012, 0.22, 6, 0, -0.3).add(gCyl(1, 12), '#58b368', -0.1, 0.27, 0, 0.07, 0.02, 0.07, Math.PI / 2, 0, 0.5) },
-  helado: { line: '¡Mmm! Helado de vainilla.', from: [5.33, 1.66, -12.17], make: (b) => b.add(gCone(10), '#d9a066', 0, 0.13, 0, 0.1, -0.26, 0.1).sph('#fff4d6', 0, 0.3, 0, 0.12).sph('#ff9db8', 0.03, 0.41, 0.02, 0.09).sph('#ff3b4f', 0.02, 0.51, 0.03, 0.035) },
+  helado: { line: '¡Mmm! Helado de vainilla.', from: [5.33, 1.66, -12.17], make: (b) => b.add(gCone(10), '#d9a066', 0, 0.13, 0, 0.1, 0.26, 0.1, Math.PI, 0, 0).sph('#fff4d6', 0, 0.3, 0, 0.12).sph('#ff9db8', 0.03, 0.41, 0.02, 0.09).sph('#ff3b4f', 0.02, 0.51, 0.03, 0.035) },
 };
 for (const k in FOODS) { const m = new Batch(); FOODS[k].make(m); FOODS[k].mesh = m.mesh(MAT_SOFT); FOODS[k].mesh.visible = false; scene.add(FOODS[k].mesh); }
 const berryBits = [0, 1, 2].map(() => { const m = new THREE.Mesh(berryMesh.geometry, new THREE.MeshLambertMaterial()); m.visible = false; scene.add(m); return m; });
@@ -179,25 +204,58 @@ function openFridge() {
   });
 }
 
-// bayas: hasta tres saltan del arbusto a su boca, una tras otra
-function eatBerries(b) {
-  const P = player, ripe = b.berries.filter((q) => q.k >= 0.999).slice(0, 3); if (!ripe.length) return;
-  const face = Math.atan2(b.x - P.pos.x, b.z - P.pos.z), first = !b.tasted; b.tasted = true;
-  berryBits.forEach((m, i) => { m.material.color.set(b.kind.color); m.visible = false; m.userData.q = ripe[i]; });
-  startBusy({ dur: 1.35 + 0.18 * ripe.length, cam: null,
+// comer de una planta: los frutos saltan a su boca uno tras otro (una sandía se come a tres mordidas)
+// o.items: [{ mesh, scale, from (Vector3), take() }], o.at: de dónde (para voltear), o.gain, o.line, o.big, o.done()
+function eatBits(o) {
+  const P = player, n = o.items.length, face = Math.atan2(o.at.x - P.pos.x, o.at.z - P.pos.z), tEnd = 0.15 + (n - 1) * 0.18 + 0.38;
+  startBusy({ dur: tEnd + (o.big ? 1.3 : 0.75), cam: null,
     update(dt, t) {
-      const s = this; turnTo(P, t < 0.9 ? face : 0, dt, 9);
-      ripe.forEach((q, i) => {
-        const m = berryBits[i], t0 = 0.15 + i * 0.18, k = (t - t0) / 0.38;
+      const s = this; turnTo(P, t < tEnd + 0.1 ? face : 0, dt, 9);
+      o.items.forEach((it, i) => {
+        const m = it.mesh, t0 = 0.15 + i * 0.18, k = (t - t0) / 0.38;
         if (k >= 0 && k < 1) {
-          if (!m.visible) { m.visible = true; q.k = 0; setBerry(b, q); berryMesh.instanceMatrix.needsUpdate = true; m.scale.setScalar(0.118 * b.s); }
-          mouthAt(_ev, 0.12); arc(m.position, _ev2.set(q.x, q.y, q.z), _ev, k, 0.5);
-        } else if (k >= 1 && m.visible) { m.visible = false; P.T.poke(2.4); SFX.munch(); mouthAt(_ev, 0.2); burst('crumb', _ev.x, _ev.y, _ev.z, 2); q.back = clock + rand(50, 75); }
+          if (!it.taken) { it.taken = true; m.visible = true; m.scale.setScalar(it.scale); m.rotation.set(0, 0, 0); it.take(); }
+          mouthAt(_ev, o.big ? 0.45 : 0.12); if (o.big) _ev.y -= 0.25; arc(m.position, it.from, _ev, k, 0.5); m.rotation.y += dt * 5;
+        } else if (k >= 1 && m.visible) {
+          if (!o.big) { m.visible = false; P.T.poke(2.4); SFX.munch(); mouthAt(_ev, 0.2); burst('crumb', _ev.x, _ev.y, _ev.z, 2); }
+          else {
+            const b = Math.floor((t - t0 - 0.38) / 0.32);
+            if (b >= 3) m.visible = false;
+            else { m.scale.setScalar(it.scale * Math.pow(0.6, b)); if (once(s, 'bite' + b, t0 + 0.38 + b * 0.32)) { P.T.poke(2.8); SFX.munch(); mouthAt(_ev, 0.3); burst('crumb', _ev.x, _ev.y, _ev.z, 4); } }
+          }
+        }
       });
-      if (once(s, 'say', 0.2)) say(P, first ? '¡Ñam! ' + b.kind.name[0].toUpperCase() + b.kind.name.slice(1) + '.' : choose(['¡Qué jugosas!', '¡Ñam, ñam!', '¡Mmm, dulcecitas!']), 1.8);
-      if (once(s, 'full', 0.6 + 0.18 * ripe.length)) { gain('panza', 0.06 * ripe.length); burst('heart', P.pos.x, P.pos.y + 1.8, P.pos.z, 2); }
+      if (once(s, 'say', 0.2)) say(P, o.line, 1.9);
+      if (once(s, 'full', tEnd + (o.big ? 1.05 : 0.15))) { gain('panza', o.gain); burst('heart', P.pos.x, P.pos.y + 1.8, P.pos.z, 2); if (o.done) o.done(); }
     },
   });
+}
+// bayas del bosque de casa: hasta tres por bocado
+function eatBerries(b) {
+  const ripe = b.berries.filter((q) => q.k >= 0.999).slice(0, 3); if (!ripe.length) return;
+  const first = !b.tasted; b.tasted = true;
+  eatBits({ at: b, gain: 0.06 * ripe.length, line: first ? '¡Ñam! ' + b.kind.name[0].toUpperCase() + b.kind.name.slice(1) + '.' : choose(['¡Qué jugosas!', '¡Ñam, ñam!', '¡Mmm, dulcecitas!']),
+    items: ripe.map((q, i) => { const m = berryBits[i]; m.material.color.set(b.kind.color);
+      return { mesh: m, scale: 0.118 * b.s, from: new THREE.Vector3(q.x, q.y, q.z), take: () => { q.k = 0; setBerry(b, q); berryMesh.instanceMatrix.needsUpdate = true; q.back = clock + rand(50, 75); } }; }) });
+}
+// fruta del bosque sin fin y del mercado: piezas que vuelan (tres por tipo, se reusan)
+const FLY = {};
+function flyMesh(mk, i) {
+  const a = FLY[mk] || (FLY[mk] = []);
+  if (!a[i]) { a[i] = new THREE.Mesh(FK[mk].geo, new THREE.MeshLambertMaterial({ vertexColors: !FK[mk].plain })); a[i].visible = false; a[i].castShadow = true; scene.add(a[i]); }
+  return a[i];
+}
+function eatPlant(p) {
+  const F = FRUITS[p.kind], c = p.chunk, ripe = p.fruits.filter((f) => f.k >= 1).slice(0, F.per); if (!ripe.length) return;
+  eatBits({ at: p, gain: F.gain * ripe.length, line: F.line, big: F.big, done: () => tasteFruit(p.kind),
+    items: ripe.map((f, i) => { const m = flyMesh(f.mk, i); if (f.color) m.material.color.set(f.color);
+      return { mesh: m, scale: f.s, from: new THREE.Vector3(f.x, f.y + (f.mk === 'melon' ? 0.2 : 0), f.z), take: () => { setFruit(c, f, 0); forest.eaten.set(p.key + ',' + p.fruits.indexOf(f), clock + rand(60, 90)); } }; }) });
+}
+function eatMarket(stall) {
+  const kind = choose(Object.keys(FRUITS)), F = FRUITS[kind], m = flyMesh(F.mk, 0), sx = stall + rand(-1.6, 1.6);
+  if (F.color) m.material.color.set(F.color);
+  eatBits({ at: { x: sx, z: TOWN.market.z }, gain: 0.18, line: choose(['¡Gracias, Lila! ', '¡Qué rico! ', '¡Del mercado! ']) + F.name[0].toUpperCase() + F.name.slice(1) + '.', big: F.big,
+    items: [{ mesh: m, scale: F.mk === 'fruit' ? Math.max(0.12, F.s) : 1, from: new THREE.Vector3(sx, 1.45, TOWN.market.z + 0.35), take: () => {} }] });
 }
 let berryDirty = false;
 function updateBerries(dt) {
@@ -215,7 +273,7 @@ function updateFridge(dt) {
 
 // cosas con las que se puede interactuar
 for (const n of npcs) interacts.push({ pos: n.pos, range: 3.1, label: 'Hablar con ' + n.name, act: () => talkTo(n), who: n });
-interacts.push({ pos: { x: -2.8, z: -10.5 }, range: 1.7, label: 'Dormir una siesta', act: goSleep });
+interacts.push({ pos: { x: -2.8, z: -10.5 }, range: 1.7, label: 'Dormir una siesta', act: () => goSleep('cama') });
 interacts.push({ pos: { x: 5.1, z: -11.2 }, range: 1.7, label: 'Abrir el refri', act: openFridge });
 interacts.push({ pos: { x: -3.1, z: -6.6 }, range: 1.7, label: () => (house.tvOn ? 'Apagar la tele' : 'Encender la tele'), act: () => {
   house.tvOn = !house.tvOn; if (house.tvOn) { say(player, '¡Oh, mi programa favorito!', 2.2); setTemp('asombrado', 2.2); SFX.pop(); gain('diversion', 0.06, 'tele', 20); } else house.tvMat.color.set(0x15151c); } });
@@ -228,6 +286,8 @@ interacts.push({ pos: { x: CAMP.x, z: CAMP.z }, range: 2.7, label: 'Calentarse e
 interacts.push({ pos: { x: 2.5, z: 15.4 }, range: 1.7, label: 'Abrir el buzón', act: () => {
   if (!quests.peces) { say(player, 'Una carta: «Ven al bosque, hay peces saltarines».', 3.2); startQuest('peces'); SFX.pop(); return; }
   say(player, choose(['Una carta: «Ven al bosque, hay peces saltarines».', 'Una postal del búho: «Uuh, uuh».', 'Un volante: «Gelatina a mitad de precio».', 'El buzón está vacío… ¡y huele a flores!']), 3.2); SFX.pop(); } });
+interacts.push({ pos: TOWN.hammock, range: 2.6, label: 'Descansar en la hamaca', act: () => goSleep('hamaca') });
+for (const sx of TOWN.stalls) interacts.push({ pos: { x: sx, z: TOWN.market.z + 2.0 }, range: 3.6, label: 'Probar fruta del mercado', act: () => eatMarket(sx) });
 for (const b of berryBushes) interacts.push({ pos: { x: b.x, z: b.z }, range: 2.3, label: 'Comer ' + b.kind.name, act: () => eatBerries(b), ok: () => b.berries.some((q) => q.k >= 0.999) });
 // platicar y acariciar también divierten (una vez cada tanto por cada quien)
 for (const c of creatures) { const f = c.interact; c.interact = () => { f(); gain('diversion', 0.07, 'mimo' + creatures.indexOf(c), 8); }; }
@@ -279,6 +339,8 @@ nube.onTalk = (n) => {
   if (!quests.gelatina) { startQuest('gelatina'); return 'Zzz… sueño con gelatina… ¿me traes una del refri?'; }
   return 'Zzz… gelatina… del refri de tu casa… zzz…';
 };
+npcBy('Tomate').onTalk = () => { if (quests.cumbres) return null; startQuest('cumbres'); return '¡Tres picos! ¿Subes a los tres? En cada cima hay una bandera de color.'; };
+npcBy('Miel').onTalk = () => { if (quests.frutas) return null; startQuest('frutas'); return 'El bosque del norte tiene siete frutas. ¿Las pruebas todas?'; };
 rocio.onTalk = () => { if (quests.peces) return null; startQuest('peces'); return 'Si esperas quieto en la orilla, los peces saltan cerquita.'; };
 // peces: con el encargo en curso saltan cerca de quien espera quieto en la orilla, y verlo de cerca lo cumple
 function fishBias() { const P = player; return quests.peces === 1 && P.speedN < 0.4 && Math.abs(P.pos.z - riverZ(P.pos.x)) < 11 ? P.pos.x : null; }
@@ -433,7 +495,7 @@ function renderDiary() {
     + '<span class="bar"><b></b></span><p>Se llena con ' + NEEDS[k].fill + '.</p></div>').join('');
   const open = Object.keys(QUESTS).filter((k) => quests[k] === 1), done = Object.keys(QUESTS).filter((k) => quests[k] === 2), left = Object.keys(QUESTS).length - open.length - done.length;
   questListEl.innerHTML = open.concat(done).map((k) => '<li class="' + (quests[k] === 2 ? 'done' : '') + '"><strong>' + QUESTS[k].title + '<em>' + (quests[k] === 2 ? 'Hecho' : 'En curso') + '</em></strong><p>'
-    + (quests[k] === 2 ? QUESTS[k].done : QUESTS[k].hint) + '</p></li>').join('');
+    + (quests[k] === 2 ? QUESTS[k].done : QUESTS[k].hint + (QUESTS[k].progress ? ' Llevas ' + QUESTS[k].progress() + '.' : '')) + '</p></li>').join('');
   questNoteEl.textContent = left ? (open.length + done.length ? 'Quedan ' + left + ' encargos por descubrir. ' : '') + 'Platica con los vecinos y revisa el buzón: hay quien necesita ayuda.' : '¡Descubriste todos los encargos!';
   syncDiaryNeeds();
 }
@@ -461,7 +523,7 @@ function resolvePlayer() {
     if (pos.y < c.h * 0.8 && pushOutBox(pos, r * 0.8, carRect(c, 0)) && c.v > 2.2 && P.state === 'normal' && P.inv <= 0) knock(c);
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
-  pos.x = clamp(pos.x, -LIMIT, LIMIT); pos.z = clamp(pos.z, WORLD_N, LIMIT);
+  northCollide(pos, r); keepInWorld(pos);                           // árboles del norte y límites por franja (05-norte.js)
 }
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
@@ -479,7 +541,12 @@ function updatePlayer(dt) {
     const a = Math.sin(clock * 1.9), c = Math.cos(a), s = Math.sin(a), x2 = ix * c - iz * s, z2 = ix * s + iz * c;
     ix = x2 + Math.cos(clock * 2.6) * 0.3; iz = z2 + Math.sin(clock * 2.1) * 0.3; mag = Math.min(1, Math.hypot(ix, iz));
   }
-  const speed = (run ? 8.6 : 5.2) * (m.speed || 1) * (P.inWater ? 0.55 : 1);
+  const ms = P.needMood && T.mood === P.needMood ? Math.max(0.8, m.speed || 1) : (m.speed || 1);   // cansado o con hambre camina un poco más lento, no tanto
+  let speed = (run ? 8.6 : 5.2) * ms * (P.inWater ? 0.55 : 1);
+  if (pos.z < NORTH_Z && mag > 0.08) {                              // cuesta arriba cuesta un poco más
+    const gx = (terrainY(pos.x + 1, pos.z) - terrainY(pos.x - 1, pos.z)) / 2, gz = (terrainY(pos.x, pos.z + 1) - terrainY(pos.x, pos.z - 1)) / 2, up = (gx * ix + gz * iz) / mag;
+    speed *= up > 0 ? Math.max(0.62, 1 - 0.4 * up) : 1 + Math.min(0.15, -0.15 * up);
+  }
   if (P.state === 'normal') {
     if (mag > 0.08) {
       P.vx = damp(P.vx, ix * speed, 12, dt); P.vz = damp(P.vz, iz * speed, 12, dt);
@@ -498,7 +565,7 @@ function updatePlayer(dt) {
     pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
     const gy = groundY(pos.x, pos.z);
     P.vy -= 22 * dt; pos.y += P.vy * dt;
-    if (pos.y <= gy || (P.onGround && P.vy <= 0.01 && pos.y - gy < 0.16)) {
+    if (pos.y <= gy || (P.onGround && P.vy <= 0.01 && pos.y - gy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
       if (P.vy < -5) { T.poke(-3.2); if (gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
       pos.y = gy; P.vy = 0; P.onGround = true; if (P.state === 'fly') land();
     } else P.onGround = false;
@@ -542,22 +609,30 @@ function updateLead(dt) {
 }
 function updateCamera(dt) {
   const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, ox = 0, tx = P.pos.x, ty, tz = P.pos.z;
+  const base = P.pos.z < NORTH_Z ? Math.max(0, groundY(P.pos.x, P.pos.z)) : 0;   // en las montañas la cámara sigue al suelo
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
   if (!camInit) camLead.x = camLead.z = 0;
   updateLead(dt);
   if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) tx += 1.3; else { oy = 2.5; oz = 6.4; ty = P.pos.y - 0.5; } }
   else {
-    const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = Math.max(P.pos.y, -0.3) * 0.6 + 1.25;
-    const f = z * camLead.k; tx = clamp(tx + camLead.x * f, -LIMIT, LIMIT); tz = clamp(tz + camLead.z * f, WORLD_N, LIMIT);   // sin mirar más allá del borde
+    const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
+    const f = z * camLead.k, xl = xLimitAt(P.pos.z); tx = clamp(tx + camLead.x * f, -xl, xl); tz = Math.min(tz + camLead.z * f, LIMIT);   // sin mirar más allá del borde
   }
   if (P.state === 'busy' && P.busy.cam) { const c = P.busy.cam; tx = c.x; ty = c.y; tz = c.z; ox = c.ox || 0; oy = c.oy; oz = c.oz; }   // toma cercana (el refri)
   _ct.set(tx, ty, tz); _cp.set(tx + ox, ty + oy, tz + oz);
+  if (P.pos.z < NORTH_Z + 15) {                                     // bajando una ladera la cámara queda cuesta arriba: se sube lo necesario
+    let lift = 0;
+    const fy = P.pos.y + 0.3;                                     // desde los pies: que se vea entero, no solo la cabeza
+    for (let i = 1; i <= 10; i++) { const k = i / 10, need = groundY(lerp(P.pos.x, _cp.x, k), lerp(P.pos.z, _cp.z, k)) + 0.35 + 0.8 * k - lerp(fy, _cp.y, k); if (need > 0) lift = Math.max(lift, need / k); }
+    _cp.y += lift;
+  }
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
+  if (P.pos.z < NORTH_Z + 15) camPos.y = Math.max(camPos.y, groundY(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
   camSlope = (camPos.y - ty) / Math.max(1, camPos.z - P.pos.z);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
   camera.position.copy(camPos); camera.lookAt(camTgt);
   skyMesh.position.copy(camPos);
-  sun.target.position.set(P.pos.x, 0, P.pos.z - 6); sun.position.copy(sun.target.position).add(SUN_OFF);
+  sun.target.position.set(P.pos.x, base, P.pos.z - 6); sun.position.copy(sun.target.position).add(SUN_OFF);
   _sv.set(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z).project(camera);
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
 }
@@ -567,12 +642,13 @@ function updateCamera(dt) {
 function rayCrosses(o, x, z, sx, back) {
   const m = o.z0 - z > -0.3 ? 2.2 : 0.8;
   let a = Math.max(0, o.z0 - z), b = Math.min(o.z1 - z, back);                   // tramo en dz (metros al sur de Tamachin)
-  if (Math.abs(sx) > 1e-4) { const p = (o.x0 - m - x) / sx, q = (o.x1 + m - x) / sx; a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q)); }
-  else if (x < o.x0 - m || x > o.x1 + m) return false;
+  const w = o.x0 - m - (m < 1 ? o.padW : 0), e = o.x1 + m + (m < 1 ? o.padE : 0);   // a un lado cuenta el toldo, si lo hay
+  if (Math.abs(sx) > 1e-4) { const p = (w - x) / sx, q = (e - x) / sx; a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q)); }
+  else if (x < w || x > e) return false;
   return a <= b && a * camSlope < o.h + 1.5;
 }
 function fadeMat(m, op) { m.opacity = op; const tr = op < 0.985; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
-const treeDirty = [false, false];
+const treeDirty = [false, false], GRASS_P = 2000 / 260;
 function updateScenery(dt) {
   const P = player, x = P.pos.x, z = P.pos.z;
   // Las pruebas siguen el rayo real cámara→Tamachin: con el adelanto la cámara puede quedar más lejos y de lado.
@@ -586,7 +662,8 @@ function updateScenery(dt) {
   house.doorA = damp(house.doorA, Math.hypot(x, z + 4.1) < 3.3 ? 1.8 : 0, 7, dt); house.doorPivot.rotation.y = house.doorA;
   if (house.tvOn) house.tvMat.color.setHSL((clock * 0.23) % 1, 0.7, 0.55 + Math.sin(clock * 9) * 0.08);
   // edificios que tapan a Tamachin
-  if (z > -70) for (const o of occluders) {
+  for (const o of occluders) {
+    if (o.op > 0.996 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
     const dz = o.z0 - z, rx = rayX(dz), hide = ui.closeup ? dz > -0.3 && dz < 7 && rx > o.x0 - 2.2 && rx < o.x1 + 2.2 : rayCrosses(o, x, z, (camPos.x - x) / back, back);
     const t = hide ? 0.13 : 1; if (Math.abs(o.op - t) < 0.004) continue;
     o.op = damp(o.op, t, 9, dt); for (const m of o.mats) fadeMat(m, o.op);
@@ -599,6 +676,8 @@ function updateScenery(dt) {
     if (Math.abs(t.k - target) > 0.004) { t.k = damp(t.k, target, 9, dt); setTreeMatrix(t); treeDirty[t.type] = true; }
   }
   for (let i = 0; i < 2; i++) if (treeDirty[i]) { treeMesh[i].instanceMatrix.needsUpdate = true; treeDirty[i] = false; }
+  duckU.uDuck.value.set(x, z, camPos.x, camPos.z); duckU.uDuckR.value = reach;     // los del norte se agachan en el shader
+  ground.position.set(Math.round(x / GRASS_P) * GRASS_P, 0, -100 + Math.round((z + 100) / GRASS_P) * GRASS_P);   // el pasto sigue a Tamachin sin que se mueva el dibujo
   windmill.rotation.z -= dt * 0.9;
   waterTex.offset.y -= dt * 0.16;
   flames.forEach((f, i) => { const k = 1 + Math.sin(clock * (9 + i * 3) + i) * 0.16; f.scale.y = (1.1 - i * 0.2) * k; f.rotation.y += dt * 2; });
@@ -608,6 +687,13 @@ function updateScenery(dt) {
 function zoneName() {
   const P = player, x = P.pos.x, z = P.pos.z;
   if (P.inHouse) return 'Casa de Tamachin';
+  if (z < NORTH_Z) {
+    if (z < Z_FOREST2) return 'Bosque sin fin · ' + Math.max(1, Math.round(Z_FOREST2 - z)) + ' m';
+    if (z < Z_TOWN_N) return 'Prado del bosque sin fin';
+    if (z < Z_TOWN_S) return Math.abs(x) > 20 ? 'Valle Alegre' : z < TOWN_Z - 26 ? 'Posada de Valle Alegre' : z > TOWN_Z + 26 ? 'Mercado de Valle Alegre' : 'Plaza de Valle Alegre';
+    for (const p of PEAKS) if (Math.hypot(x - p.x, z - p.z) < 34) return 'Cima del ' + p.name;
+    return P.pos.y < 4 ? 'Valle de las montañas' : 'Montañas · ' + Math.round(P.pos.y) + ' m de altura';
+  }
   if (z <= FOREST_Z) return P.inWater ? 'Río del bosque' : onBridge(x, z) ? 'Puente del río' : Math.hypot(x - CAMP.x, z - CAMP.z) < 8 ? 'Claro de la fogata' : 'Bosque';
   if (z < -63) return 'Camino · bosque a ' + Math.max(1, Math.round(z - FOREST_Z)) + ' m';
   if (Math.abs(x) < 20 && Math.abs(z) < 20) return 'Jardín de casa';
@@ -618,7 +704,10 @@ const zoneEl = $('#zone'), promptEl = $('#prompt'), promptText = $('#promptText'
 let hudT = 0, lastZone = '', lastPrompt = null;
 function updateHud(dt) {
   const P = player; let best = null, bd = Infinity;
-  if (P.state === 'normal' && !ui.closeup) for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
+  if (P.state === 'normal' && !ui.closeup) {
+    for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
+    const fp = forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
+  }
   curInteract = best;
   const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
@@ -642,7 +731,7 @@ function frame(now) {
   resize(); clock += dt;
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
-  updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt);
+  updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   renderer.render(scene, camera);
 }
@@ -655,8 +744,10 @@ function boot(data) {
   if (s.mood && MOODS[s.mood] && !MOODS[s.mood].hidden) player.baseMood = s.mood;
   if (s.needs) for (const k in needs) if (typeof s.needs[k] === 'number' && isFinite(s.needs[k])) needs[k] = clamp(s.needs[k], 0, 1);
   if (s.quests) for (const k in quests) if (s.quests[k] === 1 || s.quests[k] === 2) quests[k] = s.quests[k];
+  if (Array.isArray(s.summits)) for (const n of s.summits) { const p = PEAKS.find((q) => q.name === n); if (p && !summits.includes(n)) { summits.push(n); p.reached = true; } }
+  if (Array.isArray(s.fruits)) for (const k of s.fruits) if (FRUITS[k] && !fruitsTasted.includes(k)) fruitsTasted.push(k);
   restoreQuests();
-  if (typeof s.x === 'number' && typeof s.z === 'number') { player.pos.set(clamp(s.x, -LIMIT, LIMIT), 0, clamp(s.z, WORLD_N, LIMIT)); resolvePlayer(); }
+  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);

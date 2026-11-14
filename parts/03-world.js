@@ -4,7 +4,8 @@
 // Al norte: parque → portón → 100 m de camino → bosque (Z ≤ -160) con río, puente y claro.
 const ROADS = [-24, 24], RW = 4;
 const BLOCKS = [[-62, -28], [-20, 20], [28, 62]];
-const FOREST_Z = -160, WORLD_N = -262, LIMIT = 61.3;
+const FOREST_Z = -160, LIMIT = 61.3;
+const NORTH_Z = -268;                     // borde norte del bosque: más allá empiezan las montañas (05-norte.js)
 const sstep = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
 const pathX = (z) => 5 * Math.sin((-z - 62) / 20) * sstep(12, 30, Math.abs(z + 205));
 const riverZ = (x) => -205 + 6 * Math.sin(x / 16) + 2.5 * Math.sin(x / 7 + 1);
@@ -12,7 +13,7 @@ const RIVER_HALF = 4.4;
 const BR = { x: 0, z: riverZ(0) };
 const onBridge = (x, z) => Math.abs(x - BR.x) < 1.9 && Math.abs(z - BR.z) < 7.6;
 function riverDepth(x, z) { if (z > -186 || z < -224) return 0; const d = RIVER_HALF - Math.abs(z - riverZ(x)); return d <= 0 ? 0 : -0.55 * Math.min(1, d / 1.3); }
-function groundY(x, z) { if (onBridge(x, z)) { const u = (z - BR.z) / 7.6; return 0.8 * (1 - u * u); } return riverDepth(x, z); }
+function groundY(x, z) { if (z < NORTH_Z) return terrainY(x, z); if (onBridge(x, z)) { const u = (z - BR.z) / 7.6; return 0.8 * (1 - u * u); } return riverDepth(x, z); }   // montañas: 05-norte.js
 const HOUSE = { x0: -6, x1: 6, z0: -13, z1: -4, h: 3.6 };
 const CLEAR = [{ x: pathX(-240), z: -240, r: 8.5 }, { x: -35, z: -186, r: 9 }, { x: 36, z: -236, r: 9 }, { x: BR.x, z: BR.z - 13, r: 5 }];
 const TRUNK = '#8a5a3a', WOOD = '#b98552', STONE = '#d9d2c2';
@@ -135,8 +136,8 @@ const winTex = WALLS.map((wall) => {
   t.wrapS = t.wrapT = THREE.RepeatWrapping; return t;
 });
 const AWN = ['#ff6b6b', '#ffb347', '#4fc3a1', '#5aa9ff', '#f78fb3', '#b28dff'];
-function shopfront(w) {
-  const b = new Batch(), aw = Math.min(w - 1.2, 8), hue = pick(AWN);
+function shopfront(w, R) {
+  const b = new Batch(), aw = Math.min(w - 1.2, 8), hue = AWN[Math.floor((R || rnd)() * AWN.length)];
   b.box('#fbf7ee', 0, 1.6, 0.03, aw, 3.2, 0.1);
   b.box('#6b4a35', -aw / 2 + 0.95, 1.1, 0.1, 1.1, 2.2, 0.1).box('#ffd76a', -aw / 2 + 1.33, 1.1, 0.17, 0.08, 0.08, 0.06);
   b.box('#ffffff', 0.52, 1.45, 0.08, aw - 2.0, 1.7, 0.1).box('#bfe6ff', 0.52, 1.45, 0.11, aw - 2.3, 1.4, 0.1);
@@ -145,8 +146,9 @@ function shopfront(w) {
   return b;
 }
 const occluders = [];
-function building(x0, x1, z0, z1, h, fronts) {
-  const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, si = Math.floor(rnd() * WALLS.length);
+function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla propia (Valle Alegre); sin ella, la de casa
+  R = R || rnd; const RR = (a, b) => a + (b - a) * R();
+  const w = x1 - x0, d = z1 - z0, cx = (x0 + x1) / 2, cz = (z0 + z1) / 2, si = Math.floor(R() * WALLS.length);
   const g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv;
   const tx = Math.max(1, Math.round(w / 2.7)) / 4, tz = Math.max(1, Math.round(d / 2.7)) / 4, ty = Math.max(1, Math.round(h / 3)) / 4;
   for (let i = 0; i < 24; i++) { const f = i >> 2; if (f === 2 || f === 3) continue; uv.setXY(i, uv.getX(i) * (f < 2 ? tz : tx), uv.getY(i) * ty); }
@@ -156,14 +158,15 @@ function building(x0, x1, z0, z1, h, fronts) {
   b.box(trim, cx, h + 0.2, z0 + 0.15, w + 0.3, 0.5, 0.3).box(trim, cx, h + 0.2, z1 - 0.15, w + 0.3, 0.5, 0.3);
   b.box(trim, x0 + 0.15, h + 0.2, cz, 0.3, 0.5, d - 0.3).box(trim, x1 - 0.15, h + 0.2, cz, 0.3, 0.5, d - 0.3);
   b.box('#8d8894', cx, 0.25, cz, w + 0.14, 0.5, d + 0.14);
-  const k = rnd(), ox = rr(-w * 0.2, w * 0.2), oz = rr(-d * 0.2, d * 0.2);
+  const k = R(), ox = RR(-w * 0.2, w * 0.2), oz = RR(-d * 0.2, d * 0.2);
   if (k < 0.38) { b.cyl('#c9b79c', cx + ox, h + 1.5, cz + oz, 1.1, 1.1, 1.6, 12).cone('#8a6a4a', cx + ox, h + 2.65, cz + oz, 1.3, 0.7, 12); for (const a of [0.8, 2.4, 4, 5.6]) b.cyl('#6b5a4a', cx + ox + Math.cos(a) * 0.8, h + 0.35, cz + oz + Math.sin(a) * 0.8, 0.07, 0.07, 0.7, 6); }
   else if (k < 0.72) { b.box('#d7dbe0', cx + ox, h + 0.5, cz + oz, 1.6, 1.0, 1.2).box('#b9bec6', cx + ox + 2, h + 0.4, cz + oz + 0.5, 1.1, 0.8, 1.1).cyl('#9aa0aa', cx + ox - 1.6, h + 1.2, cz + oz - 0.8, 0.05, 0.05, 2.4, 6); }
   else { b.box('#9a6540', cx + ox, h + 0.25, cz + oz, w * 0.45, 0.5, d * 0.4).ico('#57c06a', cx + ox - 0.8, h + 0.9, cz + oz, 0.75).ico('#62cc76', cx + ox + 0.9, h + 0.85, cz + oz + 0.3, 0.65).sph('#ff6b9d', cx + ox, h + 0.7, cz + oz - 0.4, 0.2); }
-  for (const f of fronts) b.merge(shopfront(f.w), f.x, 0, f.z, f.ry);
+  for (const f of fronts) b.merge(shopfront(f.w, R), f.x, 0, f.z, f.ry);
   const pm = new THREE.MeshLambertMaterial({ vertexColors: true }); scene.add(b.mesh(pm));
   solidBox(x0, x1, z0, z1);
-  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], op: 1 });
+  const pad = (ry) => (fronts.some((f) => Math.abs(f.ry - ry) < 0.01) ? 1.35 : 0);   // los toldos sobresalen de la fachada
+  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], op: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2) });
 }
 function genBlock(i, j) {
   const bx = BLOCKS[i], bz = BLOCKS[j], rs = { w: i > 0, e: i < 2, n: j > 0, s: j < 2 };
@@ -528,9 +531,11 @@ scene.add(cityB.mesh(), gardenB.mesh(), parkB.mesh(), meadowB.mesh(), forestB.me
 
 // colinas y nubes de fondo
 { const b = new Batch();
-  for (let z = -40; z >= -320; z -= 70) for (const sx of [-1, 1]) b.ico(pick(['#86cc68', '#7cc260', '#92d473']), sx * rr(118, 150), -22, z + rr(-15, 15), rr(48, 62), rr(40, 52), rr(48, 62), 2);
-  for (let x = -150; x <= 150; x += 75) b.ico('#7cc260', x + rr(-15, 15), -24, -335, rr(55, 70), rr(46, 60), 55, 2);
-  for (const q of [[-190, -360, 95], [-60, -420, 130], [80, -400, 110], [210, -350, 90], [-250, -180, 80], [250, -150, 85]]) b.cone('#93a8c9', q[0], q[2] / 2 - 4, q[1], q[2] * 0.75, q[2], 7).cone('#f4f8ff', q[0], q[2] * 0.82 - 4, q[1], q[2] * 0.272, q[2] * 0.36, 7);
+  // lo que quedaba donde ahora están las montañas de verdad no se dibuja, pero se siguen sacando los mismos números al azar
+  const keep = (z, r) => z + r < NORTH_Z ? new Batch() : b;        // colinas que se meterían en la franja de las montañas
+  for (let z = -40; z >= -320; z -= 70) for (const sx of [-1, 1]) { const c = pick(['#86cc68', '#7cc260', '#92d473']), x = sx * rr(118, 150), zz = z + rr(-15, 15), rx = rr(48, 62), ry = rr(40, 52), rz = rr(48, 62); keep(zz, -rz).ico(c, x, -22, zz, rx, ry, rz, 2); }
+  for (let x = -150; x <= 150; x += 75) { const xx = x + rr(-15, 15), rx = rr(55, 70), ry = rr(46, 60); keep(-335, -55).ico('#7cc260', xx, -24, -335, rx, ry, 55, 2); }
+  for (const q of [[-250, -180, 80], [250, -150, 85]]) b.cone('#93a8c9', q[0], q[2] / 2 - 4, q[1], q[2] * 0.75, q[2], 7).cone('#f4f8ff', q[0], q[2] * 0.82 - 4, q[1], q[2] * 0.272, q[2] * 0.36, 7);
   const m = b.mesh(MAT_SCENERY, false); scene.add(m);
 }
 const clouds = [];

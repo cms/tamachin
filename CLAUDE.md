@@ -3,7 +3,7 @@
 ## Lo esencial
 
 - `game.js` se genera: edita `parts/*.js` y ejecuta `./build.sh`. Nunca edites `game.js` a mano.
-- Las partes forman una sola IIFE en orden 01 → 05. Una `const` usada antes de su declaración (en otra parte o más arriba) falla por zona muerta temporal; las declaraciones `function` sí se elevan.
+- Las partes forman una sola IIFE en orden 01 → 06 (la lista está en `build.sh`). Una `const` usada antes de su declaración (en otra parte o más arriba) falla por zona muerta temporal; las declaraciones `function` sí se elevan.
 - Three.js es r128 en build UMD (`THREE` global). No existen `CapsuleGeometry` ni `BufferGeometryUtils`; no se usa `outputEncoding`, los colores se escriben tal cual en hex.
 - Tras cada cambio: `./build.sh && node --check game.js`.
 
@@ -15,17 +15,17 @@
 - **Árboles, flores, hierba, arbustos, rocas**: se agregan a listas (`addTree`, `addFlower`, `tufts`, `bushes`, `rocks`) y se instancian al final de `03-world.js`. Cualquier alta debe ocurrir antes de ese bloque.
 - **Interacciones**: empuja a `interacts` un objeto `{ pos: {x, z}, range, label, act }`. `label` puede ser función.
 - **Formas de Tamachin**: una entrada en `SHAPES` (medidas de cara) más un caso en `shapeParts()`. Si la forma es de revolución basta con `prof`; si no, define `flatZ`.
-- **Ánimos**: una entrada en `MOODS` (párpados, boca, pupila especial, velocidad) y un ícono en `MOOD_ICON` (`05-main.js`).
+- **Ánimos**: una entrada en `MOODS` (párpados, boca, pupila especial, velocidad) y un ícono en `MOOD_ICON` (`06-main.js`).
 - **Textos**: todo en español, sin emojis en la interfaz.
 
 ## Visibilidad con cámara fija
 
 La cámara no gira. Lo que queda entre la cámara y Tamachin se aparta solo, en `updateScenery()`:
-edificios (`occluders`) se vuelven transparentes, los árboles se agachan y la casa pierde techo y fachada al entrar. Si agregas algo alto al sur de una zona caminable, regístralo ahí.
+edificios (`occluders`) se vuelven transparentes, los árboles se agachan y la casa pierde techo y fachada al entrar. Si agregas algo alto al sur de una zona caminable, regístralo ahí. Los edificios guardan cuánto sobresalen sus toldos a cada lado (`padW`, `padE`) para que la prueba de lado los cuente.
 
-La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead` en `05-main.js`), sobre todo al sur, y al detenerse conserva el adelanto. Por eso esas pruebas usan el rayo real cámara→Tamachin (`camPos`, `camSlope`, `rayX`), no una distancia fija detrás de él.
+La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead` en `06-main.js`), sobre todo al sur, y al detenerse conserva el adelanto. Por eso esas pruebas usan el rayo real cámara→Tamachin (`camPos`, `camSlope`, `rayX`), no una distancia fija detrás de él.
 
-## Necesidades, encargos y secuencias (`05-main.js`)
+## Necesidades, encargos y secuencias (`06-main.js`)
 
 - **Ánimo visible**: `tempMood` (pasajero) > `needMood` (necesidad baja) > `baseMood` (el del panel). Todo pasa por `applyMood()`.
 - **Necesidades**: `NEEDS` y `needs` (0 a 1). Súbelas con `gain(k, cantidad, clave, segundos)`: con clave solo cuenta una vez cada tantos segundos, para que repetir lo mismo no las llene.
@@ -34,6 +34,16 @@ La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead` en `05-ma
 - **Secuencias** (refri, comer bayas): `startBusy({ dur, cam, update(dt, t), end })` deja al jugador en estado `busy` (sin caminar ni trucos); `once(s, clave, t)` dispara algo una sola vez. `cam` acerca la cámara (`x, y, z` mira, `ox, oy, oz` desplazamiento).
 - **Interacciones** pueden llevar `ok()`: si devuelve falso no aparecen (un arbusto sin bayas).
 - **Contenido nuevo del mundo**: usa su propia semilla (`mulberry(n)`), no `rnd`. Cada llamada extra a `rnd/rr/pick` durante la construcción mueve todo lo que se genera después.
+
+## El norte (`05-norte.js`)
+
+- **Altura**: `groundY(x, z)` usa `terrainY` al norte de `NORTH_Z`. `terrainY` interpola la rejilla `TH` con los mismos triángulos que dibuja la malla, así Tamachin no flota ni se hunde. Cambia el relieve en `PEAKS`/`RANGE` y `mountainH`.
+- **Límites**: el ancho caminable depende de la franja (`xLimitAt`); `keepInWorld` regresa a Tamachin por el lado más corto. Al sur de cada franja más angosta hay una fila de árboles sólidos para que el límite no sea invisible.
+- **Colisiones del norte**: `northCircle` las guarda en una rejilla (`northCollide` revisa solo las celdas cercanas). No uses `solidCircle` para cientos de cosas: esos arreglos se recorren completos en cada cuadro.
+- **Vegetación fija** (montañas, pueblo): `addStatic` y luego `buildStatic` arma un InstancedMesh por tipo y sector de 120 m. En r128 un InstancedMesh viene con `frustumCulled = false`; los sectores lo activan con su propia esfera envolvente (`geoView`).
+- **Árboles que se agachan**: los del norte lo hacen en el shader (`duckify`, uniforme `duckU`), no en el bucle de `updateScenery`. También su sombra (`duckDepth`).
+- **Bosque sin fin**: casillas de 26 m con semilla según su posición (`genChunk`); al volver, todo está igual y lo comido sigue comido (`forest.eaten`). Se dibujan con un InstancedMesh por tipo para todo el bosque (`FK`), con un tramo fijo por casilla; fuera del bosque se ocultan. Para frutas nuevas: una entrada en `FRUITS` y su planta en `genChunk`.
+- **Cámara en las montañas**: sigue al suelo y se sube lo necesario para ver a Tamachin entero cuando baja una ladera (`updateCamera`). La niebla se aleja con la altura (`updateNorth`).
 
 ## Capas del panel
 

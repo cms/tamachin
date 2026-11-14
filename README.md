@@ -25,11 +25,12 @@ parts/
   02-tamachin.js  Formas, cara, ánimos y animación de la criatura (makeTamachin)
   03-world.js     Suelo, ciudad, casa, parque, camino, bosque, río, instancias
   04-life.js      Autos y semáforos, vecinos, animales del bosque
-  05-main.js      Jugador, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
+  05-norte.js     Montañas, Valle Alegre y el bosque sin fin (terreno, límites, vegetación por sectores y por casillas)
+  06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
 build.sh          Concatena parts/ en game.js
 ```
 
-Las cinco partes son fragmentos de **una sola IIFE**: `01-core.js` la abre y `05-main.js` la cierra. No son módulos; comparten el mismo ámbito y el orden importa.
+Las seis partes son fragmentos de **una sola IIFE**: `01-core.js` la abre y `06-main.js` la cierra. No son módulos; comparten el mismo ámbito y el orden importa.
 
 ## Flujo de trabajo
 
@@ -70,4 +71,7 @@ Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su a
 - La cámara siempre mira al norte (−Z). La puerta de la casa mira al sur (+Z).
 - Ciudad: X y Z entre −62 y 62. Calles en X = ±24 y Z = ±24.
 - Casa: manzana central. Parque: manzana norte del centro, con el portón hacia el camino.
-- Camino: de Z = −62 a Z = −160. Bosque: de Z = −160 a Z = −262, con el río cerca de Z = −205.
+- Camino: de Z = −62 a Z = −160. Bosque: de Z = −160 a Z = −268, con el río cerca de Z = −205.
+- Montañas: de Z = −268 a Z = −1288, X entre −340 y 340. Tres picos de 400 m: Malvavisco (X −300), Gelatina (X 0, Z −770) y Turrón (X 300). Un sendero sale del claro de la fogata, sube al Pico Gelatina y baja al pueblo.
+- Valle Alegre: el pueblo, de Z = −1288 a Z = −1416 (centro en Z = −1352), con mercado al sur, kiosco en la plaza y posada con hamaca al norte.
+- Bosque sin fin: al norte de Z = −1440, sin límite. Se genera por casillas de 26 m alrededor de Tamachin; tiene naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas.

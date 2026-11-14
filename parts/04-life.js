@@ -97,10 +97,11 @@ function loopAt(R, t, out) {
   const u = t - q.s; out.x = q.x + q.tx * u; out.z = q.z + q.tz * u; out.tx = q.tx; out.tz = q.tz; return out;
 }
 const blockLoop = (i, j) => rectLoop(BLOCKS[i][0] + 2, BLOCKS[i][1] - 2, BLOCKS[j][0] + 2, BLOCKS[j][1] - 2);
-function addNPC(o) {
-  const T = makeTamachin({ shape: o.shape, color: o.color, mood: o.mood, scale: o.scale || rr(1.0, 1.22) });
-  const n = { T, name: o.name, kind: 'vecino', loop: o.loop || null, t: o.loop ? rnd() * o.loop.L : rnd() * 9, dir: rnd() < 0.5 ? 1 : -1, speed: rr(1.4, 2.1) * (MOODS[o.mood].speed || 1),
-    pause: rr(0, 3), heading: rnd() * TAU, talkT: 0, lines: o.lines || null, li: 0, home: o.home || null, mood0: o.mood, cheer: 0, count: 0, pos: T.pos, bubblePos: T.bubblePos };
+function addNPC(o) {                                  // o.rng: semilla propia (Valle Alegre); sin ella, la de casa
+  const R = o.rng || rnd, RR = (a, b) => a + (b - a) * R();
+  const T = makeTamachin({ shape: o.shape, color: o.color, mood: o.mood, scale: o.scale || RR(1.0, 1.22) });
+  const n = { T, name: o.name, kind: 'vecino', loop: o.loop || null, t: o.loop ? R() * o.loop.L : R() * 9, dir: R() < 0.5 ? 1 : -1, speed: RR(1.4, 2.1) * (MOODS[o.mood].speed || 1),
+    pause: RR(0, 3), heading: R() * TAU, talkT: 0, lines: o.lines || null, li: 0, home: o.home || null, mood0: o.mood, cheer: 0, count: 0, pos: T.pos, bubblePos: T.bubblePos };
   if (o.home) { T.pos.set(o.home.x, 0, o.home.z); n.heading = o.home.ry || 0; }
   else { loopAt(n.loop, n.t, _lp); T.pos.set(_lp.x, 0, _lp.z); }
   npcs.push(n); return n;
@@ -128,6 +129,7 @@ function updateNPCs(dt) {
     const T = n.T, dx = P.x - n.pos.x, dz = P.z - n.pos.z, d = Math.hypot(dx, dz);
     let speed = 0; n.talkT = Math.max(0, n.talkT - dt);
     if (n.cheer > 0) { n.cheer -= dt; if (n.cheer <= 0) T.setMood(n.mood0); }
+    T.group.visible = d < 160 || !!n.follow;              // lejos son unos cuantos píxeles y muchas mallas (desde una cima se ve todo el pueblo)
     if (n.goto && n.talkT <= 0) {                     // camina a un lugar fijo (al terminar un encargo) y ahí se queda
       const ex = n.goto.x - n.pos.x, ez = n.goto.z - n.pos.z, ed = Math.hypot(ex, ez);
       if (ed < 0.12) n.goto = null;
@@ -329,7 +331,7 @@ for (let i = 0; i < 3; i++) {
   const m = b.mesh(MAT_SOFT); m.visible = false; scene.add(m); fishes.push({ m, t: -rand(0.5, 4), x: 0, z0: 0, dir: 1 });
 }
 function updateFish(dt) {
-  if (player.pos.z > -150) return;
+  if (player.pos.z > -150 || player.pos.z < NORTH_Z) return;
   for (const f of fishes) {
     f.t += dt;
     if (f.t < 0) continue;
