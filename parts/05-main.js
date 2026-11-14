@@ -87,6 +87,7 @@ interacts.push({ pos: { x: 2.5, z: 15.4 }, range: 1.7, label: 'Abrir el buzón',
 window.addEventListener('keydown', (e) => {
   const tg = e.target && e.target.tagName;
   if (tg === 'INPUT') return;
+  if (e.ctrlKey || e.metaKey || e.altKey) return;              // atajos del navegador (Cmd+C, Ctrl+W…), no del juego
   const c = e.code;
   if (['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'Space'].indexOf(c) >= 0 && tg !== 'BUTTON') e.preventDefault();
   if (e.repeat) return;
@@ -94,7 +95,8 @@ window.addEventListener('keydown', (e) => {
   if (tg === 'BUTTON' && (c === 'Space' || c === 'Enter')) return;
   if (c === 'Space') jump(); else if (c === 'KeyE' || c === 'Enter') doAction(); else if (c === 'KeyC') togglePanel(); else if (c === 'Escape' && ui.closeup) togglePanel(false);
 });
-window.addEventListener('keyup', (e) => { keys[e.code] = false; });
+// en macOS no llega keyup de las teclas soltadas mientras Cmd está abajo: al soltar Cmd se liberan todas
+window.addEventListener('keyup', (e) => { keys[e.code] = false; if (e.key === 'Meta') for (const k in keys) keys[k] = false; });
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 document.addEventListener('click', (e) => { const b = e.target && e.target.closest && e.target.closest('button'); if (b && e.detail > 0) b.blur(); });
 

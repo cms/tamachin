@@ -83,14 +83,18 @@ const LINES = {
   mareado: ['Uy… todo da vueltas…'],
 };
 const npcs = [];
-function rectLoop(x0, x1, z0, z1) { const w = x1 - x0, h = z1 - z0; return { x0, x1, z0, z1, w, h, L: 2 * (w + h) }; }
+// rutas cerradas: una polilínea que se recorre por distancia. Al trazar una, que no pase por sólidos (bancas, arbustos, árboles).
+function pathLoop(pts) {
+  const segs = []; let L = 0;
+  pts.forEach((a, i) => { const b = pts[(i + 1) % pts.length], len = Math.hypot(b[0] - a[0], b[1] - a[1]); segs.push({ x: a[0], z: a[1], tx: (b[0] - a[0]) / len, tz: (b[1] - a[1]) / len, s: L }); L += len; });
+  return { segs, L };
+}
+function rectLoop(x0, x1, z0, z1) { return pathLoop([[x0, z0], [x1, z0], [x1, z1], [x0, z1]]); }
+function ringLoop(cx, cz, r, n) { const p = []; for (let i = 0; i < n; i++) p.push([cx + Math.cos(i * TAU / n) * r, cz + Math.sin(i * TAU / n) * r]); return pathLoop(p); }
 function loopAt(R, t, out) {
   t = ((t % R.L) + R.L) % R.L;
-  if (t < R.w) { out.x = R.x0 + t; out.z = R.z0; out.tx = 1; out.tz = 0; }
-  else if (t < R.w + R.h) { out.x = R.x1; out.z = R.z0 + (t - R.w); out.tx = 0; out.tz = 1; }
-  else if (t < 2 * R.w + R.h) { out.x = R.x1 - (t - R.w - R.h); out.z = R.z1; out.tx = -1; out.tz = 0; }
-  else { out.x = R.x0; out.z = R.z1 - (t - 2 * R.w - R.h); out.tx = 0; out.tz = -1; }
-  return out;
+  let q = R.segs[0]; for (const s of R.segs) { if (s.s > t) break; q = s; }
+  const u = t - q.s; out.x = q.x + q.tx * u; out.z = q.z + q.tz * u; out.tx = q.tx; out.tz = q.tz; return out;
 }
 const blockLoop = (i, j) => rectLoop(BLOCKS[i][0] + 2, BLOCKS[i][1] - 2, BLOCKS[j][0] + 2, BLOCKS[j][1] - 2);
 function addNPC(o) {
@@ -110,8 +114,9 @@ addNPC({ name: 'Kiwi', shape: 'huevo', color: '#9bd34a', mood: 'enojado', loop: 
 addNPC({ name: 'Tofu', shape: 'cubito', color: '#7cd4e8', mood: 'triste', loop: blockLoop(1, 2) });
 addNPC({ name: 'Lulú', shape: 'gota', color: '#ff6b9d', mood: 'enamorado', loop: blockLoop(2, 2) });
 addNPC({ name: 'Bombón', shape: 'hongo', color: '#ff5d5d', mood: 'contento', loop: blockLoop(1, 1) });
-addNPC({ name: 'Pistacho', shape: 'bola', color: '#35c9a0', mood: 'contento', loop: rectLoop(-4.6, 4.6, -49.6, -40.4) });
-addNPC({ name: 'Canela', shape: 'gatito', color: '#e8a063', mood: 'asombrado', loop: rectLoop(-17, 17, -60, -30.5) });
+addNPC({ name: 'Pistacho', shape: 'bola', color: '#35c9a0', mood: 'contento', loop: ringLoop(0, -45, 4.25, 24) });   // entre la fuente (r 2.9) y las bancas
+addNPC({ name: 'Canela', shape: 'gatito', color: '#e8a063', mood: 'asombrado',                                     // esquinas recortadas por los arbustos
+  loop: pathLoop([[-14.6, -60], [14.6, -60], [17.6, -57], [17.6, -34], [14.6, -31], [-14.6, -31], [-17.6, -34], [-17.6, -57]]) });
 addNPC({ name: 'Musgo', shape: 'hongo', color: '#58b368', mood: 'contento', home: { x: CAMP.x - 3.4, z: CAMP.z - 3, ry: 0.5 },
   lines: ['Bienvenido al claro. La fogata siempre está calientita.', 'El búho de ese tronco responde cualquier pregunta.', 'Si caminas despacio, los conejos no huyen.'] });
 addNPC({ name: 'Rocío', shape: 'gota', color: '#7c9cff', mood: 'enamorado', home: { x: BR.x + 3.2, z: BR.z - 12, ry: 0.2 },
