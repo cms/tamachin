@@ -200,6 +200,8 @@ function pushOutCircle(pos, r, cx, cz, cr) {
   if (d2 >= R * R || d2 < 1e-9) return false;
   const d = Math.sqrt(d2); pos.x = cx + dx / d * R; pos.z = cz + dz / d * R; return true;
 }
+// para quien acompaña a Tamachin (conejo, vecina): que no atraviese paredes ni troncos
+function resolveAgent(pos, r) { for (const b of boxes) pushOutBox(pos, r, b); for (const c of circles) pushOutCircle(pos, r, c.x, c.z, c.r); }
 
 // ───────────────────────── partículas (sprites) ─────────────────────────
 function glyphTex(draw) { return canvasTex(64, 64, draw); }
@@ -224,6 +226,8 @@ const PTEX = {
   tear: glyphTex((g) => { g.beginPath(); g.moveTo(32, 8); g.bezierCurveTo(52, 34, 48, 56, 32, 56); g.bezierCurveTo(16, 56, 12, 34, 32, 8); g.fillStyle = '#6ec6ff'; g.fill(); g.lineWidth = 4; g.strokeStyle = INK; g.stroke(); }),
   puff: glyphTex((g) => { const gr = g.createRadialGradient(32, 32, 4, 32, 32, 28); gr.addColorStop(0, 'rgba(255,255,255,.95)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }),
   splash: glyphTex((g) => { g.beginPath(); g.arc(32, 32, 20, 0, TAU); g.fillStyle = 'rgba(210,240,255,.95)'; g.fill(); g.lineWidth = 4; g.strokeStyle = '#69b9ee'; g.stroke(); }),
+  mist: glyphTex((g) => { const gr = g.createRadialGradient(32, 32, 2, 32, 32, 30); gr.addColorStop(0, 'rgba(236,250,255,.9)'); gr.addColorStop(0.55, 'rgba(214,240,255,.45)'); gr.addColorStop(1, 'rgba(214,240,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }),
+  crumb: glyphTex((g) => { g.beginPath(); g.arc(32, 32, 17, 0, TAU); g.fillStyle = '#ffe08a'; g.fill(); g.lineWidth = 6; g.strokeStyle = INK; g.stroke(); }),
 };
 const PMAT = {};
 for (const k in PTEX) PMAT[k] = new THREE.SpriteMaterial({ map: PTEX[k], transparent: true, depthWrite: false });
@@ -233,6 +237,7 @@ const PDEF = {
   excl: { vy: 1.0, grav: 0, life: 0.9, size: 0.5, spread: 0 }, note: { vy: 1.2, grav: -0.1, life: 1.5, size: 0.42, spread: 0.6 },
   tear: { vy: 0.2, grav: 5, life: 0.9, size: 0.24, spread: 0.3 }, puff: { vy: 1.1, grav: -0.4, life: 0.9, size: 0.6, spread: 0.6 },
   splash: { vy: 3.2, grav: 9, life: 0.7, size: 0.22, spread: 1.8 },
+  mist: { vy: 0.1, grav: 0.35, life: 1.7, size: 0.8, spread: 0.75 }, crumb: { vy: 1.8, grav: 8, life: 0.55, size: 0.12, spread: 1.1 },
 };
 const particles = [];
 for (let i = 0; i < 90; i++) { const s = new THREE.Sprite(PMAT.heart); s.visible = false; scene.add(s); particles.push({ s, t: 0, life: 0, vx: 0, vy: 0, vz: 0, grav: 0, size: 1 }); }
@@ -305,6 +310,11 @@ const SFX = {
   splash: () => tone(950, 180, 0.26, 'triangle', 0.05),
   dizzy: () => { tone(620, 300, 0.45, 'sine', 0.05); tone(300, 620, 0.45, 'sine', 0.04, 0.3); },
   nice: () => { tone(523, 523, 0.1, 'triangle', 0.05); tone(784, 784, 0.16, 'triangle', 0.05, 0.1); },
+  fridgeOpen: () => { tone(150, 85, 0.2, 'sine', 0.08); tone(1250, 1900, 0.4, 'sine', 0.022, 0.1); tone(1660, 2490, 0.34, 'sine', 0.018, 0.2); },
+  fridgeShut: () => { tone(180, 70, 0.22, 'triangle', 0.08); tone(90, 60, 0.12, 'sine', 0.06, 0.02); },
+  munch: () => { tone(rand(230, 320), 120, 0.06, 'square', 0.028); tone(rand(260, 360), 140, 0.05, 'square', 0.022, 0.08); },
+  yay: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, f, i === 3 ? 0.3 : 0.12, 'triangle', 0.05, i * 0.1)),
+  low: () => { tone(420, 330, 0.22, 'sine', 0.045); tone(330, 260, 0.3, 'sine', 0.04, 0.2); },
 };
 
 // ───────────────────────── Tamachin: formas ─────────────────────────
@@ -857,7 +867,18 @@ const house = (() => {
   solidBox(-2.1, 0.3, -12.8, -12.25);
   furnB.box('#f4f1e8', 3.0, 0.5, -12.3, 3.0, 1.0, 0.9).box('#8fd1c1', 3.0, 1.03, -12.3, 3.1, 0.08, 1.0).box('#3b4252', 2.2, 1.08, -12.3, 0.9, 0.04, 0.7).cyl('#c9ced6', 3.7, 1.08, -12.3, 0.3, 0.3, 0.05, 14)
     .cyl('#ff8a5c', 2.0, 1.2, -12.35, 0.16, 0.14, 0.2, 10).cyl('#ffd23f', 2.45, 1.17, -12.2, 0.13, 0.13, 0.14, 10); solidBox(1.5, 4.5, -12.75, -11.85);
-  furnB.rbox('#8fd9c8', 5.15, 1.15, -12.25, 1.1, 2.3, 1.0, 0.14).box('#ffffff', 4.72, 1.5, -11.73, 0.07, 0.6, 0.06).box('#6fbfae', 5.15, 0.78, -11.745, 1.02, 0.03, 0.02); solidBox(4.6, 5.7, -12.75, -11.75);
+  // refri: caja hueca con repisas y comida; la puerta va aparte, con bisagra a la derecha (ver `fridge` abajo)
+  const MINT = '#8fd9c8', FX = 5.15, FZ = -12.25;
+  furnB.rbox(MINT, FX, 1.15, FZ - 0.3, 1.1, 2.3, 0.4, 0.14).box(MINT, FX - 0.51, 1.15, FZ, 0.08, 2.3, 1.0).box(MINT, FX + 0.51, 1.15, FZ, 0.08, 2.3, 1.0)
+    .box(MINT, FX, 2.26, FZ, 1.1, 0.08, 1.0).box(MINT, FX, 0.08, FZ, 1.1, 0.16, 1.0).box('#dff3fb', FX, 1.62, FZ + 0.05, 0.94, 0.06, 0.88)
+    .box('#ffffff', FX, 0.66, FZ + 0.05, 0.94, 0.035, 0.84).box('#ffffff', FX, 1.14, FZ + 0.05, 0.94, 0.035, 0.84)
+    .box('#ffffff', FX - 0.24, 0.42, FZ + 0.1, 0.22, 0.46, 0.22).box('#5aa9ff', FX - 0.24, 0.44, FZ + 0.215, 0.18, 0.16, 0.01).cone('#5aa9ff', FX - 0.24, 0.72, FZ + 0.1, 0.16, 0.14, 4, Math.PI / 4)
+    .cyl('#ffb347', FX + 0.12, 0.28, FZ + 0.12, 0.13, 0.16, 0.2, 14).cyl('#ffd27a', FX + 0.12, 0.39, FZ + 0.12, 0.12, 0.12, 0.02, 14).cyl('#ffffff', FX + 0.12, 0.17, FZ + 0.12, 0.2, 0.2, 0.02, 14)
+    .cyl('#ff5d73', FX + 0.33, 0.92, FZ + 0.06, 0.07, 0.07, 0.4, 10).cyl('#ffffff', FX + 0.33, 1.13, FZ + 0.06, 0.04, 0.05, 0.06, 8)
+    .add(gCyl(1, 14), '#58b368', FX - 0.08, 0.84, FZ + 0.1, 0.2, 0.08, 0.2, Math.PI / 2, 0, 0).add(gCyl(1, 14), '#ff5d73', FX - 0.08, 0.84, FZ + 0.12, 0.17, 0.081, 0.17, Math.PI / 2, 0, 0)
+    .rbox('#d9c27a', FX - 0.3, 0.76, FZ + 0.12, 0.34, 0.16, 0.14, 0.06).sph('#ffffff', FX + 0.08, 1.21, FZ + 0.2, 0.06, 0.08, 0.06).sph('#ffffff', FX + 0.2, 1.21, FZ + 0.18, 0.06, 0.08, 0.06)
+    .cyl('#c58bff', FX - 0.2, 1.8, FZ + 0.08, 0.14, 0.12, 0.26, 12).cyl('#fff4d6', FX + 0.18, 1.75, FZ + 0.08, 0.16, 0.14, 0.18, 12).cyl('#ff9db8', FX + 0.18, 1.86, FZ + 0.08, 0.16, 0.16, 0.03, 12);
+  solidBox(4.6, 5.7, -12.75, -11.75);
   furnB.cyl('#d9a066', 2.9, 0.8, -8.2, 1.0, 1.0, 0.1, 22).cyl('#b98552', 2.9, 0.4, -8.2, 0.12, 0.24, 0.8, 10).cyl('#ffffff', 2.6, 0.87, -8.0, 0.24, 0.2, 0.04, 14).sph('#ff6b6b', 2.6, 0.97, -8.0, 0.11)
     .cyl('#7cc8ff', 3.3, 0.94, -8.4, 0.09, 0.08, 0.18, 10).cyl('#ff9f6b', 1.45, 0.28, -8.2, 0.3, 0.3, 0.56, 14).cyl('#4fc3a1', 4.35, 0.28, -8.2, 0.3, 0.3, 0.56, 14);
   solidCircle(2.9, -8.2, 0.98); solidCircle(1.45, -8.2, 0.3); solidCircle(4.35, -8.2, 0.3);
@@ -883,7 +904,36 @@ const house = (() => {
   doorPivot.add(door, knob); scene.add(doorPivot);
   const tvMat = new THREE.MeshBasicMaterial({ color: 0x15151c });
   const tv = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.84), tvMat); tv.position.set(-2.105, 1.2, -6.6); tv.rotation.y = -Math.PI / 2; scene.add(tv);
-  return { walls, front, roof, mWalls, mFront, mRoof, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0 };
+  // refri: puerta con bisagra, fondo que se ilumina y luz que se derrama al suelo (sin luces reales: no recompila materiales)
+  const fridge = (() => {
+    const pivot = new THREE.Group(); pivot.position.set(FX + 0.55, 0, FZ + 0.5);
+    const db = new Batch().rbox(MINT, -0.55, 1.15, 0.06, 1.12, 2.3, 0.12, 0.05).box('#ffffff', -1.0, 1.95, 0.135, 0.07, 0.42, 0.06).box('#ffffff', -1.0, 1.15, 0.135, 0.07, 0.62, 0.06)
+      .box('#6fbfae', -0.55, 1.62, 0.125, 1.06, 0.03, 0.02).box('#7fcfbd', -0.55, 1.15, -0.005, 1.0, 2.15, 0.02)
+      .box('#ffffff', -0.55, 0.62, -0.07, 0.9, 0.04, 0.12).box('#ffffff', -0.55, 1.22, -0.07, 0.9, 0.04, 0.12)
+      .cyl('#ffd23f', -0.8, 0.78, -0.08, 0.05, 0.05, 0.28, 8).cyl('#ff8a5c', -0.6, 0.76, -0.08, 0.06, 0.06, 0.24, 8).cyl('#9bd34a', -0.36, 0.79, -0.08, 0.05, 0.05, 0.3, 8)
+      .sph('#ffffff', -0.75, 1.3, -0.08, 0.05, 0.065, 0.05).sph('#ffffff', -0.6, 1.3, -0.08, 0.05, 0.065, 0.05).sph('#ffffff', -0.45, 1.3, -0.08, 0.05, 0.065, 0.05)
+      .sph('#ff6b9d', -0.3, 2.0, 0.14, 0.09, 0.09, 0.03).sph('#ffd23f', -0.75, 0.6, 0.14, 0.08, 0.08, 0.03);
+    const door = db.mesh(new THREE.MeshLambertMaterial({ vertexColors: true })); pivot.add(door); scene.add(pivot);
+    const panelMat = new THREE.MeshBasicMaterial({ color: 0x9fb7c0 });
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.94, 2.08), panelMat); panel.position.set(FX, 1.16, FZ - 0.09); scene.add(panel);
+    const glowTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 40, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(225,246,255,1)'); gr.addColorStop(0.5, 'rgba(190,232,255,.5)'); gr.addColorStop(1, 'rgba(190,232,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+    const poolMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.6), poolMat); pool.rotation.x = -Math.PI / 2; pool.position.set(FX - 0.15, 0.07, FZ + 1.75); pool.visible = false; scene.add(pool);
+    const beamTex = canvasTex(64, 128, (g) => { const gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, 'rgba(225,246,255,.85)'); gr.addColorStop(1, 'rgba(225,246,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
+      const sd = g.createLinearGradient(0, 0, 64, 0); sd.addColorStop(0, 'rgba(0,0,0,1)'); sd.addColorStop(0.25, 'rgba(0,0,0,0)'); sd.addColorStop(0.75, 'rgba(0,0,0,0)'); sd.addColorStop(1, 'rgba(0,0,0,1)'); g.globalCompositeOperation = 'destination-out'; g.fillStyle = sd; g.fillRect(0, 0, 64, 128); });
+    // haz de luz: tres caras (arriba, izquierda, derecha) de la boca del refri hacia el piso
+    const n0 = [[FX - 0.47, 2.2], [FX + 0.47, 2.2], [FX + 0.47, 0.16], [FX - 0.47, 0.16]], z0 = FZ + 0.5, z1 = FZ + 2.4, far = [[FX - 1.1, 1.0], [FX + 0.9, 1.0], [FX + 0.9, 0.08], [FX - 1.1, 0.08]];
+    const pos = [], uv = [];
+    for (const [a, b] of [[0, 1], [1, 2], [3, 0]]) {
+      pos.push(n0[a][0], n0[a][1], z0, n0[b][0], n0[b][1], z0, far[b][0], far[b][1], z1, n0[a][0], n0[a][1], z0, far[b][0], far[b][1], z1, far[a][0], far[a][1], z1);
+      uv.push(0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0);                  // v=1 en la boca del refri (la textura va de brillante arriba a nada abajo)
+    }
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const beamMat = new THREE.MeshBasicMaterial({ map: beamTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const beam = new THREE.Mesh(bg, beamMat); beam.visible = false; scene.add(beam);
+    return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
+  })();
+  return { walls, front, roof, mWalls, mFront, mRoof, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín
@@ -1029,6 +1079,35 @@ const flames = [];
 for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(gCone(8), new THREE.MeshBasicMaterial({ color: [0xff7a1a, 0xffb81f, 0xffe46b][i] })); m.position.set(CAMP.x + [0, 0.18, -0.12][i], 0.7, CAMP.z + [0, 0.1, -0.1][i]); m.scale.set(0.42 - i * 0.1, 1.1 - i * 0.2, 0.42 - i * 0.1); scene.add(m); flames.push(m); }
 forestB.cyl(TRUNK, -22, 0.4, -176, 0.4, 0.45, 5, 10, Math.PI / 2, 0.4); solidBox(-24.4, -19.6, -177, -175);
 forestB.cyl(TRUNK, 24, 0.4, -250, 0.4, 0.45, 4.4, 10, Math.PI / 2, -0.9); solidBox(22.2, 25.8, -251.6, -248.4);
+// arbustos de bayas: se comen y vuelven a crecer. Tienen su propia semilla para no mover nada de lo que se generó antes.
+const BERRY_KINDS = [{ name: 'arándanos', color: '#4b62d6', leaf: '#3f9a52' }, { name: 'frambuesas', color: '#ff4f7b', leaf: '#4aa85a' }, { name: 'moras', color: '#5a2d6e', leaf: '#3a8f4c' }];
+const berryBushes = [];
+const berryMesh = (() => {
+  const rb = mulberry(5150), r2 = (a, b) => a + (b - a) * rb();
+  const okSpot = (x, z) => freeSpot(x, z, 3.4) && trees.every((t) => Math.hypot(t.x - x, t.z - z) > 2.4 + 0.4 * t.s) && bushes.every((b) => Math.hypot(b.x - x, b.z - z) > 2.2)
+    && rocks.every((r) => Math.hypot(r.x - x, r.z - z) > 1.8) && Math.hypot(x + 22, z + 176) > 4 && Math.hypot(x - 24, z + 250) > 4 && Math.hypot(x - STUMP.x, z - STUMP.z) > 3;
+  for (let tries = 0; berryBushes.length < 16 && tries < 800; tries++) {
+    const z = r2(-256, -166), x = berryBushes.length % 2 === 0 ? pathX(z) + (rb() < 0.5 ? -1 : 1) * r2(3.8, 9) : r2(-56, 56);   // la mitad cerca del camino
+    if (!okSpot(x, z) || berryBushes.some((b) => Math.hypot(b.x - x, b.z - z) < 7)) continue;
+    berryBushes.push({ x, z, s: r2(0.95, 1.2), kind: BERRY_KINDS[berryBushes.length % 3], berries: [] });
+  }
+  let n = 0;
+  for (const b of berryBushes) {
+    const s = b.s;
+    forestB.ico(b.kind.leaf, b.x, 0.5 * s, b.z, 0.78 * s, 0.6 * s, 0.78 * s).ico('#4fb460', b.x + 0.45 * s, 0.42 * s, b.z + 0.2 * s, 0.5 * s, 0.42 * s, 0.5 * s).ico('#5cc06c', b.x - 0.42 * s, 0.44 * s, b.z - 0.12 * s, 0.48 * s, 0.4 * s, 0.48 * s);
+    solidCircle(b.x, b.z, 0.62 * s);
+    for (let i = 0; i < 8; i++) {                                     // al frente y a los lados: lo que ve la cámara
+      const a = Math.PI / 2 + (i / 7 - 0.5) * 3.3 + r2(-0.15, 0.15), el = r2(0.12, 0.95), R = 0.76 * s;
+      b.berries.push({ i: n++, x: b.x + Math.cos(a) * Math.cos(el) * R, y: 0.5 * s + Math.sin(el) * 0.56 * s, z: b.z + Math.sin(a) * Math.cos(el) * R * 0.95, k: 1, back: 0 });
+    }
+  }
+  const m = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 9, 7), new THREE.MeshLambertMaterial(), n);
+  for (const b of berryBushes) for (const q of b.berries) { m.setColorAt(q.i, _bc.set(b.kind.color)); }
+  m.frustumCulled = false; m.castShadow = true; scene.add(m); return m;
+})();
+const _bpm = new THREE.Matrix4();
+function setBerry(b, q) { const s = 0.118 * b.s * Math.max(0.001, q.k); berryMesh.setMatrixAt(q.i, _bpm.makeScale(s, s, s).setPosition(q.x, q.y, q.z)); }
+for (const b of berryBushes) for (const q of b.berries) setBerry(b, q);
 
 scene.add(cityB.mesh(), gardenB.mesh(), parkB.mesh(), meadowB.mesh(), forestB.mesh());
 
@@ -1209,6 +1288,22 @@ function updateNPCs(dt) {
     const T = n.T, dx = P.x - n.pos.x, dz = P.z - n.pos.z, d = Math.hypot(dx, dz);
     let speed = 0; n.talkT = Math.max(0, n.talkT - dt);
     if (n.cheer > 0) { n.cheer -= dt; if (n.cheer <= 0) T.setMood(n.mood0); }
+    if (n.goto && n.talkT <= 0) {                     // camina a un lugar fijo (al terminar un encargo) y ahí se queda
+      const ex = n.goto.x - n.pos.x, ez = n.goto.z - n.pos.z, ed = Math.hypot(ex, ez);
+      if (ed < 0.12) n.goto = null;
+      else { const sp = Math.min(1.8, ed * 3); n.pos.x += ex / ed * sp * dt; n.pos.z += ez / ed * sp * dt; n.heading += angDiff(n.heading, Math.atan2(ex, ez)) * Math.min(1, dt * 8); speed = sp / 3.2; }
+      T.group.rotation.y = n.heading; T.update(dt, { speed, near: d < 45 }); continue;
+    }
+    if (n.follow) {                                   // acompaña a Tamachin un poco detrás y a un lado; n.follow decide si llegó o se perdió
+      const tx = P.x - Math.sin(player.heading) * 1.9 + Math.cos(player.heading) * 0.9, tz = P.z - Math.cos(player.heading) * 1.9 - Math.sin(player.heading) * 0.9;
+      const ex = tx - n.pos.x, ez = tz - n.pos.z, ed = Math.hypot(ex, ez);
+      if (ed > 0.5 && d > 1.7) {
+        const sp = clamp(ed * 1.8, 1.4, 7.8); n.pos.x += ex / ed * sp * dt; n.pos.z += ez / ed * sp * dt; resolveAgent(n.pos, 0.45 * T.scale);
+        n.heading += angDiff(n.heading, Math.atan2(ex, ez)) * Math.min(1, dt * 8); speed = sp / 3.2;
+      } else n.heading += angDiff(n.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 6);
+      T.group.rotation.y = n.heading; T.update(dt, { speed, near: true });
+      n.follow(n, d); continue;
+    }
     if (d > 75) continue;
     const facing = n.talkT > 0 || d < 2.4;
     if (facing) n.heading += angDiff(n.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 7);
@@ -1225,12 +1320,13 @@ function updateNPCs(dt) {
   }
 }
 function talkTo(n) {
-  const T = n.T; n.talkT = 3.4; let line;
-  if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
+  const T = n.T; n.talkT = 3.4; let line = n.onTalk ? n.onTalk(n) : null;    // los encargos hablan primero
+  if (line) { /* ya está */ }
+  else if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
     n.count = 0; T.setMood('contento'); n.cheer = 25; line = '¡Gracias por escucharme! Ya me siento mejor.';
     burst('heart', n.pos.x, 1.8, n.pos.z, 5); SFX.nice();
   } else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
-  say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle']));
+  say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle'])); gain('diversion', 0.06, 'charla' + n.name, 12);
   player.T.doTrick('wave'); player.heading = Math.atan2(n.pos.x - player.pos.x, n.pos.z - player.pos.z);
 }
 
@@ -1246,12 +1342,15 @@ function makeRabbit(x, z, col) {
     .sph('#201a2a', -0.1, 0.55, 0.41, 0.036).sph('#201a2a', 0.1, 0.55, 0.41, 0.036).sph('#ff8fab', 0, 0.48, 0.45, 0.03)
     .sph(col, -0.13, 0.06, 0.2, 0.07, 0.06, 0.13).sph(col, 0.13, 0.06, 0.2, 0.07, 0.06, 0.13).sph(col, -0.16, 0.08, -0.12, 0.08, 0.08, 0.16).sph(col, 0.16, 0.08, -0.12, 0.08, 0.08, 0.16);
   const mesh = b.mesh(MAT_SOFT); mesh.scale.setScalar(1.25); mesh.position.set(x, 0, z); scene.add(mesh);
-  const o = { kind: 'conejo', mesh, pos: mesh.position, home: { x, z }, tx: x, tz: z, hopP: 0, hopSpeed: 0, rest: 0, wait: rand(0, 3), follow: 0, scare: 0, heading: rand(0, TAU), side: rand(-1, 1), range: 5, clickR: 0.6 };
+  const o = { kind: 'conejo', mesh, pos: mesh.position, home: { x, z }, tx: x, tz: z, hopP: 0, hopSpeed: 0, rest: 0, wait: rand(0, 3), follow: 0, scare: 0, heading: rand(0, TAU), side: rand(-1, 1), range: 5, clickR: 0.6,
+    buddy: null, stuckT: 0, onLost: null, onStuck: null };
   o.bubblePos = (v) => v.set(o.pos.x, o.pos.y + 1.25, o.pos.z);
   o.update = (dt) => {
     const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp);
     o.follow = Math.max(0, o.follow - dt); o.scare = Math.max(0, o.scare - dt);
-    if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side; o.tz = P.z - Math.cos(player.heading) * 1.7; }
+    if (o.follow > 0 && dp > 32) { o.follow = 0; if (o.onLost) o.onLost(o); }          // se quedó muy atrás
+    if (o.buddy) { const B = o.buddy; o.tx = B.pos.x - Math.sin(B.heading) * 1.3 + o.side * 0.5; o.tz = B.pos.z - Math.cos(B.heading) * 1.3; }
+    else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side; o.tz = P.z - Math.cos(player.heading) * 1.7; }
     else if (dp < 3.2 && player.speedN > 1.3 && o.scare <= 0) { o.tx = o.pos.x - dxp / dp * 5; o.tz = o.pos.z - dzp / dp * 5; o.scare = 2; o.rest = 0; emit('excl', o.pos.x, 1.1, o.pos.z); }
     else if (o.scare <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(2, 6); const a = rand(0, TAU), r = rand(0, o.range); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; } }
     const dx = o.tx - o.pos.x, dz = o.tz - o.pos.z, d = Math.hypot(dx, dz);
@@ -1259,21 +1358,26 @@ function makeRabbit(x, z, col) {
       o.hopP += dt / 0.36; const k = Math.min(1, o.hopP);
       o.pos.x += Math.sin(o.heading) * o.hopSpeed * dt; o.pos.z += Math.cos(o.heading) * o.hopSpeed * dt; o.pos.x = clamp(o.pos.x, -60, 60);
       o.pos.y = Math.sin(k * Math.PI) * 0.4; mesh.rotation.x = -Math.cos(k * Math.PI) * 0.28;
-      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = 0; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0) ? 0.03 : rand(0.1, 0.35); }
+      if (o.follow > 0 || o.buddy) resolveAgent(o.pos, 0.3);
+      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = 0; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0 || o.buddy) ? 0.03 : rand(0.1, 0.35); }
     } else {
       o.rest -= dt;
       if (d > 0.8) {
         o.heading += angDiff(o.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 10);
         if (o.rest <= 0) {
-          const sp = (o.follow > 0 || o.scare > 0) ? clamp(d / 0.36, 3, 8) : 2.6;
-          if (wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) { o.rest = 0.6; o.tx = o.pos.x; o.tz = o.pos.z; }
-          else { o.hopP = 0.001; o.hopSpeed = sp; }
+          const sp = (o.follow > 0 || o.scare > 0 || o.buddy) ? clamp(d / 0.36, 3, 8) : 2.6;
+          if (wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) {
+            o.rest = 0.6; o.tx = o.pos.x; o.tz = o.pos.z;
+            if (o.follow > 0 && (o.stuckT += 0.6) > 2.4 && o.onStuck) { o.onStuck(o); o.stuckT = -20; }   // no nada: hay que cruzar por el puente
+          }
+          else { o.hopP = 0.001; o.hopSpeed = sp; if (o.stuckT > 0) o.stuckT = 0; }
         }
       } else if (dp < 4.5) o.heading += angDiff(o.heading, Math.atan2(dxp, dzp)) * Math.min(1, dt * 5);
     }
     mesh.rotation.y = o.heading;
   };
-  o.interact = () => { o.follow = 12; o.scare = 0; burst('heart', o.pos.x, 0.9, o.pos.z, 3); say(o, choose(['¡Hop, hop!', '(mueve la naricita)', '¡Te sigo!']), 2.2); SFX.nice(); };
+  o.interact = () => { if (o.buddy) { say(o, '(no se separa de Tofu)', 2); burst('heart', o.pos.x, 0.9, o.pos.z, 2); return; }
+    o.follow = petRabbit(o); o.scare = 0; burst('heart', o.pos.x, 0.9, o.pos.z, 3); say(o, choose(['¡Hop, hop!', '(mueve la naricita)', '¡Te sigo!']), 2.2); SFX.nice(); };
   creatures.push(o); interacts.push({ pos: o.pos, range: 3.2, label: 'Acariciar al conejo', act: o.interact, who: o });
   return o;
 }
@@ -1389,7 +1493,11 @@ function updateFish(dt) {
   for (const f of fishes) {
     f.t += dt;
     if (f.t < 0) continue;
-    if (!f.m.visible) { f.x = clamp(player.pos.x + rand(-22, 22), -58, 58); if (Math.abs(f.x - BR.x) < 3) f.x += 6; f.dir = Math.random() < 0.5 ? 1 : -1; f.z0 = riverZ(f.x) - f.dir * 1.6; f.m.visible = true; burst('splash', f.x, 0.2, f.z0, 4); }
+    if (!f.m.visible) {
+      const bx = fishBias();                       // con el encargo de los peces, saltan cerca de quien espera en la orilla
+      f.x = clamp(bx != null ? bx + rand(-4, 4) : player.pos.x + rand(-22, 22), -58, 58); if (Math.abs(f.x - BR.x) < 3) f.x += 6;
+      f.dir = Math.random() < 0.5 ? 1 : -1; f.z0 = riverZ(f.x) - f.dir * 1.6; f.m.visible = true; burst('splash', f.x, 0.2, f.z0, 4); fishJumped(f);
+    }
     const k = f.t / 0.9;
     if (k >= 1) { f.m.visible = false; burst('splash', f.x, 0.2, f.z0 + f.dir * 3.2, 4); if (Math.hypot(player.pos.x - f.x, player.pos.z - f.z0) < 25) SFX.splash(); f.t = -rand(1.5, 5); continue; }
     f.m.position.set(f.x, Math.sin(k * Math.PI) * 1.3, f.z0 + f.dir * 3.2 * k);
@@ -1407,7 +1515,8 @@ makeButterfly(-4, 8, '#ffd23f'); makeButterfly(8, 11, '#ff8fb1');
 // ───────────────────────── Tamachin (jugador) ─────────────────────────
 const SAVE_KEY = 'tamachin.v1';
 const player = { T: makeTamachin({ shape: 'bola', color: '#ffc93c', mood: 'contento', scale: 1.3 }), vx: 0, vz: 0, vy: 0, heading: 0, onGround: true, state: 'normal', r: 0.62,
-  baseMood: 'contento', tempMood: null, tempT: 0, onTempEnd: null, inv: 0, idleT: 0, speedN: 0, spin: 0, flySpin: 0, flatT: 0, sleepT: 0, inWater: false, inHouse: false, lastTrick: null, moved: 0 };
+  baseMood: 'contento', tempMood: null, tempT: 0, onTempEnd: null, inv: 0, idleT: 0, speedN: 0, spin: 0, flySpin: 0, flatT: 0, sleepT: 0, inWater: false, inHouse: false, lastTrick: null, moved: 0,
+  needLow: null, needMood: null, busy: null, carry: null };
 player.pos = player.T.pos; player.pos.set(0, 0, 3.5); player.bubblePos = player.T.bubblePos;
 const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0 };
 const ZOOMS = [1, 0.62, 1.42], ZOOM_LABEL = ['Acercar', 'Alejar', 'Vista normal'];
@@ -1417,10 +1526,72 @@ const joy = { x: 0, y: 0, id: null };
 const keys = {};
 let VW = 1, VH = 1, curInteract = null;
 
-function applyMood() { player.T.setMood(player.tempMood || player.baseMood); }
+// El ánimo que se ve: uno pasajero (truco, susto) > el de una necesidad baja > el que se eligió en el panel.
+function applyMood() { player.T.setMood(player.tempMood || player.needMood || player.baseMood); }
 function setTemp(mood, dur, onEnd) { player.tempMood = mood; player.tempT = dur; player.onTempEnd = onEnd || null; applyMood(); }
 function clearTemp() { player.tempMood = null; player.tempT = 0; player.onTempEnd = null; applyMood(); }
-function save() { try { localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: player.T.shape, color: player.T.color, mood: player.baseMood })); } catch (e) { /* sin almacenamiento */ } }
+
+// ───────────────────────── necesidades: panza, energía, diversión ─────────────────────────
+// Bajan solas (más rápido al correr). Si una queda baja, manda en el ánimo hasta que se recupera. Nunca pasa nada peor.
+const NEEDS = {
+  panza: { label: 'Panza', drain: 1 / 720, mood: 'enojado', fill: 'el refri de casa y las bayas del bosque',
+    lines: ['¡Mi panza hace ruidos!', 'Tengo hambre…', 'Se me antoja algo rico…'], tip: 'Tamachin tiene hambre: abre el refri de casa o come bayas en el bosque.' },
+  energia: { label: 'Energía', drain: 1 / 1080, mood: 'dormido', fill: 'una siesta en su cama y la fogata del bosque',
+    lines: ['¡Aaah… qué sueño!', 'Se me cierran los ojitos…', 'Una siesta me caería bien…'], tip: 'Tamachin tiene sueño: llévalo a dormir una siesta en su cama.' },
+  diversion: { label: 'Diversión', drain: 1 / 600, mood: 'triste', fill: 'trucos, la tele, la fuente, platicar con los vecinos y acariciar animales',
+    lines: ['Me aburro…', '¿Jugamos a algo?', 'Hazme un mimo…'], tip: 'Tamachin se aburre: hazle trucos, platica con los vecinos o mira la tele.' },
+};
+const NEED_LOW = 0.22, NEED_OK = 0.34;
+const needs = { panza: 0.8, energia: 0.85, diversion: 0.75 };
+const needGate = {}, needPulse = {};
+// sube una necesidad; con `key` solo una vez cada `cd` segundos (para que repetir lo mismo no la llene)
+function gain(k, amt, key, cd) {
+  if (key) { if ((needGate[key] || 0) > clock) return false; needGate[key] = clock + (cd || 10); }
+  const before = needs[k]; needs[k] = clamp(needs[k] + amt, 0, 1); if (needs[k] > before + 0.004) needPulse[k] = clock + 0.7; return true;
+}
+let needSaveT = 0, lowSayT = 0;
+function updateNeeds(dt) {
+  const P = player;
+  if (P.state === 'sleep') gain('energia', dt / 9);
+  else {
+    const act = P.speedN > 1.3 ? 1.6 : P.speedN > 0.1 ? 1.15 : 1;
+    needs.panza = Math.max(0, needs.panza - NEEDS.panza.drain * act * dt);
+    needs.energia = Math.max(0, needs.energia - NEEDS.energia.drain * act * dt);
+    needs.diversion = Math.max(0, needs.diversion - NEEDS.diversion.drain * dt);
+  }
+  if (house.tvOn && P.inHouse && P.state === 'normal') gain('diversion', dt * 0.03);
+  let worst = null, wv = 1;                                         // la más baja manda, con histéresis para no parpadear
+  if (clock > 4) for (const k in NEEDS) { const v = needs[k]; if (v < (P.needLow === k ? NEED_OK : NEED_LOW) && v < wv) { worst = k; wv = v; } }   // tras el saludo
+  if (worst !== P.needLow) {
+    const was = P.needLow; P.needLow = worst; P.needMood = worst ? NEEDS[worst].mood : null; applyMood();
+    if (worst) { if (P.state === 'normal') say(P, choose(NEEDS[worst].lines), 2.6); toast(NEEDS[worst].tip, 5); SFX.low(); lowSayT = 30; }
+    else if (was && P.state === 'normal') say(P, '¡Ahora sí, como nuevo!', 2);
+  }
+  if (worst && (lowSayT -= dt) <= 0) { if (P.state === 'normal') say(P, choose(NEEDS[worst].lines), 2.4); lowSayT = rand(24, 36); }
+  if ((needSaveT += dt) > 8) { needSaveT = 0; save(); }
+}
+
+// ───────────────────────── encargos ─────────────────────────
+// 0: sin descubrir, 1: en curso, 2: hecho. Salen de lo que ya decían los vecinos y la carta del buzón.
+const QUESTS = {
+  conejo: { title: 'Un amigo para Tofu', hint: 'Acaricia un conejo en el bosque y llévalo caminando hasta Tofu, en la manzana al sur de tu casa.', done: 'Tofu y su conejo pasean juntos.' },
+  peces: { title: 'Peces saltarines', hint: 'Quédate quieto en la orilla del río del bosque hasta ver saltar un pez de cerca.', done: 'Viste un pez saltarín de cerca.' },
+  fuente: { title: 'Un paseo con Lulú', hint: 'Lulú camina contigo: llévala hasta la fuente del parque, al norte de tu casa.', done: 'Lulú se quedó admirando la fuente.' },
+  gelatina: { title: 'Gelatina para Nube', hint: 'Saca una gelatina del refri y llévasela a Nube, en la manzana al este de tu casa.', done: 'Nube probó su gelatina y ya no tiene sueño.' },
+};
+const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0 };
+function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
+function finishQuest(id) {
+  quests[id] = 2; toast('¡Encargo cumplido! ' + QUESTS[id].title, 4.5); SFX.yay(); gain('diversion', 0.3);
+  burst('star', player.pos.x, player.pos.y + 1.8, player.pos.z, 6); renderDiary(); save();
+}
+
+function save() {
+  try {
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: player.T.shape, color: player.T.color, mood: player.baseMood,
+      needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests }));
+  } catch (e) { /* sin almacenamiento */ }
+}
 
 const TRICKS = ['hop', 'spin', 'flip', 'dance', 'wave', 'giggle', 'wink'];
 const TRICK_SAY = { hop: '¡Yupi!', spin: '¡Wiii!', flip: '¡Mira esto!', dance: '¡A bailar!', wave: '¡Hola, hola!', giggle: '¡Ji, ji, ji!', wink: '¡Guiño!' };
@@ -1431,7 +1602,7 @@ function playerTrick() {
   if (T.mood === 'dormido') { t = 'giggle'; line = 'Mmm… cinco minutos más…'; }
   else if (T.mood === 'triste') { t = choose(['giggle', 'wave']); line = '…gracias por el mimo.'; }
   else if (T.mood === 'enojado') { t = choose(['spin', 'hop']); line = '¡Hmpf! ¡No me piques!'; }
-  T.doTrick(t); T.poke(t === 'giggle' ? 2 : 4); say(P, line, 1.8); SFX.pop();
+  T.doTrick(t); T.poke(t === 'giggle' ? 2 : 4); say(P, line, 1.8); SFX.pop(); gain('diversion', 0.035, 'truco', 1.5);
   burst(T.mood === 'triste' ? 'heart' : 'spark', P.pos.x, P.pos.y + 1.7, P.pos.z, 4);
 }
 function makeDizzy(dur) {
@@ -1472,21 +1643,169 @@ function wake() {
   P.state = 'normal'; P.T.lie = 0; P.pos.set(-2.7, 0, -10.4); clearTemp(); P.T.doTrick('hop'); say(P, '¡Qué buena siesta!', 2); SFX.nice();
 }
 
+// ───────────────────────── comer ─────────────────────────
+// Lo que sale del refri: piezas propias (no las de la repisa), con el origen en la base.
+const FOODS = {
+  gelatina: { line: '¡Ñam! Gelatina de mango.', from: [5.27, 0.2, -12.13], make: (b) => b.cyl('#ffffff', 0, 0.02, 0, 0.26, 0.26, 0.04, 18).cyl('#ffb347', 0, 0.15, 0, 0.15, 0.2, 0.24, 18).cyl('#ffd27a', 0, 0.275, 0, 0.14, 0.14, 0.02, 18).sph('#ff5d5d', 0, 0.31, 0, 0.05) },
+  tamal: { line: '¡Ñam! Un tamalito recién hecho.', from: [4.85, 0.7, -12.13], make: (b) => b.rbox('#d9c27a', 0, 0.09, 0, 0.42, 0.16, 0.2, 0.07).rbox('#f2c94c', 0.02, 0.12, 0.01, 0.3, 0.12, 0.17, 0.05).cone('#c9b067', -0.26, 0.09, 0, 0.08, 0.14, 6) },
+  sandia: { line: '¡Glup! Juguito de sandía.', from: [5.48, 0.72, -12.19], make: (b) => b.cyl('#dff6ff', 0, 0.15, 0, 0.11, 0.09, 0.3, 14).cyl('#ff5d73', 0, 0.13, 0, 0.1, 0.085, 0.24, 14).cyl('#ffffff', 0.05, 0.33, 0, 0.012, 0.012, 0.22, 6, 0, -0.3).add(gCyl(1, 12), '#58b368', -0.1, 0.27, 0, 0.07, 0.02, 0.07, Math.PI / 2, 0, 0.5) },
+  helado: { line: '¡Mmm! Helado de vainilla.', from: [5.33, 1.66, -12.17], make: (b) => b.add(gCone(10), '#d9a066', 0, 0.13, 0, 0.1, -0.26, 0.1).sph('#fff4d6', 0, 0.3, 0, 0.12).sph('#ff9db8', 0.03, 0.41, 0.02, 0.09).sph('#ff3b4f', 0.02, 0.51, 0.03, 0.035) },
+};
+for (const k in FOODS) { const m = new Batch(); FOODS[k].make(m); FOODS[k].mesh = m.mesh(MAT_SOFT); FOODS[k].mesh.visible = false; scene.add(FOODS[k].mesh); }
+const berryBits = [0, 1, 2].map(() => { const m = new THREE.Mesh(berryMesh.geometry, new THREE.MeshLambertMaterial()); m.visible = false; scene.add(m); return m; });
+const _ev = new THREE.Vector3(), _ev2 = new THREE.Vector3();
+// la boca de Tamachin y un punto un poco más adelante (las manos), en el mundo
+function mouthAt(v, ahead) { const P = player, sc = P.T.scale, f = 0.6 + (ahead || 0); return v.set(P.pos.x + Math.sin(P.heading) * f * sc, P.pos.y + (P.T.def.mouthY + 0.04) * sc, P.pos.z + Math.cos(P.heading) * f * sc); }
+const arc = (out, a, b, k, h) => out.lerpVectors(a, b, k).setY(lerp(a.y, b.y, k) + Math.sin(k * Math.PI) * h);
+const turnTo = (P, h, dt, rate) => { P.heading += angDiff(P.heading, h) * Math.min(1, dt * rate); };
+// Una secuencia que ocupa a Tamachin unos segundos: no camina ni hace trucos; `cam` acerca la cámara.
+function startBusy(seq) { const P = player; P.state = 'busy'; P.busy = seq; seq.t = 0; seq.fired = {}; P.vx = P.vz = 0; }
+const once = (s, key, at) => (s.t >= at && !s.fired[key] ? (s.fired[key] = true) : false);
+
+// refri: se acerca, abre con rebote, sale la luz y el frío, la comida vuela a sus manos y se la come a mordidas
+function openFridge() {
+  const P = player, fr = house.fridge, keep = quests.gelatina === 1 && !P.carry;      // la gelatina de Nube no se come
+  const kind = keep ? 'gelatina' : choose(Object.keys(FOODS)), F = FOODS[kind], food = F.mesh;
+  const spot = new THREE.Vector3(3.95, P.pos.y, -10.85), from = new THREE.Vector3(...F.from), start = P.pos.clone();
+  const toFridge = Math.atan2(5.15 - spot.x, -11.75 - spot.z);
+  startBusy({ dur: keep ? 2.6 : 3.3, cam: { x: 4.6, y: 1.0, z: -11.2, ox: -0.9, oy: 2.5, oz: 4.2 },   // entre la mesa y el refri, de frente a Tamachin
+    update(dt, t) {
+      const s = this;
+      if (t < 0.35) { P.pos.lerpVectors(start, spot, ease(t / 0.35)); turnTo(P, toFridge, dt, 10); }
+      if (once(s, 'open', 0.3)) { fr.target = 1; SFX.fridgeOpen(); setTemp('asombrado', 1.1); emit('excl', P.pos.x, P.pos.y + 2.0, P.pos.z); P.T.poke(3); }
+      for (const [k, at] of [['m1', 0.38], ['m2', 0.55], ['m3', 0.8], ['m4', 1.1]]) if (once(s, k, at)) for (let i = 0; i < 3; i++) emit('mist', rand(4.75, 5.55), rand(0.5, 1.9), -11.6, { spread: 0.9 });
+      if (once(s, 'shine', 0.5)) burst('spark', 5.15, 1.4, -11.9, 4);
+      if (once(s, 'launch', 0.95)) { food.visible = true; food.scale.setScalar(1); food.position.copy(from); }
+      if (t >= 0.9) turnTo(P, 0, dt, 7);                                      // se voltea hacia la cámara con la comida
+      if (t >= 0.95 && t < 1.4) { mouthAt(_ev, 0.32).y -= 0.18; arc(food.position, from, _ev, ease((t - 0.95) / 0.45), 0.7); food.rotation.y = (t - 0.95) * 14; }
+      if (once(s, 'catch', 1.4)) { P.T.poke(4.5); SFX.pop(); food.rotation.set(0, 0, 0); if (!keep) say(P, F.line, 2.2); else say(P, '¡Una gelatina para Nube!', 2.4); }
+      if (t >= 1.4 && !keep) {
+        const bites = Math.min(3, Math.floor((t - 1.55) / 0.42) + 1), sc = t < 1.55 ? 1 : Math.pow(0.6, bites) * (bites >= 3 && t > 2.55 ? Math.max(0, 1 - (t - 2.55) / 0.15) : 1);
+        mouthAt(_ev, 0.3 - 0.06 * bites).y -= 0.16 - 0.04 * bites; food.position.lerp(_ev, Math.min(1, dt * 12)); food.scale.setScalar(Math.max(0.001, sc));
+        for (const [k, at] of [['b1', 1.55], ['b2', 1.97], ['b3', 2.39]]) if (once(s, k, at)) { P.T.poke(2.8); SFX.munch(); mouthAt(_ev2, 0.25); burst('crumb', _ev2.x, _ev2.y, _ev2.z, 4); }
+        if (once(s, 'gone', 2.7)) { food.visible = false; burst('heart', P.pos.x, P.pos.y + 1.9, P.pos.z, 5); SFX.nice(); gain('panza', 0.55); gain('diversion', 0.04); setTemp('contento', 2.5); }
+      }
+      if (t >= 1.4 && keep) { const k = Math.min(1, (t - 1.4) / 0.5); _ev.set(P.pos.x, P.pos.y + (P.T.def.H + 0.35) * P.T.scale, P.pos.z); food.position.lerp(_ev, k); }
+      if (once(s, 'close', keep ? 1.9 : 2.05)) fr.target = 0;
+    },
+    end() { if (keep) P.carry = { kind, mesh: food }; },
+  });
+}
+
+// bayas: hasta tres saltan del arbusto a su boca, una tras otra
+function eatBerries(b) {
+  const P = player, ripe = b.berries.filter((q) => q.k >= 0.999).slice(0, 3); if (!ripe.length) return;
+  const face = Math.atan2(b.x - P.pos.x, b.z - P.pos.z), first = !b.tasted; b.tasted = true;
+  berryBits.forEach((m, i) => { m.material.color.set(b.kind.color); m.visible = false; m.userData.q = ripe[i]; });
+  startBusy({ dur: 1.35 + 0.18 * ripe.length, cam: null,
+    update(dt, t) {
+      const s = this; turnTo(P, t < 0.9 ? face : 0, dt, 9);
+      ripe.forEach((q, i) => {
+        const m = berryBits[i], t0 = 0.15 + i * 0.18, k = (t - t0) / 0.38;
+        if (k >= 0 && k < 1) {
+          if (!m.visible) { m.visible = true; q.k = 0; setBerry(b, q); berryMesh.instanceMatrix.needsUpdate = true; m.scale.setScalar(0.118 * b.s); }
+          mouthAt(_ev, 0.12); arc(m.position, _ev2.set(q.x, q.y, q.z), _ev, k, 0.5);
+        } else if (k >= 1 && m.visible) { m.visible = false; P.T.poke(2.4); SFX.munch(); mouthAt(_ev, 0.2); burst('crumb', _ev.x, _ev.y, _ev.z, 2); q.back = clock + rand(50, 75); }
+      });
+      if (once(s, 'say', 0.2)) say(P, first ? '¡Ñam! ' + b.kind.name[0].toUpperCase() + b.kind.name.slice(1) + '.' : choose(['¡Qué jugosas!', '¡Ñam, ñam!', '¡Mmm, dulcecitas!']), 1.8);
+      if (once(s, 'full', 0.6 + 0.18 * ripe.length)) { gain('panza', 0.06 * ripe.length); burst('heart', P.pos.x, P.pos.y + 1.8, P.pos.z, 2); }
+    },
+  });
+}
+let berryDirty = false;
+function updateBerries(dt) {
+  for (const b of berryBushes) for (const q of b.berries) if (q.k < 1 && q.back && clock > q.back) { q.k = Math.min(1, q.k + dt * 1.6); setBerry(b, q); berryDirty = true; }
+  if (berryDirty) { berryMesh.instanceMatrix.needsUpdate = true; berryDirty = false; }
+}
+function updateFridge(dt) {
+  const fr = house.fridge, was = fr.open;
+  fr.v += (fr.target - fr.open) * 95 * dt - fr.v * 8.5 * dt; fr.open = clamp(fr.open + fr.v * dt, -0.04, 1.12);   // resorte: rebota al abrir y al cerrar
+  if (fr.target === 0 && was > 0.05 && fr.open <= 0.05) { SFX.fridgeShut(); burst('mist', 5.15, 0.9, -11.55, 3); }
+  fr.pivot.rotation.y = Math.max(0, fr.open) * 1.35;                 // abierta queda junto a la pared
+  const g = clamp(fr.open * 1.3, 0, 1); fr.panelMat.color.setRGB(lerp(0.62, 0.95, g), lerp(0.72, 0.99, g), lerp(0.75, 1, g));
+  fr.poolMat.opacity = g * 0.55; fr.beamMat.opacity = g * 0.42; fr.pool.visible = fr.beam.visible = g > 0.02;
+}
+
 // cosas con las que se puede interactuar
 for (const n of npcs) interacts.push({ pos: n.pos, range: 3.1, label: 'Hablar con ' + n.name, act: () => talkTo(n), who: n });
 interacts.push({ pos: { x: -2.8, z: -10.5 }, range: 1.7, label: 'Dormir una siesta', act: goSleep });
-interacts.push({ pos: { x: 5.1, z: -11.2 }, range: 1.7, label: 'Abrir el refri', act: () => {
-  const P = player; say(P, choose(['¡Ñam! Gelatina de mango.', '¡Ñam! Un tamalito recién hecho.', '¡Glup! Juguito de sandía.', '¡Mmm! Helado de vainilla.']), 2.4);
-  P.T.doTrick('giggle'); burst('heart', P.pos.x, 1.9, P.pos.z, 4); SFX.nice(); if (P.baseMood !== 'contento') setTemp('contento', 4); } });
+interacts.push({ pos: { x: 5.1, z: -11.2 }, range: 1.7, label: 'Abrir el refri', act: openFridge });
 interacts.push({ pos: { x: -3.1, z: -6.6 }, range: 1.7, label: () => (house.tvOn ? 'Apagar la tele' : 'Encender la tele'), act: () => {
-  house.tvOn = !house.tvOn; if (house.tvOn) { say(player, '¡Oh, mi programa favorito!', 2.2); setTemp('asombrado', 2.2); SFX.pop(); } else house.tvMat.color.set(0x15151c); } });
+  house.tvOn = !house.tvOn; if (house.tvOn) { say(player, '¡Oh, mi programa favorito!', 2.2); setTemp('asombrado', 2.2); SFX.pop(); gain('diversion', 0.06, 'tele', 20); } else house.tvMat.color.set(0x15151c); } });
 interacts.push({ pos: { x: 0, z: -45 }, range: 4.4, label: 'Pedir un deseo', act: () => {
   const P = player; say(P, choose(['Deseo… ¡un helado gigante!', 'Deseo… ¡que nunca llueva en domingo!', 'Deseo… ¡un amigo conejo!', 'Deseo… ¡ojos todavía más grandes!']), 2.8);
-  burst('spark', 0, 2.6, -45, 8); burst('splash', 0, 2.3, -45, 6); P.T.doTrick('hop'); SFX.nice(); } });
+  burst('spark', 0, 2.6, -45, 8); burst('splash', 0, 2.3, -45, 6); P.T.doTrick('hop'); SFX.nice(); gain('diversion', 0.15, 'fuente', 20); } });
 interacts.push({ pos: { x: CAMP.x, z: CAMP.z }, range: 2.7, label: 'Calentarse en la fogata', act: () => {
-  const P = player; say(P, '¡Qué calientito!', 2.2); burst('spark', CAMP.x, 1.3, CAMP.z, 6); P.T.doTrick('dance'); if (P.baseMood !== 'contento') setTemp('contento', 5); } });
+  const P = player; say(P, '¡Qué calientito!', 2.2); burst('spark', CAMP.x, 1.3, CAMP.z, 6); P.T.doTrick('dance'); if (P.baseMood !== 'contento') setTemp('contento', 5);
+  if (gain('energia', 0.15, 'fogata', 20)) gain('diversion', 0.1); } });
 interacts.push({ pos: { x: 2.5, z: 15.4 }, range: 1.7, label: 'Abrir el buzón', act: () => {
+  if (!quests.peces) { say(player, 'Una carta: «Ven al bosque, hay peces saltarines».', 3.2); startQuest('peces'); SFX.pop(); return; }
   say(player, choose(['Una carta: «Ven al bosque, hay peces saltarines».', 'Una postal del búho: «Uuh, uuh».', 'Un volante: «Gelatina a mitad de precio».', 'El buzón está vacío… ¡y huele a flores!']), 3.2); SFX.pop(); } });
+for (const b of berryBushes) interacts.push({ pos: { x: b.x, z: b.z }, range: 2.3, label: 'Comer ' + b.kind.name, act: () => eatBerries(b), ok: () => b.berries.some((q) => q.k >= 0.999) });
+// platicar y acariciar también divierten (una vez cada tanto por cada quien)
+for (const c of creatures) { const f = c.interact; c.interact = () => { f(); gain('diversion', 0.07, 'mimo' + creatures.indexOf(c), 8); }; }
+for (const it of interacts) if (it.who && it.who.kind !== 'vecino') it.act = it.who.interact;
+
+// encargos en los vecinos
+const npcBy = (name) => npcs.find((n) => n.name === name);
+const tofu = npcBy('Tofu'), lulu = npcBy('Lulú'), nube = npcBy('Nube'), rocio = npcBy('Rocío');
+tofu.onTalk = () => {
+  if (quests.conejo === 2) return Math.random() < 0.5 ? choose(['¡Mi conejo y yo le damos vueltas a la manzana!', '¡Gracias por traerme un amigo!']) : null;
+  if (!quests.conejo) { startQuest('conejo'); return 'Extraño a mi amigo el conejo… ¿me traerías uno del bosque?'; }
+  return creatures.some((c) => c.kind === 'conejo' && c.follow > 0) ? '¡Ya casi! Tráelo un poquito más cerca.' : 'Los conejos viven en el bosque, al norte. Si caminas despacio, no huyen.';
+};
+function petRabbit(o) {
+  if (quests.conejo !== 1) return 12;
+  o.onLost = (r) => { say(r, '(se cansó de seguirte)', 2); toast('El conejo se quedó atrás. Camina sin correr para que te siga.', 4); };
+  o.onStuck = () => toast('Los conejos no nadan: cruza el río por el puente.', 4);
+  return 1e9;                                                         // te sigue hasta que llegue con Tofu o lo dejes atrás
+}
+function giveRabbit(r) {
+  r.follow = 0; r.buddy = tofu; r.onLost = r.onStuck = null; r.home = { x: r.pos.x, z: r.pos.z };
+  tofu.mood0 = 'contento'; tofu.cheer = 0; tofu.T.setMood('contento');
+}
+lulu.onTalk = (n) => {
+  if (quests.fuente === 2) return Math.random() < 0.5 ? '¡La fuente brilla más cuando vienes!' : null;
+  if (n.follow) return '¡Vamos! La fuente está en el parque, al norte de tu casa.';
+  if (!quests.fuente) startQuest('fuente');
+  if (n.loopSaved) { n.loop = n.loopSaved; n.loopSaved = null; n.home = null; }
+  n.follow = luluFollow; n.lostAt = 0; return '¿Me acompañas a ver la fuente? ¡Vamos juntos!';
+};
+function luluFollow(n, d) {
+  if (Math.hypot(n.pos.x, n.pos.z + 45) < 10) {                      // ya en la plaza de la fuente (camina un poco detrás de Tamachin)
+    n.follow = null; n.loop = null; n.home = LULU_SPOT; n.goto = { x: LULU_SPOT.x, z: LULU_SPOT.z }; finishQuest('fuente'); say(n, '¡Qué bonita! Gracias por acompañarme.', 3); n.T.doTrick('dance'); burst('heart', n.pos.x, 1.8, n.pos.z, 6); return;
+  }
+  if (d < 26) { n.lostAt = 0; return; }
+  if (!n.lostAt) { n.lostAt = clock; say(n, '¡Espérame!', 2); }
+  else if (clock - n.lostAt > 7 || d > 60) {                           // se cansa: se queda ahí y luego vuelve a su paseo
+    n.follow = null; n.loopSaved = n.loop; n.loop = null; n.home = { x: n.pos.x, z: n.pos.z, ry: n.heading };
+    toast('Lulú se cansó de esperar. Platica con ella para intentarlo otra vez.', 4.5);
+  }
+}
+const LULU_SPOT = { x: 2.2, z: -39.6, ry: Math.atan2(-2.2, -5.4) };
+nube.onTalk = (n) => {
+  if (quests.gelatina === 2) return null;
+  if (player.carry && player.carry.kind === 'gelatina') {
+    player.carry.mesh.visible = false; player.carry = null; finishQuest('gelatina');
+    n.mood0 = 'contento'; n.T.setMood('contento'); burst('heart', n.pos.x, 1.8, n.pos.z, 5); return '¡Gelatina! Ñam… ¡ya se me quitó el sueño!';
+  }
+  if (!quests.gelatina) { startQuest('gelatina'); return 'Zzz… sueño con gelatina… ¿me traes una del refri?'; }
+  return 'Zzz… gelatina… del refri de tu casa… zzz…';
+};
+rocio.onTalk = () => { if (quests.peces) return null; startQuest('peces'); return 'Si esperas quieto en la orilla, los peces saltan cerquita.'; };
+// peces: con el encargo en curso saltan cerca de quien espera quieto en la orilla, y verlo de cerca lo cumple
+function fishBias() { const P = player; return quests.peces === 1 && P.speedN < 0.4 && Math.abs(P.pos.z - riverZ(P.pos.x)) < 11 ? P.pos.x : null; }
+let fishSeenAt = 0;
+function fishJumped(f) { if (quests.peces === 1 && !fishSeenAt && Math.hypot(player.pos.x - f.x, player.pos.z - riverZ(f.x)) < 9) fishSeenAt = clock + 0.45; }
+function updateQuests(dt) {
+  const P = player;
+  if (quests.conejo === 1) for (const c of creatures) if (c.kind === 'conejo' && c.follow > 0 && Math.hypot(c.pos.x - tofu.pos.x, c.pos.z - tofu.pos.z) < 3.6) {
+    giveRabbit(c); finishQuest('conejo'); tofu.talkT = 3; say(tofu, '¡Mi amigo conejo! ¡Gracias, gracias!', 3.2); say(c, '¡Hop!', 1.6); tofu.T.doTrick('dance'); burst('heart', tofu.pos.x, 1.8, tofu.pos.z, 6); break;
+  }
+  if (fishSeenAt && clock >= fishSeenAt) { fishSeenAt = 0; if (quests.peces === 1) { finishQuest('peces'); say(P, '¡Un pez saltarín! ¡Lo vi, lo vi!', 2.6); P.T.doTrick('hop'); } }
+  if (lulu.loopSaved && Math.hypot(lulu.pos.x - P.pos.x, lulu.pos.z - P.pos.z) > 80) { lulu.loop = lulu.loopSaved; lulu.loopSaved = null; lulu.home = null; }
+  if (P.carry) { const m = P.carry.mesh; m.position.set(P.pos.x, P.pos.y + (P.T.def.H + 0.3 + Math.sin(clock * 3) * 0.06) * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z); m.rotation.y += dt * 1.2; }
+}
 
 // ───────────────────────── entrada: teclado, puntero y táctil ─────────────────────────
 window.addEventListener('keydown', (e) => {
@@ -1498,7 +1817,8 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   keys[c] = true; unlockAudio();
   if (tg === 'BUTTON' && (c === 'Space' || c === 'Enter')) return;
-  if (c === 'Space') jump(); else if (c === 'KeyE' || c === 'Enter') doAction(); else if (c === 'KeyC') togglePanel(); else if (c === 'Escape' && ui.closeup) togglePanel(false);
+  if (c === 'Space') jump(); else if (c === 'KeyE' || c === 'Enter') doAction(); else if (c === 'KeyC') togglePanel(); else if (c === 'KeyJ') toggleDiary();
+  else if (c === 'Escape') { if (!diaryEl.hidden) toggleDiary(false); else if (ui.closeup) togglePanel(false); }
 });
 // en macOS no llega keyup de las teclas soltadas mientras Cmd está abajo: al soltar Cmd se liberan todas
 window.addEventListener('keyup', (e) => { keys[e.code] = false; if (e.key === 'Meta') for (const k in keys) keys[k] = false; });
@@ -1601,14 +1921,45 @@ function syncPanel() {
 }
 function setShape(k) { player.T.setShape(k); player.T.poke(5); burst('spark', player.pos.x, player.pos.y + 1.4, player.pos.z, 5); SFX.pop(); syncPanel(); save(); }
 function setColor(c) { player.T.setColor(c); player.T.poke(2.5); syncPanel(); save(); }
-function setMood(k) { player.baseMood = k; if (player.state !== 'sleep') clearTemp(); player.T.poke(3); SFX.pop(); syncPanel(); save(); }
+function setMood(k) { player.baseMood = k; if (player.state !== 'sleep') clearTemp(); player.T.poke(3); SFX.pop(); syncPanel(); save(); if (player.needLow) toast(NEEDS[player.needLow].tip, 4); }
 const panelEl = $('#panel'), bCustom = $('#bCustom');
 function togglePanel(on) {
   if (on === undefined) on = panelEl.hidden;
   if (on && player.state === 'sleep') wake();
+  if (on && !diaryEl.hidden) toggleDiary(false);
   panelEl.hidden = !on; ui.closeup = on; document.body.classList.toggle('custom', on); bCustom.setAttribute('aria-expanded', String(on)); bCustom.textContent = on ? 'Volver al mundo' : 'Personalizar';
   if (on) { syncPanel(); for (const k in keys) keys[k] = false; }
 }
+
+// diario: cómo está Tamachin y los encargos. Se abre con los medidores (o la tecla J).
+const diaryEl = $('#diary'), bNeeds = $('#needs'), needListEl = $('#needList'), questListEl = $('#questList'), questNoteEl = $('#questNote');
+const needEls = {}; bNeeds.querySelectorAll('.need').forEach((el) => { needEls[el.dataset.k] = { el, bar: el.querySelector('b') }; });
+function toggleDiary(on) {
+  if (on === undefined) on = diaryEl.hidden;
+  if (on && ui.closeup) togglePanel(false);
+  diaryEl.hidden = !on; bNeeds.setAttribute('aria-expanded', String(on)); document.body.classList.toggle('diary', on);
+  if (on) renderDiary();
+}
+function renderDiary() {
+  if (diaryEl.hidden) return;
+  needListEl.innerHTML = Object.keys(NEEDS).map((k) => '<div class="nrow n-' + k + '">' + needEls[k].el.querySelector('svg').outerHTML + '<strong>' + NEEDS[k].label + '</strong><span class="pct"></span>'
+    + '<span class="bar"><b></b></span><p>Se llena con ' + NEEDS[k].fill + '.</p></div>').join('');
+  const open = Object.keys(QUESTS).filter((k) => quests[k] === 1), done = Object.keys(QUESTS).filter((k) => quests[k] === 2), left = Object.keys(QUESTS).length - open.length - done.length;
+  questListEl.innerHTML = open.concat(done).map((k) => '<li class="' + (quests[k] === 2 ? 'done' : '') + '"><strong>' + QUESTS[k].title + '<em>' + (quests[k] === 2 ? 'Hecho' : 'En curso') + '</em></strong><p>'
+    + (quests[k] === 2 ? QUESTS[k].done : QUESTS[k].hint) + '</p></li>').join('');
+  questNoteEl.textContent = left ? (open.length + done.length ? 'Quedan ' + left + ' encargos por descubrir. ' : '') + 'Platica con los vecinos y revisa el buzón: hay quien necesita ayuda.' : '¡Descubriste todos los encargos!';
+  syncDiaryNeeds();
+}
+function syncDiaryNeeds() {
+  needListEl.querySelectorAll('.nrow').forEach((row, i) => { const k = Object.keys(NEEDS)[i]; row.querySelector('.pct').textContent = Math.round(needs[k] * 100) + ' %'; row.querySelector('b').style.transform = 'scaleX(' + needs[k].toFixed(3) + ')'; });
+}
+let needAriaT = 0;
+function syncNeedsHud() {
+  for (const k in needEls) { const e = needEls[k]; e.bar.style.transform = 'scaleX(' + needs[k].toFixed(3) + ')'; e.el.classList.toggle('low', player.needLow === k || needs[k] < NEED_LOW); e.el.classList.toggle('up', (needPulse[k] || 0) > clock); }
+  if (!diaryEl.hidden) syncDiaryNeeds();
+  if ((needAriaT -= 1) <= 0) { needAriaT = 5; bNeeds.setAttribute('aria-label', 'Abrir el diario. ' + Object.keys(NEEDS).map((k) => NEEDS[k].label + ' ' + Math.round(needs[k] * 100) + ' %').join(', ')); }
+}
+bNeeds.addEventListener('click', () => toggleDiary()); $('#dClose').addEventListener('click', () => toggleDiary(false));
 bCustom.addEventListener('click', () => togglePanel()); $('#pClose').addEventListener('click', () => togglePanel(false));
 const bZoom = $('#bZoom'), bSound = $('#bSound'), helpEl = $('#help');
 bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.textContent = ZOOM_LABEL[ui.zoomIdx]; });
@@ -1653,6 +2004,7 @@ function updatePlayer(dt) {
     }
   } else if (P.state === 'fly') { const k = Math.exp(-0.6 * dt); P.vx *= k; P.vz *= k; P.flySpin += dt * 13; }
   else { P.vx = P.vz = 0; }
+  if (P.state === 'busy') { const b = P.busy; b.t += dt; b.update(dt, b.t); if (b.t >= b.dur) { P.busy = null; P.state = 'normal'; if (b.end) b.end(); } }
 
   if (P.state === 'sleep') { P.sleepT += dt; if (P.sleepT > 9) wake(); }
   else {
@@ -1702,7 +2054,7 @@ function updateLead(dt) {
   camLead.k = damp(camLead.k, P.inHouse ? LEAD.house : 1, 3, dt);
 }
 function updateCamera(dt) {
-  const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, tx = P.pos.x, ty, tz = P.pos.z;
+  const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, ox = 0, tx = P.pos.x, ty, tz = P.pos.z;
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
   if (!camInit) camLead.x = camLead.z = 0;
   updateLead(dt);
@@ -1711,7 +2063,8 @@ function updateCamera(dt) {
     const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = Math.max(P.pos.y, -0.3) * 0.6 + 1.25;
     const f = z * camLead.k; tx = clamp(tx + camLead.x * f, -LIMIT, LIMIT); tz = clamp(tz + camLead.z * f, WORLD_N, LIMIT);   // sin mirar más allá del borde
   }
-  _ct.set(tx, ty, tz); _cp.set(tx, ty + oy, tz + oz);
+  if (P.state === 'busy' && P.busy.cam) { const c = P.busy.cam; tx = c.x; ty = c.y; tz = c.z; ox = c.ox || 0; oy = c.oy; oz = c.oz; }   // toma cercana (el refri)
+  _ct.set(tx, ty, tz); _cp.set(tx + ox, ty + oy, tz + oz);
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
   camSlope = (camPos.y - ty) / Math.max(1, camPos.z - P.pos.z);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
@@ -1778,11 +2131,11 @@ const zoneEl = $('#zone'), promptEl = $('#prompt'), promptText = $('#promptText'
 let hudT = 0, lastZone = '', lastPrompt = null;
 function updateHud(dt) {
   const P = player; let best = null, bd = Infinity;
-  if (P.state === 'normal' && !ui.closeup) for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd) { bd = d; best = it; } }
+  if (P.state === 'normal' && !ui.closeup) for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
   curInteract = best;
   const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
-  hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; } }
+  hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) helpEl.hidden = true;
 }
@@ -1791,7 +2144,9 @@ function resize() {
   const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
   if (w === VW && h === VH) return; VW = w; VH = h;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 48; camera.updateProjectionMatrix();
+  document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px');   // en teléfono la barra de arriba ocupa varias filas
 }
+const topEl = $('.top');
 let last = performance.now();
 function frame(now) {
   requestAnimationFrame(frame);
@@ -1799,7 +2154,8 @@ function frame(now) {
   if (document.hidden) return;
   resize(); clock += dt;
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
-  if (player.pos.z < -40) { for (const c of creatures) c.update(dt); updateFish(dt); }
+  for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
+  updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   renderer.render(scene, camera);
 }
@@ -1810,12 +2166,23 @@ function boot(data) {
   s = Object.assign(s, data || {});
   if (s.color) player.T.setColor(s.color); if (s.shape && SHAPES[s.shape]) player.T.setShape(s.shape);
   if (s.mood && MOODS[s.mood] && !MOODS[s.mood].hidden) player.baseMood = s.mood;
+  if (s.needs) for (const k in needs) if (typeof s.needs[k] === 'number' && isFinite(s.needs[k])) needs[k] = clamp(s.needs[k], 0, 1);
+  if (s.quests) for (const k in quests) if (s.quests[k] === 1 || s.quests[k] === 2) quests[k] = s.quests[k];
+  restoreQuests();
   if (typeof s.x === 'number' && typeof s.z === 'number') { player.pos.set(clamp(s.x, -LIMIT, LIMIT), 0, clamp(s.z, WORLD_N, LIMIT)); resolvePlayer(); }
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);
   requestAnimationFrame(frame);
 }
+// lo que dejó hecho un encargo sigue así al volver
+function restoreQuests() {
+  if (quests.conejo === 2) { const r = creatures.find((c) => c.kind === 'conejo'); giveRabbit(r); r.pos.set(tofu.pos.x + 1.2, 0, tofu.pos.z + 1); }
+  if (quests.fuente === 2) { lulu.loop = null; lulu.home = LULU_SPOT; lulu.pos.set(LULU_SPOT.x, 0, LULU_SPOT.z); lulu.heading = LULU_SPOT.ry; }
+  if (quests.gelatina === 2) { nube.mood0 = 'contento'; nube.T.setMood('contento'); }
+}
+window.addEventListener('pagehide', () => save());
+document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
 window.__tamachin = { player, cars, npcs, ui, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };

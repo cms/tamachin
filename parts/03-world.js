@@ -282,7 +282,18 @@ const house = (() => {
   solidBox(-2.1, 0.3, -12.8, -12.25);
   furnB.box('#f4f1e8', 3.0, 0.5, -12.3, 3.0, 1.0, 0.9).box('#8fd1c1', 3.0, 1.03, -12.3, 3.1, 0.08, 1.0).box('#3b4252', 2.2, 1.08, -12.3, 0.9, 0.04, 0.7).cyl('#c9ced6', 3.7, 1.08, -12.3, 0.3, 0.3, 0.05, 14)
     .cyl('#ff8a5c', 2.0, 1.2, -12.35, 0.16, 0.14, 0.2, 10).cyl('#ffd23f', 2.45, 1.17, -12.2, 0.13, 0.13, 0.14, 10); solidBox(1.5, 4.5, -12.75, -11.85);
-  furnB.rbox('#8fd9c8', 5.15, 1.15, -12.25, 1.1, 2.3, 1.0, 0.14).box('#ffffff', 4.72, 1.5, -11.73, 0.07, 0.6, 0.06).box('#6fbfae', 5.15, 0.78, -11.745, 1.02, 0.03, 0.02); solidBox(4.6, 5.7, -12.75, -11.75);
+  // refri: caja hueca con repisas y comida; la puerta va aparte, con bisagra a la derecha (ver `fridge` abajo)
+  const MINT = '#8fd9c8', FX = 5.15, FZ = -12.25;
+  furnB.rbox(MINT, FX, 1.15, FZ - 0.3, 1.1, 2.3, 0.4, 0.14).box(MINT, FX - 0.51, 1.15, FZ, 0.08, 2.3, 1.0).box(MINT, FX + 0.51, 1.15, FZ, 0.08, 2.3, 1.0)
+    .box(MINT, FX, 2.26, FZ, 1.1, 0.08, 1.0).box(MINT, FX, 0.08, FZ, 1.1, 0.16, 1.0).box('#dff3fb', FX, 1.62, FZ + 0.05, 0.94, 0.06, 0.88)
+    .box('#ffffff', FX, 0.66, FZ + 0.05, 0.94, 0.035, 0.84).box('#ffffff', FX, 1.14, FZ + 0.05, 0.94, 0.035, 0.84)
+    .box('#ffffff', FX - 0.24, 0.42, FZ + 0.1, 0.22, 0.46, 0.22).box('#5aa9ff', FX - 0.24, 0.44, FZ + 0.215, 0.18, 0.16, 0.01).cone('#5aa9ff', FX - 0.24, 0.72, FZ + 0.1, 0.16, 0.14, 4, Math.PI / 4)
+    .cyl('#ffb347', FX + 0.12, 0.28, FZ + 0.12, 0.13, 0.16, 0.2, 14).cyl('#ffd27a', FX + 0.12, 0.39, FZ + 0.12, 0.12, 0.12, 0.02, 14).cyl('#ffffff', FX + 0.12, 0.17, FZ + 0.12, 0.2, 0.2, 0.02, 14)
+    .cyl('#ff5d73', FX + 0.33, 0.92, FZ + 0.06, 0.07, 0.07, 0.4, 10).cyl('#ffffff', FX + 0.33, 1.13, FZ + 0.06, 0.04, 0.05, 0.06, 8)
+    .add(gCyl(1, 14), '#58b368', FX - 0.08, 0.84, FZ + 0.1, 0.2, 0.08, 0.2, Math.PI / 2, 0, 0).add(gCyl(1, 14), '#ff5d73', FX - 0.08, 0.84, FZ + 0.12, 0.17, 0.081, 0.17, Math.PI / 2, 0, 0)
+    .rbox('#d9c27a', FX - 0.3, 0.76, FZ + 0.12, 0.34, 0.16, 0.14, 0.06).sph('#ffffff', FX + 0.08, 1.21, FZ + 0.2, 0.06, 0.08, 0.06).sph('#ffffff', FX + 0.2, 1.21, FZ + 0.18, 0.06, 0.08, 0.06)
+    .cyl('#c58bff', FX - 0.2, 1.8, FZ + 0.08, 0.14, 0.12, 0.26, 12).cyl('#fff4d6', FX + 0.18, 1.75, FZ + 0.08, 0.16, 0.14, 0.18, 12).cyl('#ff9db8', FX + 0.18, 1.86, FZ + 0.08, 0.16, 0.16, 0.03, 12);
+  solidBox(4.6, 5.7, -12.75, -11.75);
   furnB.cyl('#d9a066', 2.9, 0.8, -8.2, 1.0, 1.0, 0.1, 22).cyl('#b98552', 2.9, 0.4, -8.2, 0.12, 0.24, 0.8, 10).cyl('#ffffff', 2.6, 0.87, -8.0, 0.24, 0.2, 0.04, 14).sph('#ff6b6b', 2.6, 0.97, -8.0, 0.11)
     .cyl('#7cc8ff', 3.3, 0.94, -8.4, 0.09, 0.08, 0.18, 10).cyl('#ff9f6b', 1.45, 0.28, -8.2, 0.3, 0.3, 0.56, 14).cyl('#4fc3a1', 4.35, 0.28, -8.2, 0.3, 0.3, 0.56, 14);
   solidCircle(2.9, -8.2, 0.98); solidCircle(1.45, -8.2, 0.3); solidCircle(4.35, -8.2, 0.3);
@@ -308,7 +319,36 @@ const house = (() => {
   doorPivot.add(door, knob); scene.add(doorPivot);
   const tvMat = new THREE.MeshBasicMaterial({ color: 0x15151c });
   const tv = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.84), tvMat); tv.position.set(-2.105, 1.2, -6.6); tv.rotation.y = -Math.PI / 2; scene.add(tv);
-  return { walls, front, roof, mWalls, mFront, mRoof, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0 };
+  // refri: puerta con bisagra, fondo que se ilumina y luz que se derrama al suelo (sin luces reales: no recompila materiales)
+  const fridge = (() => {
+    const pivot = new THREE.Group(); pivot.position.set(FX + 0.55, 0, FZ + 0.5);
+    const db = new Batch().rbox(MINT, -0.55, 1.15, 0.06, 1.12, 2.3, 0.12, 0.05).box('#ffffff', -1.0, 1.95, 0.135, 0.07, 0.42, 0.06).box('#ffffff', -1.0, 1.15, 0.135, 0.07, 0.62, 0.06)
+      .box('#6fbfae', -0.55, 1.62, 0.125, 1.06, 0.03, 0.02).box('#7fcfbd', -0.55, 1.15, -0.005, 1.0, 2.15, 0.02)
+      .box('#ffffff', -0.55, 0.62, -0.07, 0.9, 0.04, 0.12).box('#ffffff', -0.55, 1.22, -0.07, 0.9, 0.04, 0.12)
+      .cyl('#ffd23f', -0.8, 0.78, -0.08, 0.05, 0.05, 0.28, 8).cyl('#ff8a5c', -0.6, 0.76, -0.08, 0.06, 0.06, 0.24, 8).cyl('#9bd34a', -0.36, 0.79, -0.08, 0.05, 0.05, 0.3, 8)
+      .sph('#ffffff', -0.75, 1.3, -0.08, 0.05, 0.065, 0.05).sph('#ffffff', -0.6, 1.3, -0.08, 0.05, 0.065, 0.05).sph('#ffffff', -0.45, 1.3, -0.08, 0.05, 0.065, 0.05)
+      .sph('#ff6b9d', -0.3, 2.0, 0.14, 0.09, 0.09, 0.03).sph('#ffd23f', -0.75, 0.6, 0.14, 0.08, 0.08, 0.03);
+    const door = db.mesh(new THREE.MeshLambertMaterial({ vertexColors: true })); pivot.add(door); scene.add(pivot);
+    const panelMat = new THREE.MeshBasicMaterial({ color: 0x9fb7c0 });
+    const panel = new THREE.Mesh(new THREE.PlaneGeometry(0.94, 2.08), panelMat); panel.position.set(FX, 1.16, FZ - 0.09); scene.add(panel);
+    const glowTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 40, 4, 64, 64, 64); gr.addColorStop(0, 'rgba(225,246,255,1)'); gr.addColorStop(0.5, 'rgba(190,232,255,.5)'); gr.addColorStop(1, 'rgba(190,232,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+    const poolMat = new THREE.MeshBasicMaterial({ map: glowTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -6, polygonOffsetUnits: -6 });
+    const pool = new THREE.Mesh(new THREE.PlaneGeometry(2.8, 2.6), poolMat); pool.rotation.x = -Math.PI / 2; pool.position.set(FX - 0.15, 0.07, FZ + 1.75); pool.visible = false; scene.add(pool);
+    const beamTex = canvasTex(64, 128, (g) => { const gr = g.createLinearGradient(0, 0, 0, 128); gr.addColorStop(0, 'rgba(225,246,255,.85)'); gr.addColorStop(1, 'rgba(225,246,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 128);
+      const sd = g.createLinearGradient(0, 0, 64, 0); sd.addColorStop(0, 'rgba(0,0,0,1)'); sd.addColorStop(0.25, 'rgba(0,0,0,0)'); sd.addColorStop(0.75, 'rgba(0,0,0,0)'); sd.addColorStop(1, 'rgba(0,0,0,1)'); g.globalCompositeOperation = 'destination-out'; g.fillStyle = sd; g.fillRect(0, 0, 64, 128); });
+    // haz de luz: tres caras (arriba, izquierda, derecha) de la boca del refri hacia el piso
+    const n0 = [[FX - 0.47, 2.2], [FX + 0.47, 2.2], [FX + 0.47, 0.16], [FX - 0.47, 0.16]], z0 = FZ + 0.5, z1 = FZ + 2.4, far = [[FX - 1.1, 1.0], [FX + 0.9, 1.0], [FX + 0.9, 0.08], [FX - 1.1, 0.08]];
+    const pos = [], uv = [];
+    for (const [a, b] of [[0, 1], [1, 2], [3, 0]]) {
+      pos.push(n0[a][0], n0[a][1], z0, n0[b][0], n0[b][1], z0, far[b][0], far[b][1], z1, n0[a][0], n0[a][1], z0, far[b][0], far[b][1], z1, far[a][0], far[a][1], z1);
+      uv.push(0, 1, 1, 1, 1, 0, 0, 1, 1, 0, 0, 0);                  // v=1 en la boca del refri (la textura va de brillante arriba a nada abajo)
+    }
+    const bg = new THREE.BufferGeometry(); bg.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); bg.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2));
+    const beamMat = new THREE.MeshBasicMaterial({ map: beamTex, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide });
+    const beam = new THREE.Mesh(bg, beamMat); beam.visible = false; scene.add(beam);
+    return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
+  })();
+  return { walls, front, roof, mWalls, mFront, mRoof, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín
@@ -454,6 +494,35 @@ const flames = [];
 for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(gCone(8), new THREE.MeshBasicMaterial({ color: [0xff7a1a, 0xffb81f, 0xffe46b][i] })); m.position.set(CAMP.x + [0, 0.18, -0.12][i], 0.7, CAMP.z + [0, 0.1, -0.1][i]); m.scale.set(0.42 - i * 0.1, 1.1 - i * 0.2, 0.42 - i * 0.1); scene.add(m); flames.push(m); }
 forestB.cyl(TRUNK, -22, 0.4, -176, 0.4, 0.45, 5, 10, Math.PI / 2, 0.4); solidBox(-24.4, -19.6, -177, -175);
 forestB.cyl(TRUNK, 24, 0.4, -250, 0.4, 0.45, 4.4, 10, Math.PI / 2, -0.9); solidBox(22.2, 25.8, -251.6, -248.4);
+// arbustos de bayas: se comen y vuelven a crecer. Tienen su propia semilla para no mover nada de lo que se generó antes.
+const BERRY_KINDS = [{ name: 'arándanos', color: '#4b62d6', leaf: '#3f9a52' }, { name: 'frambuesas', color: '#ff4f7b', leaf: '#4aa85a' }, { name: 'moras', color: '#5a2d6e', leaf: '#3a8f4c' }];
+const berryBushes = [];
+const berryMesh = (() => {
+  const rb = mulberry(5150), r2 = (a, b) => a + (b - a) * rb();
+  const okSpot = (x, z) => freeSpot(x, z, 3.4) && trees.every((t) => Math.hypot(t.x - x, t.z - z) > 2.4 + 0.4 * t.s) && bushes.every((b) => Math.hypot(b.x - x, b.z - z) > 2.2)
+    && rocks.every((r) => Math.hypot(r.x - x, r.z - z) > 1.8) && Math.hypot(x + 22, z + 176) > 4 && Math.hypot(x - 24, z + 250) > 4 && Math.hypot(x - STUMP.x, z - STUMP.z) > 3;
+  for (let tries = 0; berryBushes.length < 16 && tries < 800; tries++) {
+    const z = r2(-256, -166), x = berryBushes.length % 2 === 0 ? pathX(z) + (rb() < 0.5 ? -1 : 1) * r2(3.8, 9) : r2(-56, 56);   // la mitad cerca del camino
+    if (!okSpot(x, z) || berryBushes.some((b) => Math.hypot(b.x - x, b.z - z) < 7)) continue;
+    berryBushes.push({ x, z, s: r2(0.95, 1.2), kind: BERRY_KINDS[berryBushes.length % 3], berries: [] });
+  }
+  let n = 0;
+  for (const b of berryBushes) {
+    const s = b.s;
+    forestB.ico(b.kind.leaf, b.x, 0.5 * s, b.z, 0.78 * s, 0.6 * s, 0.78 * s).ico('#4fb460', b.x + 0.45 * s, 0.42 * s, b.z + 0.2 * s, 0.5 * s, 0.42 * s, 0.5 * s).ico('#5cc06c', b.x - 0.42 * s, 0.44 * s, b.z - 0.12 * s, 0.48 * s, 0.4 * s, 0.48 * s);
+    solidCircle(b.x, b.z, 0.62 * s);
+    for (let i = 0; i < 8; i++) {                                     // al frente y a los lados: lo que ve la cámara
+      const a = Math.PI / 2 + (i / 7 - 0.5) * 3.3 + r2(-0.15, 0.15), el = r2(0.12, 0.95), R = 0.76 * s;
+      b.berries.push({ i: n++, x: b.x + Math.cos(a) * Math.cos(el) * R, y: 0.5 * s + Math.sin(el) * 0.56 * s, z: b.z + Math.sin(a) * Math.cos(el) * R * 0.95, k: 1, back: 0 });
+    }
+  }
+  const m = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 9, 7), new THREE.MeshLambertMaterial(), n);
+  for (const b of berryBushes) for (const q of b.berries) { m.setColorAt(q.i, _bc.set(b.kind.color)); }
+  m.frustumCulled = false; m.castShadow = true; scene.add(m); return m;
+})();
+const _bpm = new THREE.Matrix4();
+function setBerry(b, q) { const s = 0.118 * b.s * Math.max(0.001, q.k); berryMesh.setMatrixAt(q.i, _bpm.makeScale(s, s, s).setPosition(q.x, q.y, q.z)); }
+for (const b of berryBushes) for (const q of b.berries) setBerry(b, q);
 
 scene.add(cityB.mesh(), gardenB.mesh(), parkB.mesh(), meadowB.mesh(), forestB.mesh());
 

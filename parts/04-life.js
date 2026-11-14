@@ -128,6 +128,22 @@ function updateNPCs(dt) {
     const T = n.T, dx = P.x - n.pos.x, dz = P.z - n.pos.z, d = Math.hypot(dx, dz);
     let speed = 0; n.talkT = Math.max(0, n.talkT - dt);
     if (n.cheer > 0) { n.cheer -= dt; if (n.cheer <= 0) T.setMood(n.mood0); }
+    if (n.goto && n.talkT <= 0) {                     // camina a un lugar fijo (al terminar un encargo) y ahí se queda
+      const ex = n.goto.x - n.pos.x, ez = n.goto.z - n.pos.z, ed = Math.hypot(ex, ez);
+      if (ed < 0.12) n.goto = null;
+      else { const sp = Math.min(1.8, ed * 3); n.pos.x += ex / ed * sp * dt; n.pos.z += ez / ed * sp * dt; n.heading += angDiff(n.heading, Math.atan2(ex, ez)) * Math.min(1, dt * 8); speed = sp / 3.2; }
+      T.group.rotation.y = n.heading; T.update(dt, { speed, near: d < 45 }); continue;
+    }
+    if (n.follow) {                                   // acompaña a Tamachin un poco detrás y a un lado; n.follow decide si llegó o se perdió
+      const tx = P.x - Math.sin(player.heading) * 1.9 + Math.cos(player.heading) * 0.9, tz = P.z - Math.cos(player.heading) * 1.9 - Math.sin(player.heading) * 0.9;
+      const ex = tx - n.pos.x, ez = tz - n.pos.z, ed = Math.hypot(ex, ez);
+      if (ed > 0.5 && d > 1.7) {
+        const sp = clamp(ed * 1.8, 1.4, 7.8); n.pos.x += ex / ed * sp * dt; n.pos.z += ez / ed * sp * dt; resolveAgent(n.pos, 0.45 * T.scale);
+        n.heading += angDiff(n.heading, Math.atan2(ex, ez)) * Math.min(1, dt * 8); speed = sp / 3.2;
+      } else n.heading += angDiff(n.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 6);
+      T.group.rotation.y = n.heading; T.update(dt, { speed, near: true });
+      n.follow(n, d); continue;
+    }
     if (d > 75) continue;
     const facing = n.talkT > 0 || d < 2.4;
     if (facing) n.heading += angDiff(n.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 7);
@@ -144,12 +160,13 @@ function updateNPCs(dt) {
   }
 }
 function talkTo(n) {
-  const T = n.T; n.talkT = 3.4; let line;
-  if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
+  const T = n.T; n.talkT = 3.4; let line = n.onTalk ? n.onTalk(n) : null;    // los encargos hablan primero
+  if (line) { /* ya está */ }
+  else if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
     n.count = 0; T.setMood('contento'); n.cheer = 25; line = '¡Gracias por escucharme! Ya me siento mejor.';
     burst('heart', n.pos.x, 1.8, n.pos.z, 5); SFX.nice();
   } else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
-  say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle']));
+  say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle'])); gain('diversion', 0.06, 'charla' + n.name, 12);
   player.T.doTrick('wave'); player.heading = Math.atan2(n.pos.x - player.pos.x, n.pos.z - player.pos.z);
 }
 
@@ -165,12 +182,15 @@ function makeRabbit(x, z, col) {
     .sph('#201a2a', -0.1, 0.55, 0.41, 0.036).sph('#201a2a', 0.1, 0.55, 0.41, 0.036).sph('#ff8fab', 0, 0.48, 0.45, 0.03)
     .sph(col, -0.13, 0.06, 0.2, 0.07, 0.06, 0.13).sph(col, 0.13, 0.06, 0.2, 0.07, 0.06, 0.13).sph(col, -0.16, 0.08, -0.12, 0.08, 0.08, 0.16).sph(col, 0.16, 0.08, -0.12, 0.08, 0.08, 0.16);
   const mesh = b.mesh(MAT_SOFT); mesh.scale.setScalar(1.25); mesh.position.set(x, 0, z); scene.add(mesh);
-  const o = { kind: 'conejo', mesh, pos: mesh.position, home: { x, z }, tx: x, tz: z, hopP: 0, hopSpeed: 0, rest: 0, wait: rand(0, 3), follow: 0, scare: 0, heading: rand(0, TAU), side: rand(-1, 1), range: 5, clickR: 0.6 };
+  const o = { kind: 'conejo', mesh, pos: mesh.position, home: { x, z }, tx: x, tz: z, hopP: 0, hopSpeed: 0, rest: 0, wait: rand(0, 3), follow: 0, scare: 0, heading: rand(0, TAU), side: rand(-1, 1), range: 5, clickR: 0.6,
+    buddy: null, stuckT: 0, onLost: null, onStuck: null };
   o.bubblePos = (v) => v.set(o.pos.x, o.pos.y + 1.25, o.pos.z);
   o.update = (dt) => {
     const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp);
     o.follow = Math.max(0, o.follow - dt); o.scare = Math.max(0, o.scare - dt);
-    if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side; o.tz = P.z - Math.cos(player.heading) * 1.7; }
+    if (o.follow > 0 && dp > 32) { o.follow = 0; if (o.onLost) o.onLost(o); }          // se quedó muy atrás
+    if (o.buddy) { const B = o.buddy; o.tx = B.pos.x - Math.sin(B.heading) * 1.3 + o.side * 0.5; o.tz = B.pos.z - Math.cos(B.heading) * 1.3; }
+    else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side; o.tz = P.z - Math.cos(player.heading) * 1.7; }
     else if (dp < 3.2 && player.speedN > 1.3 && o.scare <= 0) { o.tx = o.pos.x - dxp / dp * 5; o.tz = o.pos.z - dzp / dp * 5; o.scare = 2; o.rest = 0; emit('excl', o.pos.x, 1.1, o.pos.z); }
     else if (o.scare <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(2, 6); const a = rand(0, TAU), r = rand(0, o.range); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; } }
     const dx = o.tx - o.pos.x, dz = o.tz - o.pos.z, d = Math.hypot(dx, dz);
@@ -178,21 +198,26 @@ function makeRabbit(x, z, col) {
       o.hopP += dt / 0.36; const k = Math.min(1, o.hopP);
       o.pos.x += Math.sin(o.heading) * o.hopSpeed * dt; o.pos.z += Math.cos(o.heading) * o.hopSpeed * dt; o.pos.x = clamp(o.pos.x, -60, 60);
       o.pos.y = Math.sin(k * Math.PI) * 0.4; mesh.rotation.x = -Math.cos(k * Math.PI) * 0.28;
-      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = 0; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0) ? 0.03 : rand(0.1, 0.35); }
+      if (o.follow > 0 || o.buddy) resolveAgent(o.pos, 0.3);
+      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = 0; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0 || o.buddy) ? 0.03 : rand(0.1, 0.35); }
     } else {
       o.rest -= dt;
       if (d > 0.8) {
         o.heading += angDiff(o.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 10);
         if (o.rest <= 0) {
-          const sp = (o.follow > 0 || o.scare > 0) ? clamp(d / 0.36, 3, 8) : 2.6;
-          if (wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) { o.rest = 0.6; o.tx = o.pos.x; o.tz = o.pos.z; }
-          else { o.hopP = 0.001; o.hopSpeed = sp; }
+          const sp = (o.follow > 0 || o.scare > 0 || o.buddy) ? clamp(d / 0.36, 3, 8) : 2.6;
+          if (wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) {
+            o.rest = 0.6; o.tx = o.pos.x; o.tz = o.pos.z;
+            if (o.follow > 0 && (o.stuckT += 0.6) > 2.4 && o.onStuck) { o.onStuck(o); o.stuckT = -20; }   // no nada: hay que cruzar por el puente
+          }
+          else { o.hopP = 0.001; o.hopSpeed = sp; if (o.stuckT > 0) o.stuckT = 0; }
         }
       } else if (dp < 4.5) o.heading += angDiff(o.heading, Math.atan2(dxp, dzp)) * Math.min(1, dt * 5);
     }
     mesh.rotation.y = o.heading;
   };
-  o.interact = () => { o.follow = 12; o.scare = 0; burst('heart', o.pos.x, 0.9, o.pos.z, 3); say(o, choose(['¡Hop, hop!', '(mueve la naricita)', '¡Te sigo!']), 2.2); SFX.nice(); };
+  o.interact = () => { if (o.buddy) { say(o, '(no se separa de Tofu)', 2); burst('heart', o.pos.x, 0.9, o.pos.z, 2); return; }
+    o.follow = petRabbit(o); o.scare = 0; burst('heart', o.pos.x, 0.9, o.pos.z, 3); say(o, choose(['¡Hop, hop!', '(mueve la naricita)', '¡Te sigo!']), 2.2); SFX.nice(); };
   creatures.push(o); interacts.push({ pos: o.pos, range: 3.2, label: 'Acariciar al conejo', act: o.interact, who: o });
   return o;
 }
@@ -308,7 +333,11 @@ function updateFish(dt) {
   for (const f of fishes) {
     f.t += dt;
     if (f.t < 0) continue;
-    if (!f.m.visible) { f.x = clamp(player.pos.x + rand(-22, 22), -58, 58); if (Math.abs(f.x - BR.x) < 3) f.x += 6; f.dir = Math.random() < 0.5 ? 1 : -1; f.z0 = riverZ(f.x) - f.dir * 1.6; f.m.visible = true; burst('splash', f.x, 0.2, f.z0, 4); }
+    if (!f.m.visible) {
+      const bx = fishBias();                       // con el encargo de los peces, saltan cerca de quien espera en la orilla
+      f.x = clamp(bx != null ? bx + rand(-4, 4) : player.pos.x + rand(-22, 22), -58, 58); if (Math.abs(f.x - BR.x) < 3) f.x += 6;
+      f.dir = Math.random() < 0.5 ? 1 : -1; f.z0 = riverZ(f.x) - f.dir * 1.6; f.m.visible = true; burst('splash', f.x, 0.2, f.z0, 4); fishJumped(f);
+    }
     const k = f.t / 0.9;
     if (k >= 1) { f.m.visible = false; burst('splash', f.x, 0.2, f.z0 + f.dir * 3.2, 4); if (Math.hypot(player.pos.x - f.x, player.pos.z - f.z0) < 25) SFX.splash(); f.t = -rand(1.5, 5); continue; }
     f.m.position.set(f.x, Math.sin(k * Math.PI) * 1.3, f.z0 + f.dir * 3.2 * k);

@@ -54,9 +54,16 @@ git config core.hooksPath .githooks
 | Saltar | Espacio | Botón Saltar |
 | Interactuar / truco | E | Botón de acción |
 | Personalizar | C | Botón Personalizar |
+| Diario (necesidades y encargos) | J | Tocar los medidores |
 | Zoom | Rueda del mouse | Botón Acercar |
 
 Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su alrededor: se marea.
+
+## Cuidados y encargos
+
+- Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
+- Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
+- Se guardan forma, color, ánimo, necesidades y encargos (en `localStorage`).
 
 ## Mapa (unidades en metros)
 

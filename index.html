@@ -58,14 +58,43 @@ button{font-family:inherit;color:inherit}
   font-variant-numeric:tabular-nums}
 .tools{display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;margin-left:auto}
 
-#panel{position:absolute;right:16px;top:74px;bottom:16px;width:332px;display:flex;flex-direction:column;background:var(--paper);
+.needs{display:flex;align-items:center;gap:8px;background:var(--paper);border:3px solid var(--ink);border-radius:999px;
+  box-shadow:0 3px 0 var(--ink);padding:4px 10px 4px 6px;cursor:pointer;color:var(--ink)}
+.needs:focus-visible{outline:3px solid var(--rose);outline-offset:2px}
+.need{display:flex;align-items:center;gap:3px}
+.need svg{width:20px;height:20px;flex:none}
+.need i{display:block;width:34px;height:10px;border:2px solid var(--ink);border-radius:6px;background:#fff;overflow:hidden}
+.need b,.nrow .bar b{display:block;height:100%;width:100%;transform-origin:left;background:var(--c);transition:transform .3s}
+.n-panza{--c:#ff8a5c}.n-energia{--c:#7c9cff}.n-diversion{--c:#ff6b9d}
+.need.low i{animation:needlow 1s ease-in-out infinite}
+.need.low svg{animation:needshake .9s ease-in-out infinite}
+.need.up i{box-shadow:0 0 0 3px var(--sun)}
+@keyframes needlow{50%{background:#ffd0d0}}
+@keyframes needshake{25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
+
+#panel,#diary{position:absolute;right:16px;top:74px;bottom:16px;width:332px;display:flex;flex-direction:column;background:var(--paper);
   border:3px solid var(--ink);border-radius:22px;box-shadow:0 6px 0 var(--ink);padding:14px 0 14px}
-#panel[hidden]{display:none}
+#panel[hidden],#diary[hidden]{display:none}
+.nrow{display:grid;grid-template-columns:22px 1fr auto;gap:5px 8px;align-items:center;margin-bottom:12px}
+.nrow svg{width:22px;height:22px}
+.nrow strong{font-weight:900;font-size:14.5px}
+.nrow .pct{font-weight:900;font-size:13px;font-variant-numeric:tabular-nums}
+.nrow .bar{grid-column:2/4;height:13px;border:2.5px solid var(--ink);border-radius:8px;background:#fff;overflow:hidden}
+.nrow p{grid-column:2/4;margin:0;font-size:12.5px;font-weight:700;line-height:1.35;opacity:.75}
+.quests{list-style:none;margin:0;padding:0;display:grid;gap:8px}
+.quests li{border:2.5px solid var(--ink);border-radius:14px;padding:8px 10px;background:#fff}
+.quests li.done{background:#e6f7ee}
+.quests strong{display:flex;justify-content:space-between;align-items:center;gap:8px;font-weight:900;font-size:14px}
+.quests em{font-style:normal;font-size:11px;font-weight:900;letter-spacing:.05em;text-transform:uppercase;background:var(--sun);
+  border:2px solid var(--ink);border-radius:999px;padding:1px 7px;white-space:nowrap}
+.quests li.done em{background:var(--mint)}
+.quests p{margin:4px 0 0;font-size:12.5px;font-weight:700;line-height:1.35;opacity:.8}
+.qnote{font-size:12.5px;font-weight:700;line-height:1.4;opacity:.7;margin:10px 0 0}
 .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 16px 6px}
 .pbody{flex:1;min-height:0;overflow-y:auto;padding:0 16px 4px;touch-action:pan-y;overscroll-behavior:contain}
 .phead h2{font-family:var(--font-display);font-weight:400;font-size:24px;margin:0;line-height:1.1;text-wrap:balance}
-#panel h3{font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;margin:12px 0 7px;opacity:.7}
-#panel h3:first-child{margin-top:4px}
+#panel h3,#diary h3{font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;margin:12px 0 7px;opacity:.7}
+#panel h3:first-child,#diary h3:first-child{margin-top:4px}
 .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(96px,1fr));gap:8px}
 .opt{display:flex;align-items:center;gap:5px;padding:6px 8px;border:2.5px solid var(--ink);border-radius:14px;background:#fff;
   font-weight:800;font-size:13px;cursor:pointer;transition:transform .08s,box-shadow .08s;text-align:left;min-width:0}
@@ -85,7 +114,7 @@ button{font-family:inherit;color:inherit}
 kbd{display:inline-block;min-width:26px;text-align:center;font-family:var(--font-body);font-weight:900;font-size:12.5px;
   background:var(--sun);border:2.5px solid var(--ink);border-radius:8px;padding:2px 6px;box-shadow:0 2px 0 var(--ink)}
 
-#toast{position:absolute;left:50%;top:70px;transform:translate(-50%,-8px);max-width:min(92%,460px);background:var(--ink);
+#toast{position:absolute;left:50%;top:calc(var(--hud-h,62px) + 8px);transform:translate(-50%,-8px);max-width:min(92%,460px);background:var(--ink);
   color:var(--paper);font-weight:800;font-size:14.5px;line-height:1.35;padding:10px 16px;border-radius:16px;text-align:center;
   opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 #toast.on{opacity:1;transform:translate(-50%,0)}
@@ -97,7 +126,7 @@ kbd{display:inline-block;min-width:26px;text-align:center;font-family:var(--font
 #help .t{display:none}
 body.touch #help .k{display:none}
 body.touch #help .t{display:block}
-body.touch #help{bottom:auto;top:118px;left:12px;right:12px;max-width:none;line-height:1.45}
+body.touch #help{bottom:auto;top:calc(var(--hud-h,62px) + 10px);left:12px;right:12px;max-width:none;line-height:1.45}
 
 #bubbles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .bubble{position:absolute;left:0;top:0;max-width:230px;width:max-content;padding:7px 12px;background:var(--paper);
@@ -120,6 +149,7 @@ body.touch .prompt{display:none}
 #tAct{background:var(--mint);padding:13px 18px;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
 
 body.custom #touch,body.custom #help,body.custom .prompt{display:none}
+body.diary #touch,body.diary #help{display:none}
 
 #fail{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--sky)}
 #fail[hidden]{display:none}
@@ -130,11 +160,13 @@ body.custom #touch,body.custom #help,body.custom .prompt{display:none}
 @media (max-width:760px){
   .top{padding:10px 12px}
   .btn{font-size:13px;padding:8px 11px}
-  #panel{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:47%}
-  #toast{top:108px}
+  #panel,#diary{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:47%}
+  .needs{gap:6px;padding:3px 8px 3px 5px}
+  .need i{width:26px}
 }
 @media (prefers-reduced-motion:reduce){
-  .btn,.opt,#toast,.bubble{transition:none}
+  .btn,.opt,#toast,.bubble,.need b,.nrow .bar b{transition:none}
+  .need.low i,.need.low svg{animation:none}
 }
 </style>
 </head>
@@ -147,6 +179,11 @@ body.custom #touch,body.custom #help,body.custom .prompt{display:none}
     <div class="brand">
       <h1>Tamachin</h1>
       <span id="zone" class="chip">Jardín de casa</span>
+      <button id="needs" class="needs" type="button" aria-controls="diary" aria-expanded="false" aria-label="Abrir el diario">
+        <span class="need n-panza" data-k="panza" title="Panza"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 6.6c-1.6-1.3-5.5-1.5-6 2.6-.4 3.4 2 7.4 4 7.4.8 0 1.2-.4 2-.4s1.2.4 2 .4c2 0 4.4-4 4-7.4-.5-4.1-4.4-3.9-6-2.6z" fill="#ff6b6b" stroke="#231d3b" stroke-width="1.6"/><path d="M10 6.6c0-2 .8-3.3 2.4-4" fill="none" stroke="#231d3b" stroke-width="1.6" stroke-linecap="round"/><path d="M11.4 4.3c1.6-1.4 3.4-1 3.8-.6-.6 1.4-2.4 1.8-3.8.6z" fill="#57c06a" stroke="#231d3b" stroke-width="1.2"/></svg><i><b></b></i></span>
+        <span class="need n-energia" data-k="energia" title="Energía"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.6 2.8a7.4 7.4 0 1 0 3.6 11.1 6.2 6.2 0 0 1-3.6-11.1z" fill="#ffd23f" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/></svg><i><b></b></i></span>
+        <span class="need n-diversion" data-k="diversion" title="Diversión"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z" fill="#ff8fb1" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/></svg><i><b></b></i></span>
+      </button>
     </div>
     <div class="tools">
       <button id="bZoom" class="btn" type="button">Acercar</button>
@@ -172,12 +209,26 @@ body.custom #touch,body.custom #help,body.custom .prompt{display:none}
     </div>
   </aside>
 
+  <aside id="diary" hidden aria-label="Diario de Tamachin">
+    <div class="phead">
+      <h2>Diario de Tamachin</h2>
+      <button id="dClose" class="btn" type="button">Listo</button>
+    </div>
+    <div class="pbody">
+    <h3>Cómo está</h3>
+    <div id="needList"></div>
+    <h3>Encargos</h3>
+    <ul id="questList" class="quests"></ul>
+    <p id="questNote" class="qnote"></p>
+    </div>
+  </aside>
+
   <div id="prompt" class="prompt" hidden><kbd>E</kbd><span id="promptText"></span></div>
   <div id="toast" role="status"></div>
 
   <div id="help">
-    <p class="k"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> o flechas para caminar · <kbd>Shift</kbd> corre · <kbd>Espacio</kbd> salta · <kbd>E</kbd> interactúa.<br>Haz clic en Tamachin para un truco. Mueve el mouse en círculos a su alrededor y se marea.</p>
-    <p class="t">Camina con la palanca. Toca a Tamachin para un truco y dibuja círculos con el dedo a su alrededor para marearlo.</p>
+    <p class="k"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> o flechas para caminar · <kbd>Shift</kbd> corre · <kbd>Espacio</kbd> salta · <kbd>E</kbd> interactúa · <kbd>J</kbd> diario.<br>Haz clic en Tamachin para un truco. Mueve el mouse en círculos a su alrededor y se marea.<br>Cuida su panza, su energía y su diversión.</p>
+    <p class="t">Camina con la palanca. Toca a Tamachin para un truco y dibuja círculos con el dedo a su alrededor para marearlo. Toca los medidores de arriba para ver su diario.</p>
     <button id="helpOk" class="btn" type="button">Entendido</button>
   </div>
 
