@@ -1,10 +1,11 @@
 // Publica el juego como Worker de solo archivos estáticos en https://tamachin.matteo.games
-// `wrangler deploy` primero regenera game.js y arma dist/ con lo único que se sirve: index.html y game.js.
+// `wrangler deploy` primero regenera game.js y arma dist/ con lo único que se sirve: index.html, game.js y og.jpg
+// (la imagen que muestran las redes al compartir el enlace).
 {
   "name": "tamachin",
   "compatibility_date": "2025-09-01",
   "build": {
-    "command": "./build.sh && rm -rf dist && mkdir dist && cp index.html game.js dist/"
+    "command": "./build.sh && rm -rf dist && mkdir dist && cp index.html game.js og.jpg dist/"
   },
   "assets": {
     "directory": "./dist"
