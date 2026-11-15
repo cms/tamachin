@@ -10,6 +10,10 @@ module.exports = {
     const go = (x, z) => E(([x, z]) => window.__tamachin.go(x, z), [x, z]);
     const npc = (name) => E((n) => { const q = window.__dbg.npcs.find((v) => v.name === n); return [q.pos.x, q.pos.z]; }, name);
     const talk = (name) => E((n) => window.__dbg.talkTo(window.__dbg.npcs.find((v) => v.name === n)), name);
+    // si un encargo de acompañar falla, cómo quedó todo (estas dos revisiones han fallado a veces sin causa conocida)
+    const why = (who) => E((who) => { const D = window.__dbg, P = D.player, f = who === 'conejo' ? D.creatures.find((c) => c.kind === 'conejo') : D.npcs.find((n) => n.name === who);
+      return JSON.stringify({ q: D.quests, at: [P.pos.x, P.pos.y, P.pos.z].map((v) => +v.toFixed(1)), state: P.state, mood: P.T.mood, toast: document.querySelector('#toast').textContent,
+        [who]: [f.pos.x, f.pos.z].map((v) => +v.toFixed(1)), dist: +Math.hypot(f.pos.x - P.pos.x, f.pos.z - P.pos.z).toFixed(1), follow: !!f.follow }); }, who);
     await E(() => {
       const D = window.__dbg;
       // camina con la palanca por una lista de puntos (con colisiones, como un jugador)
@@ -55,13 +59,15 @@ module.exports = {
     T.check('el conejo lo sigue hasta el portón del parque', w1 && rab < 6, rab.toFixed(1) + ' m');
     await E(() => window.__walk([[0.5, -58], [-6.5, -52], [-6.8, -45], [-6.5, -38.5], [-1.2, -31], [0.5, -26], [8, -26], [24, -26], [24, 0], [24, 24], [10, 25.5], [3, 27.5]]));
     if (await E(() => window.__dbg.quests.conejo) !== 2) { const tp = await npc('Tofu'); await E((w) => window.__walk([w]), [tp[0], tp[1] + 3]); await sleep(1500); }
-    T.check('al llegar con Tofu, encargo cumplido', await E(() => window.__dbg.quests.conejo === 2 && !!window.__dbg.creatures.find((c) => c.kind === 'conejo').buddy));
+    let done = await E(() => window.__dbg.quests.conejo === 2 && !!window.__dbg.creatures.find((c) => c.kind === 'conejo').buddy);
+    T.check('al llegar con Tofu, encargo cumplido', done, done ? undefined : await why('conejo'));
 
     // Lulú a la fuente
     await E(() => { const n = window.__dbg.npcs.find((q) => q.name === 'Lulú'); n.t = 0.5; n.pos.set(30.5, 0, 30); n.pause = 0; });
     await go(28.6, 31.2); await sleep(400); await talk('Lulú');
     await E(() => window.__walk([[28.6, 25.5], [25, 25.5], [25, -25.5], [1.2, -25.5], [1.2, -31], [-6.5, -38.5], [-6.8, -42]])); await sleep(2500);
-    T.check('Lulú llega a la fuente', await E(() => window.__dbg.quests.fuente === 2));
+    done = await E(() => window.__dbg.quests.fuente === 2);
+    T.check('Lulú llega a la fuente', done, done ? undefined : await why('Lulú'));
 
     // Nube y la gelatina
     let nb = await npc('Nube'); await go(nb[0] - 2, nb[1]); await sleep(300); await talk('Nube');

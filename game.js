@@ -185,9 +185,12 @@ function canvasTex(w, h, draw) {
 }
 
 // ───────────────────────── colisiones ─────────────────────────
-const boxes = [], circles = [];
-const solidBox = (x0, x1, z0, z1) => boxes.push({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1) });
-const solidCircle = (x, z, r) => circles.push({ x, z, r });
+// Lo bajo lleva `top` (la altura de arriba, solo en suelo plano): Tamachin lo libra saltando y, salvo `stand` falso (una cerca),
+// se para encima (`perches`). Sin `top` no tiene límite de altura. Quien lo acompaña (resolveAgent) no salta: todo le estorba.
+const boxes = [], circles = [], perches = [];
+const lowSolid = (list, s, top, stand) => { list.push(s); if (top != null) { s.top = top; if (stand !== false) perches.push(s); } return s; };
+const solidBox = (x0, x1, z0, z1, top, stand) => lowSolid(boxes, { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), top: Infinity }, top, stand);
+const solidCircle = (x, z, r, top, stand) => lowSolid(circles, { x, z, r, top: Infinity }, top, stand);
 function pushOutBox(pos, r, b) {
   if (pos.x < b.x0 - r || pos.x > b.x1 + r || pos.z < b.z0 - r || pos.z > b.z1 + r) return false;
   const cx = clamp(pos.x, b.x0, b.x1), cz = clamp(pos.z, b.z0, b.z1), dx = pos.x - cx, dz = pos.z - cz, d2 = dx * dx + dz * dz;
@@ -792,8 +795,9 @@ function sidewalkProps(i, j) {
       else {
         cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18);
         const q = rnd(), ox = s.ax === 'x' ? 1.6 : 0, oz = s.ax === 'x' ? 0 : 1.6;
-        if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.22); }
-        else if (q < 0.6) { cityB.merge(PF_BIN, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.34); }
+        // se sube saltando; como son delgados y Tamachin es redondo, lo sostienen aunque quede un poco fuera de la orilla (`rim`)
+        if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.22, 0.8).rim = 0.25; }
+        else if (q < 0.6) { cityB.merge(PF_BIN, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.34, 0.96).rim = 0.25; }
       }
     }
   }
@@ -866,7 +870,7 @@ const house = (() => {
     .box('#c8553d', 3.4, H.h + 1.9, cz - 1.2, 0.95, 2.2, 0.95).box('#a8442f', 3.4, H.h + 3.05, cz - 1.2, 1.2, 0.2, 1.2).sph('#ffd76a', 0, H.h + 3.3, cz, 0.3);
   // muebles
   furnB.box('#b07a4f', -4.4, 0.3, -10.9, 2.2, 0.6, 3.4).rbox('#fffaf0', -4.4, 0.69, -10.9, 2.0, 0.28, 3.2, 0.1).rbox('#ff8a7a', -4.4, 0.78, -10.3, 2.08, 0.22, 2.0, 0.08)
-    .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); solidBox(-5.5, -3.3, -12.6, -9.2);
+    .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); solidBox(-5.5, -3.3, -12.6, -9.2, 0.86).bounce = true;   // la cama rebota
   furnB.box('#b07a4f', -2.8, 0.35, -12.3, 0.7, 0.7, 0.6).cyl('#8a6a4a', -2.8, 0.9, -12.3, 0.04, 0.1, 0.4, 8).cone('#ffe9a8', -2.8, 1.25, -12.3, 0.28, 0.36, 12); solidBox(-3.15, -2.45, -12.6, -12.0);
   shelfB.box('#9a6540', -0.9, 1.2, -12.5, 2.4, 2.4, 0.5);
   for (let lv = 0; lv < 3; lv++) { let x = -1.95; while (x < 0.05) { const w = rr(0.12, 0.24), hh = rr(0.42, 0.6); shelfB.box(pick(['#ff6b6b', '#ffd23f', '#4fc3a1', '#5aa9ff', '#c58bff', '#ff9f6b', '#f4f1e8']), x + w / 2, 0.32 + lv * 0.72 + hh / 2, -12.3, w, hh, 0.3); x += w + 0.02; } shelfB.box('#b98552', -0.9, 0.28 + lv * 0.72, -12.28, 2.3, 0.06, 0.42); }
@@ -949,7 +953,7 @@ function fence(b, x0, z0, x1, z1, col) {
   const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 1.4)), horiz = Math.abs(x1 - x0) > Math.abs(z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
   for (let i = 0; i <= n; i++) { const t = i / n; b.box(col, lerp(x0, x1, t), 0.48, lerp(z0, z1, t), 0.14, 0.96, 0.14).cone(col, lerp(x0, x1, t), 1.03, lerp(z0, z1, t), 0.11, 0.16, 4, Math.PI / 4); }
   for (const y of [0.34, 0.72]) b.box(col, cx, y, cz, horiz ? len : 0.07, 0.1, horiz ? 0.07 : len);
-  solidBox(Math.min(x0, x1) - 0.08, Math.max(x0, x1) + 0.08, Math.min(z0, z1) - 0.08, Math.max(z0, z1) + 0.08);
+  solidBox(Math.min(x0, x1) - 0.08, Math.max(x0, x1) + 0.08, Math.min(z0, z1) - 0.08, Math.max(z0, z1) + 0.08, 1.0, false);   // se brinca, no se para encima
 }
 { const F = 16.6, W = '#fffdf6';
   fence(gardenB, -F, F, -1.7, F, W); fence(gardenB, 1.7, F, F, F, W); fence(gardenB, -F, -F, -1.7, -F, W); fence(gardenB, 1.7, -F, F, -F, W);
@@ -1039,7 +1043,7 @@ for (let gx = -58; gx <= 58; gx += 7.6) for (let gz = -164; gz >= -258; gz -= 7.
 for (let z = -68; z >= -268; z -= 4.8) for (const sx of [-1, 1]) addTree(rnd() < 0.6 ? 0 : 1, sx * rr(65.5, 70), z + rr(-1.5, 1.5), rr(1.1, 1.6), false);
 for (let x = -70; x <= 70; x += 4.8) addTree(rnd() < 0.7 ? 0 : 1, x + rr(-1.5, 1.5), rr(-271, -266.5), rr(1.2, 1.7), false);
 for (let q = 0; q < 60; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) bushes.push({ x, z, s: rr(0.8, 1.5) }); }
-for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) { const s = rr(0.4, 1.1); rocks.push({ x, z, s }); if (s > 0.7) solidCircle(x, z, s * 0.75); } }
+for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) { const s = rr(0.4, 1.1); rocks.push({ x, z, s }); if (s > 0.7) solidCircle(x, z, s * 0.75, s); } }   // a las grandes se sube saltando (su punta está a s metros)
 for (let q = 0; q < 150; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 1.9)) addFlower(x, z); }
 for (let q = 0; q < 380; q++) { const x = rr(-60, 60), z = rr(-262, -160); if (freeSpot(x, z, 1.8)) tufts.push({ x, z, s: rr(0.9, 1.7) }); }
 for (let q = 0; q < 34; q++) {
@@ -1080,7 +1084,7 @@ forestB.cyl(TRUNK, CAMP.x, 0.2, CAMP.z, 0.11, 0.11, 1.3, 7, Math.PI / 2, 0.5).cy
 solidCircle(CAMP.x, CAMP.z, 1.1);
 for (const q of [[-3.6, 0.6, 0.3], [3.2, 1.6, -0.5], [0.4, 3.9, 1.5]]) { forestB.cyl(TRUNK, CAMP.x + q[0], 0.36, CAMP.z + q[1], 0.36, 0.36, 2.2, 10, Math.PI / 2, q[2]); solidCircle(CAMP.x + q[0], CAMP.z + q[1], 0.75); }
 const STUMP = { x: CAMP.x + 4.2, z: CAMP.z - 3.2 };
-forestB.cyl(TRUNK, STUMP.x, 0.55, STUMP.z, 0.5, 0.62, 1.1, 12).cyl('#d9b98a', STUMP.x, 1.11, STUMP.z, 0.46, 0.46, 0.03, 12); solidCircle(STUMP.x, STUMP.z, 0.66);
+forestB.cyl(TRUNK, STUMP.x, 0.55, STUMP.z, 0.5, 0.62, 1.1, 12).cyl('#d9b98a', STUMP.x, 1.11, STUMP.z, 0.46, 0.46, 0.03, 12); solidCircle(STUMP.x, STUMP.z, 0.66);   // encima vive el búho
 const flames = [];
 for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(gCone(8), new THREE.MeshBasicMaterial({ color: [0xff7a1a, 0xffb81f, 0xffe46b][i] })); m.position.set(CAMP.x + [0, 0.18, -0.12][i], 0.7, CAMP.z + [0, 0.1, -0.1][i]); m.scale.set(0.42 - i * 0.1, 1.1 - i * 0.2, 0.42 - i * 0.1); scene.add(m); flames.push(m); }
 forestB.cyl(TRUNK, -22, 0.4, -176, 0.4, 0.45, 5, 10, Math.PI / 2, 0.4); solidBox(-24.4, -19.6, -177, -175);
@@ -2037,7 +2041,7 @@ function updateNorth(dt) {
 const SAVE_KEY = 'tamachin.v1';
 const player = { T: makeTamachin({ shape: 'bola', color: '#ffc93c', mood: 'contento', scale: 1.3 }), vx: 0, vz: 0, vy: 0, heading: 0, onGround: true, state: 'normal', r: 0.62,
   baseMood: 'contento', tempMood: null, tempT: 0, onTempEnd: null, inv: 0, idleT: 0, speedN: 0, spin: 0, flySpin: 0, flatT: 0, sleepT: 0, inWater: false, inHouse: false, lastTrick: null, moved: 0,
-  needLow: null, needMood: null, busy: null, carry: null };
+  needLow: null, needMood: null, busy: null, carry: null, perch: null };
 player.pos = player.T.pos; player.pos.set(0, 0, 3.5); player.bubblePos = player.T.bubblePos;
 const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0, faceYaw: 0, shift: 0 };
 const ZOOMS = [1, 0.62, 1.42], ZOOM_LABEL = ['Acercar', 'Alejar', 'Vista normal'];
@@ -2156,7 +2160,14 @@ function jump() {
   const P = player;
   if (P.state === 'sleep') { wake(); return; }
   if (P.state !== 'normal' || ui.closeup) { if (ui.closeup) playerTrick(); return; }
-  if (P.onGround) { P.vy = P.inWater ? 6 : 7.8; P.onGround = false; P.T.poke(3.2); SFX.jump(); }
+  if (P.onGround) { P.vy = P.inWater ? 6 : P.perch && P.perch.bounce ? 9 : 7.8; P.onGround = false; P.T.poke(3.2); SFX.jump(); }   // desde la cama, más alto
+  else P.jumpAsk = clock;                                           // rebotando en la cama: saltar justo antes de caer lo impulsa otra vez
+}
+// subirse a algo saltando divierte un poco (con la misma regla de siempre: no cuenta repetirlo seguido)
+function perched(s) {
+  const P = player;
+  if (s.bounce) { if (gain('diversion', 0.03, 'cama', 2.5)) say(P, choose(['¡Boing!', '¡Boing, boing!', '¡Wiii!']), 1.2); return; }
+  if (gain('diversion', 0.04, 'subir', 8)) { say(P, choose(['¡Desde aquí se ve todo!', '¡Qué alto!', '¡Lo logré!', '¡Soy el rey del mundo!']), 1.6); P.T.doTrick('wave'); }
 }
 function doAction() {
   const P = player;
@@ -2598,14 +2609,26 @@ function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   
 $('#helpOk').addEventListener('click', hideHelp);
 
 // ───────────────────────── actualización por cuadro ─────────────────────────
+// pos.y todavía es la altura del cuadro anterior: lo bajo que ya libró no lo empuja (pasa por encima o está parado ahí)
 function resolvePlayer() {
-  const P = player, pos = P.pos, r = P.r;
-  for (let it = 0; it < 2; it++) { for (const b of boxes) pushOutBox(pos, r, b); for (const c of circles) pushOutCircle(pos, r, c.x, c.z, c.r); }
+  const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02;
+  for (let it = 0; it < 2; it++) { for (const b of boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
   if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
     if (pos.y < c.h * 0.8 && pushOutBox(pos, r * 0.8, carRect(c, 0)) && c.v > 2.2 && P.state === 'normal' && P.inv <= 0) knock(c);
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
   northCollide(pos, r); keepInWorld(pos);                           // árboles del norte y límites por franja (05-norte.js)
+}
+// Lo más alto que tiene justo debajo y que ya libró (y0: la altura antes de este cuadro). Con la misma regla que resolvePlayer,
+// lo que no lo empuja lo sostiene; si cae por la orilla, al cuadro siguiente ya está más bajo y lo empuja hacia fuera.
+function perchUnder(x, z, y0) {
+  let best = null;
+  for (const s of perches) {
+    if (y0 + 0.02 < s.top || (best && s.top <= best.top)) continue;
+    const R = s.r + (s.rim || 0);
+    if (s.r != null ? (x - s.x) * (x - s.x) + (z - s.z) * (z - s.z) <= R * R : x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) best = s;
+  }
+  return best;
 }
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
@@ -2646,12 +2669,18 @@ function updatePlayer(dt) {
   if (P.state === 'sleep') { P.sleepT += dt; if (P.sleepT > 9) wake(); }
   else {
     pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
-    const gy = groundY(pos.x, pos.z);
+    const gy = groundY(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
     P.vy -= 22 * dt; pos.y += P.vy * dt;
-    if (pos.y <= gy || (P.onGround && P.vy <= 0.01 && pos.y - gy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
-      if (P.vy < -5) { T.poke(-3.2); if (gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
-      pos.y = gy; P.vy = 0; P.onGround = true; if (P.state === 'fly') land();
-    } else P.onGround = false;
+    if (pos.y <= sy || (P.onGround && P.vy <= 0.01 && pos.y - sy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
+      if (pr && pr.bounce && P.vy < -2.2 && P.state === 'normal') {   // la cama: rebota cada vez menos
+        const again = clock - (P.jumpAsk || -9) < 0.25; P.jumpAsk = -9;
+        P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
+      } else {
+        if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
+        const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
+        if (pr && landed && P.state === 'normal') perched(pr);
+      }
+    } else { P.onGround = false; P.perch = null; }
     const wet = gy < -0.2 && pos.y < gy + 0.15;
     if (wet && !P.inWater) { burst('splash', pos.x, 0.3, pos.z, 6); SFX.splash(); say(P, '¡Splash!', 1.2); }
     P.inWater = wet;
@@ -2910,7 +2939,8 @@ function boot(data) {
   if (Array.isArray(s.summits)) for (const n of s.summits) { const p = PEAKS.find((q) => q.name === n); if (p && !summits.includes(n)) { summits.push(n); p.reached = true; } }
   if (Array.isArray(s.fruits)) for (const k of s.fruits) if (FRUITS[k] && !fruitsTasted.includes(k)) fruitsTasted.push(k);
   restoreQuests();
-  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }   // donde se quedó
+  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
+    player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(groundY(player.pos.x, player.pos.z), top); }
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
   if (s.sound === false) setSound(false);

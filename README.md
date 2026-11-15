@@ -62,7 +62,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay siete grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles` y `caminata`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs.
+Hay ocho grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos` y `caminata`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs.
 
 ## Controles
 
@@ -78,6 +78,8 @@ Hay siete grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `control
 | Zoom | Rueda del mouse | Botón Acercar, o pellizcar |
 
 Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su alrededor: se marea.
+
+Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
 
 ## Cuidados y encargos
 

@@ -3,7 +3,7 @@
 const SAVE_KEY = 'tamachin.v1';
 const player = { T: makeTamachin({ shape: 'bola', color: '#ffc93c', mood: 'contento', scale: 1.3 }), vx: 0, vz: 0, vy: 0, heading: 0, onGround: true, state: 'normal', r: 0.62,
   baseMood: 'contento', tempMood: null, tempT: 0, onTempEnd: null, inv: 0, idleT: 0, speedN: 0, spin: 0, flySpin: 0, flatT: 0, sleepT: 0, inWater: false, inHouse: false, lastTrick: null, moved: 0,
-  needLow: null, needMood: null, busy: null, carry: null };
+  needLow: null, needMood: null, busy: null, carry: null, perch: null };
 player.pos = player.T.pos; player.pos.set(0, 0, 3.5); player.bubblePos = player.T.bubblePos;
 const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0, faceYaw: 0, shift: 0 };
 const ZOOMS = [1, 0.62, 1.42], ZOOM_LABEL = ['Acercar', 'Alejar', 'Vista normal'];
@@ -122,7 +122,14 @@ function jump() {
   const P = player;
   if (P.state === 'sleep') { wake(); return; }
   if (P.state !== 'normal' || ui.closeup) { if (ui.closeup) playerTrick(); return; }
-  if (P.onGround) { P.vy = P.inWater ? 6 : 7.8; P.onGround = false; P.T.poke(3.2); SFX.jump(); }
+  if (P.onGround) { P.vy = P.inWater ? 6 : P.perch && P.perch.bounce ? 9 : 7.8; P.onGround = false; P.T.poke(3.2); SFX.jump(); }   // desde la cama, más alto
+  else P.jumpAsk = clock;                                           // rebotando en la cama: saltar justo antes de caer lo impulsa otra vez
+}
+// subirse a algo saltando divierte un poco (con la misma regla de siempre: no cuenta repetirlo seguido)
+function perched(s) {
+  const P = player;
+  if (s.bounce) { if (gain('diversion', 0.03, 'cama', 2.5)) say(P, choose(['¡Boing!', '¡Boing, boing!', '¡Wiii!']), 1.2); return; }
+  if (gain('diversion', 0.04, 'subir', 8)) { say(P, choose(['¡Desde aquí se ve todo!', '¡Qué alto!', '¡Lo logré!', '¡Soy el rey del mundo!']), 1.6); P.T.doTrick('wave'); }
 }
 function doAction() {
   const P = player;
@@ -564,14 +571,26 @@ function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   
 $('#helpOk').addEventListener('click', hideHelp);
 
 // ───────────────────────── actualización por cuadro ─────────────────────────
+// pos.y todavía es la altura del cuadro anterior: lo bajo que ya libró no lo empuja (pasa por encima o está parado ahí)
 function resolvePlayer() {
-  const P = player, pos = P.pos, r = P.r;
-  for (let it = 0; it < 2; it++) { for (const b of boxes) pushOutBox(pos, r, b); for (const c of circles) pushOutCircle(pos, r, c.x, c.z, c.r); }
+  const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02;
+  for (let it = 0; it < 2; it++) { for (const b of boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
   if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
     if (pos.y < c.h * 0.8 && pushOutBox(pos, r * 0.8, carRect(c, 0)) && c.v > 2.2 && P.state === 'normal' && P.inv <= 0) knock(c);
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
   northCollide(pos, r); keepInWorld(pos);                           // árboles del norte y límites por franja (05-norte.js)
+}
+// Lo más alto que tiene justo debajo y que ya libró (y0: la altura antes de este cuadro). Con la misma regla que resolvePlayer,
+// lo que no lo empuja lo sostiene; si cae por la orilla, al cuadro siguiente ya está más bajo y lo empuja hacia fuera.
+function perchUnder(x, z, y0) {
+  let best = null;
+  for (const s of perches) {
+    if (y0 + 0.02 < s.top || (best && s.top <= best.top)) continue;
+    const R = s.r + (s.rim || 0);
+    if (s.r != null ? (x - s.x) * (x - s.x) + (z - s.z) * (z - s.z) <= R * R : x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) best = s;
+  }
+  return best;
 }
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
@@ -612,12 +631,18 @@ function updatePlayer(dt) {
   if (P.state === 'sleep') { P.sleepT += dt; if (P.sleepT > 9) wake(); }
   else {
     pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
-    const gy = groundY(pos.x, pos.z);
+    const gy = groundY(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
     P.vy -= 22 * dt; pos.y += P.vy * dt;
-    if (pos.y <= gy || (P.onGround && P.vy <= 0.01 && pos.y - gy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
-      if (P.vy < -5) { T.poke(-3.2); if (gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
-      pos.y = gy; P.vy = 0; P.onGround = true; if (P.state === 'fly') land();
-    } else P.onGround = false;
+    if (pos.y <= sy || (P.onGround && P.vy <= 0.01 && pos.y - sy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
+      if (pr && pr.bounce && P.vy < -2.2 && P.state === 'normal') {   // la cama: rebota cada vez menos
+        const again = clock - (P.jumpAsk || -9) < 0.25; P.jumpAsk = -9;
+        P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
+      } else {
+        if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
+        const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
+        if (pr && landed && P.state === 'normal') perched(pr);
+      }
+    } else { P.onGround = false; P.perch = null; }
     const wet = gy < -0.2 && pos.y < gy + 0.15;
     if (wet && !P.inWater) { burst('splash', pos.x, 0.3, pos.z, 6); SFX.splash(); say(P, '¡Splash!', 1.2); }
     P.inWater = wet;
@@ -876,7 +901,8 @@ function boot(data) {
   if (Array.isArray(s.summits)) for (const n of s.summits) { const p = PEAKS.find((q) => q.name === n); if (p && !summits.includes(n)) { summits.push(n); p.reached = true; } }
   if (Array.isArray(s.fruits)) for (const k of s.fruits) if (FRUITS[k] && !fruitsTasted.includes(k)) fruitsTasted.push(k);
   restoreQuests();
-  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }   // donde se quedó
+  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
+    player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(groundY(player.pos.x, player.pos.z), top); }
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
   if (s.sound === false) setSound(false);

@@ -185,9 +185,12 @@ function canvasTex(w, h, draw) {
 }
 
 // ───────────────────────── colisiones ─────────────────────────
-const boxes = [], circles = [];
-const solidBox = (x0, x1, z0, z1) => boxes.push({ x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1) });
-const solidCircle = (x, z, r) => circles.push({ x, z, r });
+// Lo bajo lleva `top` (la altura de arriba, solo en suelo plano): Tamachin lo libra saltando y, salvo `stand` falso (una cerca),
+// se para encima (`perches`). Sin `top` no tiene límite de altura. Quien lo acompaña (resolveAgent) no salta: todo le estorba.
+const boxes = [], circles = [], perches = [];
+const lowSolid = (list, s, top, stand) => { list.push(s); if (top != null) { s.top = top; if (stand !== false) perches.push(s); } return s; };
+const solidBox = (x0, x1, z0, z1, top, stand) => lowSolid(boxes, { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), top: Infinity }, top, stand);
+const solidCircle = (x, z, r, top, stand) => lowSolid(circles, { x, z, r, top: Infinity }, top, stand);
 function pushOutBox(pos, r, b) {
   if (pos.x < b.x0 - r || pos.x > b.x1 + r || pos.z < b.z0 - r || pos.z > b.z1 + r) return false;
   const cx = clamp(pos.x, b.x0, b.x1), cz = clamp(pos.z, b.z0, b.z1), dx = pos.x - cx, dz = pos.z - cz, d2 = dx * dx + dz * dz;
