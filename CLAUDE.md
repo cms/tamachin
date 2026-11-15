@@ -64,7 +64,10 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 - El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
 - Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.
 
+## Rendimiento
+
+En un iPhone corre a unos 60 cuadros por segundo en todas las zonas (casa, ciudad, cima, Valle Alegre, bosque sin fin, también con la cámara girada; medido con `?stats` en noviembre de 2026). Teléfonos más viejos o Android no se han medido. Para medir, abre el juego con `?stats` (`updateStats` en `06-main.js`): cuadros por segundo, el cuadro más lento, cuántos pasan de 50 ms (ahí el juego va en cámara lenta), llamadas de dibujo y triángulos (≈300 000 en la ciudad, con sombras).
+
 ## Sin verificar
 
-- Rendimiento en teléfonos reales (≈300 000 triángulos y sombras en la ciudad; con la cámara girada se dibuja más). Para medir, abre el juego con `?stats` (`updateStats` en `06-main.js`): cuadros por segundo, el cuadro más lento, cuántos pasan de 50 ms (ahí el juego va en cámara lenta), llamadas de dibujo y triángulos.
 - Sonido (se sintetiza con WebAudio; no se pudo escuchar en las pruebas).
