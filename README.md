@@ -74,10 +74,10 @@ Hay ocho grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controle
 | Interactuar / truco | E | Botón de acción |
 | Personalizar | C | Botón Personalizar |
 | Diario (necesidades y encargos) | J | Botón Diario (junto a los medidores) |
-| Girar la cámara | Arrastrar con el mouse, o Z y X | Arrastrar con dos dedos (o con uno mientras usas la palanca) |
+| Girar la cámara | Arrastrar con el mouse, o Z y X | Arrastrar con un dedo (o con dos) |
 | Zoom | Rueda del mouse | Botón Acercar, o pellizcar |
 
-Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su alrededor: se marea.
+Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
 
 Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
 

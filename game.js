@@ -2423,7 +2423,7 @@ document.addEventListener('click', (e) => { const b = e.target && e.target.close
 
 function setPtr(e, noSpin) {
   const r = canvas.getBoundingClientRect(); ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top; ptr.active = true; ptr.moveT = clock;
-  if (noSpin) { ptr.hasA = false; return; }                        // girando la cámara no se marea
+  if (noSpin || e.pointerType === 'touch') { ptr.hasA = false; return; }   // girando la cámara no se marea; con el dedo, arrastrar siempre gira
   const dx = ptr.x - pScreen.x, dy = ptr.y - pScreen.y, dist = Math.hypot(dx, dy);
   if (dist > pScreen.r * 0.3 && dist < Math.max(150, pScreen.r * 5)) {
     const a = Math.atan2(dy, dx);
@@ -2431,8 +2431,8 @@ function setPtr(e, noSpin) {
     ptr.a = a; ptr.hasA = true;
   } else ptr.hasA = false;
 }
-// Arrastrar gira la cámara: con el mouse; en pantallas táctiles con dos dedos (y pellizcar acerca o aleja), o con uno mientras
-// la otra mano usa la palanca. Un dedo solo sigue siendo para tocar a Tamachin y para dibujarle círculos.
+// Arrastrar gira la cámara, con el mouse o con un dedo (desde 12 px; menos es un toque o un clic). Con dos dedos también gira y
+// pellizcar acerca o aleja. La palanca y los botones son elementos aparte: un dedo en ellos nunca gira.
 const DRAG_K = 0.0075;                                             // radianes por pixel
 const touches = new Map(), two = { on: false, mx: 0, d0: 1, z0: 1 }, drag = { on: false, x: 0 };
 function twoFingers() { const [a, b] = touches.values(); return { mx: (a.x + b.x) / 2, d: Math.max(24, Math.hypot(a.x - b.x, a.y - b.y)) }; }
@@ -2457,7 +2457,7 @@ canvas.addEventListener('pointermove', (e) => {
     if (e.pointerId !== ptr.id) return;
   }
   if (ptr.down && e.pointerId === ptr.id) {
-    if (!drag.on && (e.pointerType !== 'touch' || joy.id !== null) && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) >= 12) { drag.on = true; drag.x = e.clientX; }
+    if (!drag.on && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) >= 12) { drag.on = true; drag.x = e.clientX; }
     if (drag.on) { camView.yawT += (e.clientX - drag.x) * DRAG_K; drag.x = e.clientX; setPtr(e, true); return; }
   }
   setPtr(e);
@@ -2483,13 +2483,20 @@ function hitTest(px, py, x, y, z, r) {
   const sx = (_sv.x * 0.5 + 0.5) * VW, sy = (-_sv.y * 0.5 + 0.5) * VH, d = Math.hypot(px - sx, py - sy);
   return d < Math.max(22, pxRadius(x, y, z, r)) ? d : Infinity;
 }
+// tocarlo muchas veces seguidas (cada toque a menos de 0.9 s del anterior) lo marea: en teléfono no hay círculos con el puntero
+const PESTER = { taps: 5, gap: 0.9 }, pest = { n: 0, t: -9 };
+function pester() {
+  const P = player; pest.n = clock - pest.t < PESTER.gap ? pest.n + 1 : 1; pest.t = clock;
+  if (pest.n < PESTER.taps || P.state !== 'normal' || P.T.mood === 'mareado') return false;
+  pest.n = 0; makeDizzy(4.5); P.T.poke(5); return true;
+}
 function handleClick(px, py) {
   const P = player; let best = Infinity, what = null;
   let d = hitTest(px, py, P.pos.x, P.pos.y + 0.8 * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z, 0.85 * P.T.scale); if (d < best) { best = d; what = P; }
   for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
   for (const c of creatures) { d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }
   if (!what) return;
-  if (what === P) { if (P.state === 'sleep') wake(); else playerTrick(); return; }
+  if (what === P) { if (P.state === 'sleep') wake(); else if (!pester()) playerTrick(); return; }
   const dist = Math.hypot(what.pos.x - P.pos.x, what.pos.z - P.pos.z);
   if (what.kind === 'vecino') { if (dist < 6.5 && P.state === 'normal') talkTo(what); else { say(what, '¡Ven, acércate!', 1.8); what.T.doTrick('wave'); what.talkT = 1.8; } }
   else if (dist < 6.5) what.interact(); else emit('excl', what.pos.x, what.pos.y + 1.4, what.pos.z);

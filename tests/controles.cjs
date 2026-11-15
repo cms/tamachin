@@ -1,4 +1,5 @@
-// Girar la cámara: con el mouse, Z/X, dos dedos, un dedo con la palanca; sin romper el toque (truco) ni los círculos (mareo).
+// Girar la cámara: con el mouse, Z/X, un dedo, dos dedos, un dedo con la palanca; sin romper el toque (truco) ni el mareo
+// (círculos con el mouse, o muchos toques seguidos).
 // Caminar es relativo a la cámara, la cámara gira por el círculo, y el bosque sin fin carga hacia donde se mira.
 const { openGame, touchscreen, PHONE, sleep } = require('./lib.cjs');
 
@@ -99,11 +100,28 @@ module.exports = {
       t = await st();
       T.check('dos dedos no hacen truco ni marean', t.trick === s.trick && t.mood !== 'mareado');
 
-      await E(() => { window.__tamachin.ui.zoomTarget = 1; }); await sleep(800); s = await st(); const R = Math.max(70, s.ps[2] * 2.2);
+      // un dedo solo: arrastrar gira (desde cualquier lado, también desde Tamachin), sin truco ni mareo
+      await E(() => { window.__tamachin.ui.zoomTarget = 1; }); await sleep(800); s = await st();
+      await touch('touchStart', [[80, 640, 4]]);
+      for (let i = 1; i <= 12; i++) { await touch('touchMove', [[80 + i * 10, 640, 4]]); await sleep(16); }
+      await touch('touchEnd', []); await sleep(300); t = await st();
+      T.check('un dedo 120 px a la derecha gira unos 43° (los primeros 12 px son de holgura)', near(t.yaw - s.yaw, 43, 5) && t.trick === s.trick && t.mood !== 'mareado', (t.yaw - s.yaw).toFixed(1) + '°');
+      s = await st();
+      await touch('touchStart', [[s.ps[0], s.ps[1], 8]]);
+      for (let i = 1; i <= 12; i++) { await touch('touchMove', [[s.ps[0] - i * 10, s.ps[1], 8]]); await sleep(16); }
+      await touch('touchEnd', []); await sleep(300); t = await st();
+      T.check('arrastrar un dedo desde Tamachin gira y no hace truco', near(t.yaw - s.yaw, -43, 5) && t.trick === s.trick, (t.yaw - s.yaw).toFixed(1) + '°');
+      const R = Math.max(70, s.ps[2] * 2.2); s = await st();
       await touch('touchStart', [[s.ps[0] + R, s.ps[1], 4]]);
       for (let i = 0; i <= 160; i++) { const a = i / 16 * Math.PI * 2; await touch('touchMove', [[s.ps[0] + Math.cos(a) * R, s.ps[1] + Math.sin(a) * R, 4]]); await sleep(12); }
       await touch('touchEnd', []); t = await st();
-      T.check('círculos con un dedo lo marean y no giran', t.mood === 'mareado' && near(t.yaw, s.yaw, 0.1));
+      T.check('círculos con un dedo ya no lo marean', t.mood !== 'mareado', t.mood);
+
+      // muchos toques seguidos sí lo marean
+      await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 0; window.__tamachin.go(0, 3.5); }); await sleep(2500); s = await st();
+      const moods = [];
+      for (let i = 0; i < 5; i++) { await touch('touchStart', [[s.ps[0], s.ps[1], 10 + i]]); await sleep(50); await touch('touchEnd', []); await sleep(150); moods.push(await E(() => window.__tamachin.player.T.mood)); }
+      T.check('cinco toques rápidos en Tamachin lo marean (no antes del quinto)', moods[4] === 'mareado' && moods.slice(0, 4).every((m) => m !== 'mareado'), moods.join(', '));
       await sleep(6500);
 
       const j = await E(() => { const b = document.querySelector('#joy').getBoundingClientRect(); return [b.left + b.width / 2, b.top + b.height / 2]; });
