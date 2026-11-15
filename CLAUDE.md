@@ -53,10 +53,14 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
 
-## Cómo se probó
+## Pruebas (`tests/`)
 
-Chrome sin interfaz con Playwright, interceptando la URL de cdnjs para servir una copia local de `three@0.128.0`. `window.__tamachin` expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar al jugador en pruebas.
-Con render por software corre a ~3 fps y el reloj del juego avanza lento (dt se limita a 0.05 s), así que las esperas deben ser generosas.
+`npm test` (después de `npm install`) corre los grupos de `tests/run.cjs` en el Chrome instalado; `npm run test:largo` suma la caminata de 4 minutos. Corre `npm test` antes de cada commit que toque el juego.
+
+- `tests/lib.cjs` sirve el repo, abre el juego y, con `expose`, deja variables internas de la IIFE en `window.__dbg` (reemplaza `window.__tamachin = {` en `game.js` al servirlo). `window.__tamachin` ya expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar.
+- `mundo` compara lo que se genera con `tests/mundo.json`. Si falla sin que quisieras cambiar el mundo, es casi siempre una llamada de más a `rnd()`. Si el cambio es a propósito: `npm test -- mundo --actualizar`.
+- El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
+- Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.
 
 ## Sin verificar
 

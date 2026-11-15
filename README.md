@@ -28,6 +28,7 @@ parts/
   05-norte.js     Montañas, Valle Alegre y el bosque sin fin (terreno, límites, vegetación por sectores y por casillas)
   06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
 build.sh          Concatena parts/ en game.js
+tests/            Pruebas en Chrome sin interfaz (npm test)
 ```
 
 Las seis partes son fragmentos de **una sola IIFE**: `01-core.js` la abre y `06-main.js` la cierra. No son módulos; comparten el mismo ámbito y el orden importa.
@@ -45,6 +46,19 @@ Para que nunca quede desfasado de `parts/`, activa el hook que lo regenera en ca
 ```sh
 git config core.hooksPath .githooks
 ```
+
+## Pruebas
+
+Corren el juego en el Chrome instalado, sin interfaz, y lo juegan: caminan con la palanca, abren el refri, cumplen encargos, giran la cámara con el mouse y con los dedos, y revisan que nada tape a Tamachin. El juego en sí no necesita instalar nada; las pruebas sí:
+
+```sh
+npm install                  # una vez: playwright-core (usa el Chrome que ya tienes, no descarga navegadores)
+npm test                     # todas menos la caminata larga (unos 6 minutos)
+npm test -- vista controles  # solo algunas
+npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
+```
+
+Hay siete grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles` y `caminata`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs.
 
 ## Controles
 

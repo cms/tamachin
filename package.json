@@ -1,0 +1,12 @@
+{
+  "name": "tamachin",
+  "private": true,
+  "description": "Pruebas del juego en Chrome sin interfaz (el juego no necesita compilar ni instalar nada).",
+  "scripts": {
+    "test": "node tests/run.cjs",
+    "test:largo": "node tests/run.cjs --largo"
+  },
+  "devDependencies": {
+    "playwright-core": "1.56.1"
+  }
+}
