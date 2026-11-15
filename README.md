@@ -64,7 +64,7 @@ Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su a
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
 - Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades y encargos (en `localStorage`).
+- Se guardan forma, color, ánimo, necesidades, encargos y el lugar donde quedó Tamachin (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
 
 ## Mapa (unidades en metros)
 

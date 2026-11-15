@@ -2116,9 +2116,11 @@ function finishQuest(id) {
 }
 
 function save() {
+  const P = player, at = P.state === 'sleep' ? (BEDS[P.sleepSpot] || BEDS.cama).exit : P.pos;   // dormido: donde se levanta, no dentro de la cama
   try {
-    localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: player.T.shape, color: player.T.color, mood: player.baseMood,
-      needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted }));
+    localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
+      needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2) }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -2532,6 +2534,18 @@ function syncNeedsHud() {
   if ((needAriaT -= 1) <= 0) { needAriaT = 5; bNeeds.setAttribute('aria-label', 'Abrir el diario. ' + Object.keys(NEEDS).map((k) => NEEDS[k].label + ' ' + Math.round(needs[k] * 100) + ' %').join(', ')); }
 }
 bNeeds.addEventListener('click', () => toggleDiary()); $('#dClose').addEventListener('click', () => toggleDiary(false));
+// volver al inicio, frente a la casa. Lejos de casa pide un segundo toque: un toque sin querer no debe costar un kilómetro de camino.
+const START = { x: 0, z: 3.5 }, bHome = $('#dHome'); let homeArmed = 0;
+function goHome() {
+  const P = player; if (P.state === 'busy') return;
+  if (Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40 && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
+  homeArmed = 0; bHome.textContent = 'Volver al inicio';
+  if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
+  P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
+  P.pos.set(START.x, 0, START.z); camInit = false;
+  toggleDiary(false); say(P, '¡De vuelta en casa!', 2.2); P.T.doTrick('hop'); burst('spark', P.pos.x, 1.6, P.pos.z, 6); SFX.nice(); save();
+}
+bHome.addEventListener('click', goHome);
 bCustom.addEventListener('click', () => togglePanel()); $('#pClose').addEventListener('click', () => togglePanel(false));
 const bZoom = $('#bZoom'), bSound = $('#bSound'), helpEl = $('#help');
 bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.textContent = ZOOM_LABEL[ui.zoomIdx]; });
@@ -2542,7 +2556,7 @@ $('#helpOk').addEventListener('click', () => { helpEl.hidden = true; });
 function resolvePlayer() {
   const P = player, pos = P.pos, r = P.r;
   for (let it = 0; it < 2; it++) { for (const b of boxes) pushOutBox(pos, r, b); for (const c of circles) pushOutCircle(pos, r, c.x, c.z, c.r); }
-  if (pos.z > -66) for (const c of cars) {
+  if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
     if (pos.y < c.h * 0.8 && pushOutBox(pos, r * 0.8, carRect(c, 0)) && c.v > 2.2 && P.state === 'normal' && P.inv <= 0) knock(c);
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
@@ -2737,6 +2751,7 @@ function updateHud(dt) {
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) helpEl.hidden = true;
+  if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
 }
 
 function resize() {
@@ -2770,7 +2785,8 @@ function boot(data) {
   if (Array.isArray(s.summits)) for (const n of s.summits) { const p = PEAKS.find((q) => q.name === n); if (p && !summits.includes(n)) { summits.push(n); p.reached = true; } }
   if (Array.isArray(s.fruits)) for (const k of s.fruits) if (FRUITS[k] && !fruitsTasted.includes(k)) fruitsTasted.push(k);
   restoreQuests();
-  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }
+  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }   // donde se quedó
+  if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);

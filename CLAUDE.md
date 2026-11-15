@@ -32,6 +32,7 @@ La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead` en `06-ma
 - **Encargos**: `QUESTS` y `quests` (0 sin descubrir, 1 en curso, 2 hecho), con `startQuest`/`finishQuest`. Lo que deja hecho un encargo se reaplica al cargar en `restoreQuests()`.
 - **Vecinos**: `n.onTalk(n)` puede devolver la frase (los encargos hablan primero), `n.follow(n, d)` lo hace acompañar a Tamachin y `n.goto` lo lleva a un punto.
 - **Secuencias** (refri, comer bayas): `startBusy({ dur, cam, update(dt, t), end })` deja al jugador en estado `busy` (sin caminar ni trucos); `once(s, clave, t)` dispara algo una sola vez. `cam` acerca la cámara (`x, y, z` mira, `ox, oy, oz` desplazamiento).
+- **Guardado**: `save()` (cada 8 s y al cerrar la página) incluye el lugar y el rumbo de Tamachin; si duerme, el punto donde se levanta. `boot()` lo restaura. `goHome()` lo regresa al inicio (botón del diario).
 - **Interacciones** pueden llevar `ok()`: si devuelve falso no aparecen (un arbusto sin bayas).
 - **Contenido nuevo del mundo**: usa su propia semilla (`mulberry(n)`), no `rnd`. Cada llamada extra a `rnd/rr/pick` durante la construcción mueve todo lo que se genera después.
 
