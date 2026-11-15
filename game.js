@@ -2037,7 +2037,7 @@ const player = { T: makeTamachin({ shape: 'bola', color: '#ffc93c', mood: 'conte
   baseMood: 'contento', tempMood: null, tempT: 0, onTempEnd: null, inv: 0, idleT: 0, speedN: 0, spin: 0, flySpin: 0, flatT: 0, sleepT: 0, inWater: false, inHouse: false, lastTrick: null, moved: 0,
   needLow: null, needMood: null, busy: null, carry: null };
 player.pos = player.T.pos; player.pos.set(0, 0, 3.5); player.bubblePos = player.T.bubblePos;
-const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0, faceYaw: 0 };
+const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0, faceYaw: 0, shift: 0 };
 const ZOOMS = [1, 0.62, 1.42], ZOOM_LABEL = ['Acercar', 'Alejar', 'Vista normal'];
 const ptr = { x: 0, y: 0, active: false, moveT: -9, a: 0, hasA: false, down: false, sx: 0, sy: 0, st: 0, id: null };
 const pScreen = { x: 0, y: 0, r: 40 };
@@ -2701,7 +2701,7 @@ function updateCamera(dt) {
   }
   if (!camInit) camLead.x = camLead.z = 0;
   updateLead(dt);
-  if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) { tx += 1.3 * c; tz -= 1.3 * s; } else { oy = 2.5; oz = 6.4; ty = P.pos.y - 0.5; } }
+  if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) { tx += 1.3 * c; tz -= 1.3 * s; } else { oy = 0.75; oz = 6.2; } }   // en teléfono también a la altura de sus ojos (desde arriba se veía con sueño)
   else {
     const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
     const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = xLimitAt(P.pos.z);
@@ -2723,6 +2723,10 @@ function updateCamera(dt) {
   if (fixed) { const hx = camPos.x - P.pos.x, hz = camPos.z - P.pos.z, h = Math.hypot(hx, hz); if (h > 0.5) { V.vs = hx / h; V.vc = hz / h; } }   // toma fija: el marco sigue a la cámara real
   camSlope = (camPos.y - ty) / Math.max(1, (camPos.x - P.pos.x) * V.vs + (camPos.z - P.pos.z) * V.vc);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
   camera.position.copy(camPos); camera.lookAt(camTgt);
+  // en teléfono, con Personalizar abierto, la imagen se corre hacia arriba para que Tamachin quede en el hueco entre la barra y el panel
+  const shiftT = ui.closeup && !wide ? VH / 2 - (topEl.offsetHeight + (panelEl.getBoundingClientRect().top || VH * 0.53)) / 2 : 0;
+  ui.shift = camInit ? damp(ui.shift, shiftT, 6, dt) : shiftT;
+  if (Math.abs(ui.shift) > 0.5) camera.setViewOffset(VW, VH, 0, ui.shift, VW, VH); else if (camera.view && camera.view.enabled) camera.clearViewOffset();
   skyMesh.position.copy(camPos);
   sun.target.position.set(P.pos.x - 6 * s, base, P.pos.z - 6 * c); sun.position.copy(sun.target.position).add(SUN_OFF);   // la sombra cubre más hacia donde se mira
   _sv.set(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z).project(camera);

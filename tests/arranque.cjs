@@ -19,7 +19,7 @@ module.exports = {
       await ctx.close();
     }
     {
-      const { ctx, page, errors, E } = await openGame(T, { device: PHONE, help: true });
+      const { ctx, page, errors, E } = await openGame(T, { device: PHONE, help: true, expose: 'camera, player, pScreen' });
       T.check('teléfono: sin errores', !errors.length, errors.join(' | ') || undefined);
       T.check('la barra de arriba cabe sin desplazar de lado', await E(() => document.documentElement.scrollWidth <= innerWidth));
       T.check('el botón de los medidores dice Diario', (await page.textContent('#needs')).includes('Diario'));
@@ -32,8 +32,16 @@ module.exports = {
       T.check('"Volver al inicio" se ve sin desplazar', d.home);
       await page.screenshot({ path: T.out('telefono-diario.jpg'), type: 'jpeg', quality: 70 });
       await page.tap('#dClose'); await sleep(300);
-      await page.tap('#bCustom'); await sleep(1200);
+      await page.tap('#bCustom'); await sleep(1500);
       await page.screenshot({ path: T.out('telefono-personalizar.jpg'), type: 'jpeg', quality: 70 });
+      const c = await E(() => {
+        const D = window.__dbg, P = D.player, eye = P.pos.y + 0.78 * P.T.scale, top = document.querySelector('.top').getBoundingClientRect().bottom;
+        return { above: D.camera.position.y - eye, y: D.pScreen.y, r: D.pScreen.r, top, panel: document.querySelector('#panel').getBoundingClientRect().top };
+      });
+      T.check('Personalizar en teléfono: la cámara a la altura de sus ojos (no desde arriba)', c.above < 1.2, c.above.toFixed(2) + ' m arriba');
+      T.check('y Tamachin entero en el hueco entre la barra y el panel', c.y - c.r > c.top && c.y + c.r < c.panel, JSON.stringify(c));
+      await page.tap('#pClose'); await sleep(1500);
+      T.check('al cerrar, la imagen vuelve a su lugar', await E(() => !(window.__dbg.camera.view && window.__dbg.camera.view.enabled)));
       await ctx.close();
     }
   },
