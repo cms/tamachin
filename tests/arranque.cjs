@@ -1,8 +1,8 @@
-// Arranque en escritorio y teléfono: sin errores, la barra cabe, el diario se alcanza con el dedo.
+// Arranque en escritorio y teléfono: sin errores, la barra cabe, el diario y Personalizar se alcanzan con el dedo.
 const { openGame, PHONE, sleep } = require('./lib.cjs');
 
 module.exports = {
-  titulo: 'arranca sin errores; en teléfono el diario se alcanza',
+  titulo: 'arranca sin errores; en teléfono el diario y Personalizar se alcanzan',
   async run(T) {
     {
       const { ctx, page, errors, E } = await openGame(T, { help: true });
@@ -31,9 +31,23 @@ module.exports = {
       T.check('tocar Diario lo abre', d.open);
       T.check('"Volver al inicio" se ve sin desplazar', d.home);
       await page.screenshot({ path: T.out('telefono-diario.jpg'), type: 'jpeg', quality: 70 });
+      // lo que no cabe en el panel: aviso "Más abajo" mientras quede algo por ver
+      const more = (sel) => E((s) => document.querySelector(s).classList.contains('more'), sel);
+      const toEnd = async (sel) => { await E((s) => { const b = document.querySelector(s + ' .pbody'); b.scrollTop = b.scrollHeight; }, sel); await sleep(300); };
+      T.check('diario: si no cabe, avisa que hay más abajo', await more('#diary'));
+      await toEnd('#diary');
+      T.check('diario: al llegar al final, el aviso se quita', !await more('#diary'));
       await page.tap('#dClose'); await sleep(300);
       await page.tap('#bCustom'); await sleep(1500);
       await page.screenshot({ path: T.out('telefono-personalizar.jpg'), type: 'jpeg', quality: 70 });
+      const m = await E(() => {
+        const body = document.querySelector('#panel .pbody'), h = [...body.querySelectorAll('h3')].find((x) => x.textContent === 'Ánimo').getBoundingClientRect();
+        return { visible: h.bottom <= body.getBoundingClientRect().bottom, cue: document.querySelector('#panel').classList.contains('more') };
+      });
+      T.check('Personalizar: Ánimo se ve, o hay aviso de que hay más abajo', m.visible || m.cue, JSON.stringify(m));
+      await toEnd('#panel');
+      T.check('Personalizar: al llegar al final, el aviso se quita', !await more('#panel'));
+      await E(() => { document.querySelector('#panel .pbody').scrollTop = 0; }); await sleep(300);
       const c = await E(() => {
         const D = window.__dbg, P = D.player, eye = P.pos.y + 0.78 * P.T.scale, top = document.querySelector('.top').getBoundingClientRect().bottom;
         return { above: D.camera.position.y - eye, y: D.pScreen.y, r: D.pScreen.r, top, panel: document.querySelector('#panel').getBoundingClientRect().top };

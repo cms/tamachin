@@ -508,7 +508,7 @@ function togglePanel(on) {
   if (on && !diaryEl.hidden) toggleDiary(false);
   if (on && !ui.closeup) ui.faceYaw = camView.yaw;
   panelEl.hidden = !on; ui.closeup = on; document.body.classList.toggle('custom', on); bCustom.setAttribute('aria-expanded', String(on)); bCustom.textContent = on ? 'Volver al mundo' : 'Personalizar';
-  if (on) { syncPanel(); for (const k in keys) keys[k] = false; }
+  if (on) { syncPanel(); for (const k in keys) keys[k] = false; updMore(panelEl); }
 }
 
 // diario: cómo está Tamachin y los encargos. Se abre con los medidores (o la tecla J).
@@ -528,7 +528,7 @@ function renderDiary() {
   questListEl.innerHTML = open.concat(done).map((k) => '<li class="' + (quests[k] === 2 ? 'done' : '') + '"><strong>' + QUESTS[k].title + '<em>' + (quests[k] === 2 ? 'Hecho' : 'En curso') + '</em></strong><p>'
     + (quests[k] === 2 ? QUESTS[k].done : QUESTS[k].hint + (QUESTS[k].progress ? ' Llevas ' + QUESTS[k].progress() + '.' : '')) + '</p></li>').join('');
   questNoteEl.textContent = left ? (open.length + done.length ? 'Quedan ' + left + ' encargos por descubrir. ' : '') + 'Platica con los vecinos y revisa el buzón: hay quien necesita ayuda.' : '¡Descubriste todos los encargos!';
-  syncDiaryNeeds();
+  syncDiaryNeeds(); updMore(diaryEl);
 }
 function syncDiaryNeeds() {
   needListEl.querySelectorAll('.nrow').forEach((row, i) => { const k = Object.keys(NEEDS)[i]; row.querySelector('.pct').textContent = Math.round(needs[k] * 100) + ' %'; row.querySelector('b').style.transform = 'scaleX(' + needs[k].toFixed(3) + ')'; });
@@ -540,6 +540,9 @@ function syncNeedsHud() {
   if ((needAriaT -= 1) <= 0) { needAriaT = 5; bNeeds.setAttribute('aria-label', 'Abrir el diario. ' + Object.keys(NEEDS).map((k) => NEEDS[k].label + ' ' + Math.round(needs[k] * 100) + ' %').join(', ')); }
 }
 bNeeds.addEventListener('click', () => toggleDiary()); $('#dClose').addEventListener('click', () => toggleDiary(false));
+// paneles que se desplazan (en teléfono no cabe todo): "Más abajo" mientras quede algo por ver
+function updMore(el) { const b = el.querySelector('.pbody'); el.classList.toggle('more', !el.hidden && b.scrollHeight - b.scrollTop - b.clientHeight > 8); }
+for (const el of [panelEl, diaryEl]) el.querySelector('.pbody').addEventListener('scroll', () => updMore(el), { passive: true });
 // volver al inicio, frente a la casa. Lejos de casa pide un segundo toque: un toque sin querer no debe costar un kilómetro de camino.
 const START = { x: 0, z: 3.5 }, bHome = $('#dHome'); let homeArmed = 0;
 function goHome() {
@@ -814,6 +817,7 @@ function resize() {
   const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
   if (w === VW && h === VH) return; VW = w; VH = h;
   renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 48; camera.updateProjectionMatrix();
+  updMore(panelEl); updMore(diaryEl);
   document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px');   // en teléfono la barra de arriba ocupa varias filas
 }
 const topEl = $('.top');

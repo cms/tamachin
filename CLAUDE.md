@@ -53,6 +53,8 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
 
+Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMore()` le pone la clase `more` al panel y aparece "Más abajo" (`.pmore`, encima del final de `.pbody`). Si cambias lo que hay dentro de un panel, llama `updMore` después.
+
 ## Pruebas (`tests/`)
 
 `npm test` (después de `npm install`) corre los grupos de `tests/run.cjs` en el Chrome instalado; `npm run test:largo` suma la caminata de 4 minutos. Corre `npm test` antes de cada commit que toque el juego.

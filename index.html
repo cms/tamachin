@@ -97,6 +97,11 @@ button{font-family:inherit;color:inherit}
 .btn.home{flex:none}
 .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 16px 6px}
 .pbody{flex:1;min-height:0;overflow-y:auto;padding:0 16px 4px;touch-action:pan-y;overscroll-behavior:contain}
+.pmore{position:absolute;left:0;right:0;bottom:14px;height:46px;display:flex;align-items:flex-end;justify-content:center;
+  background:linear-gradient(rgba(255,253,246,0),var(--paper) 72%);pointer-events:none;opacity:0;transition:opacity .2s}
+.more>.pmore{opacity:1}
+.pmore span{display:flex;align-items:center;gap:4px;font-size:11.5px;font-weight:900;letter-spacing:.08em;text-transform:uppercase;opacity:.7}
+.pmore svg{width:14px;height:14px}
 .phead h2{font-family:var(--font-display);font-weight:400;font-size:24px;margin:0;line-height:1.1;text-wrap:balance}
 #panel h3,#diary h3{font-size:12px;font-weight:900;letter-spacing:.12em;text-transform:uppercase;margin:12px 0 7px;opacity:.7}
 #panel h3:first-child,#diary h3:first-child{margin-top:4px}
@@ -213,6 +218,7 @@ body.diary #touch,body.diary #help{display:none}
     <div id="moods" class="grid"></div>
     <p class="hint">Tócalo para que haga un truco. Dibuja círculos a su alrededor y se marea.</p>
     </div>
+    <div class="pmore" aria-hidden="true"><span>Más abajo <svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
   </aside>
 
   <aside id="diary" hidden aria-label="Diario de Tamachin">
@@ -229,6 +235,7 @@ body.diary #touch,body.diary #help{display:none}
     <ul id="questList" class="quests"></ul>
     <p id="questNote" class="qnote"></p>
     </div>
+    <div class="pmore" aria-hidden="true"><span>Más abajo <svg viewBox="0 0 16 16"><path d="M3 6l5 5 5-5" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"/></svg></span></div>
   </aside>
 
   <div id="prompt" class="prompt" hidden><kbd>E</kbd><span id="promptText"></span></div>
