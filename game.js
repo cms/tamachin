@@ -2856,9 +2856,21 @@ function resize() {
 }
 const topEl = $('.top');
 let last = performance.now();
+// ?stats en la dirección: cuadros por segundo, el cuadro más lento y cuánto se dibuja, para medir en un teléfono de verdad.
+// Un cuadro de más de 50 ms hace que el juego vaya en cámara lenta (dt se limita a 0.05 s).
+const statsEl = /[?&]stats\b/.test(location.search) ? $('#app').appendChild(Object.assign(document.createElement('div'), { id: 'stats' })) : null;
+const stats = { n: 0, t: 0, worst: 0, slow: 0 };
+function updateStats(raw) {
+  stats.n++; stats.t += raw; stats.worst = Math.max(stats.worst, raw); if (raw > 0.05) stats.slow++;
+  if (stats.t < 1) return;
+  const r = renderer.info.render;
+  statsEl.textContent = Math.round(stats.n / stats.t) + ' cuadros/s · peor ' + Math.round(stats.worst * 1000) + ' ms\nde más de 50 ms: ' + stats.slow
+    + '\n' + r.calls + ' llamadas · ' + Math.round(r.triangles / 1000) + 'k triángulos\n' + VW + '×' + VH + ' a ' + renderer.getPixelRatio().toFixed(2) + 'x';
+  stats.n = stats.t = stats.worst = stats.slow = 0;
+}
 function frame(now) {
   requestAnimationFrame(frame);
-  const dt = Math.min(0.05, Math.max(0.001, (now - last) / 1000)); last = now;
+  const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
   resize(); clock += dt;
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
@@ -2866,6 +2878,7 @@ function frame(now) {
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   renderer.render(scene, camera);
+  if (statsEl) updateStats(raw);
 }
 
 // ───────────────────────── arranque ─────────────────────────

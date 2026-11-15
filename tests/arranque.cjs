@@ -16,6 +16,15 @@ module.exports = {
       await page.keyboard.press('Escape'); await sleep(200);
       T.check('Escape lo cierra', await E(() => document.querySelector('#diary').hidden));
       await page.screenshot({ path: T.out('escritorio.jpg'), type: 'jpeg', quality: 70 });
+      T.check('sin ?stats no hay medidor de rendimiento', await E(() => !document.querySelector('#stats')));
+      await ctx.close();
+    }
+    {
+      const { ctx, page, errors } = await openGame(T, { query: '?stats', settle: 2200 });
+      const txt = (await page.textContent('#stats').catch(() => '')) || '';
+      T.check('con ?stats se ven cuadros/s, llamadas y triángulos', /\d+ cuadros\/s/.test(txt) && /\d+ llamadas/.test(txt) && /triángulos/.test(txt), txt.replace(/\n/g, ' | '));
+      T.check('sin errores con ?stats', !errors.length, errors.join(' | ') || undefined);
+      await page.screenshot({ path: T.out('stats.jpg'), type: 'jpeg', quality: 70 });
       await ctx.close();
     }
     {

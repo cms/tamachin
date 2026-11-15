@@ -66,5 +66,5 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 
 ## Sin verificar
 
-- Rendimiento en teléfonos reales (≈275 000 triángulos y sombras en la ciudad).
+- Rendimiento en teléfonos reales (≈300 000 triángulos y sombras en la ciudad; con la cámara girada se dibuja más). Para medir, abre el juego con `?stats` (`updateStats` en `06-main.js`): cuadros por segundo, el cuadro más lento, cuántos pasan de 50 ms (ahí el juego va en cámara lenta), llamadas de dibujo y triángulos.
 - Sonido (se sintetiza con WebAudio; no se pudo escuchar en las pruebas).

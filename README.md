@@ -47,6 +47,10 @@ Para que nunca quede desfasado de `parts/`, activa el hook que lo regenera en ca
 git config core.hooksPath .githooks
 ```
 
+## Medir el rendimiento
+
+Agrega `?stats` a la dirección (por ejemplo `https://tamachin.matteo.games/?stats`) y aparece un recuadro con los cuadros por segundo, el cuadro más lento, cuántos tardaron más de 50 ms (ahí el juego va en cámara lenta), las llamadas de dibujo y los triángulos. Sirve para probar en un teléfono de verdad.
+
 ## Pruebas
 
 Corren el juego en el Chrome instalado, sin interfaz, y lo juegan: caminan con la palanca, abren el refri, cumplen encargos, giran la cámara con el mouse y con los dedos, y revisan que nada tape a Tamachin. El juego en sí no necesita instalar nada; las pruebas sí:
