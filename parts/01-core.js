@@ -35,6 +35,10 @@ const FOG = new THREE.Color(0xd6f0ff);
 scene.background = FOG.clone();
 scene.fog = new THREE.Fog(FOG.getHex(), 60, 300);
 const camera = new THREE.PerspectiveCamera(48, 1, 0.3, 800);
+// Hacia dónde mira la cámara. Se gira arrastrando (06-main.js). yaw 0: la cámara al sur de Tamachin, mirando al norte.
+// c y s son coseno y seno de yaw: la derecha de la pantalla es (c, -s) en el mundo y "hacia la cámara" es (s, c).
+// vc y vs: el mismo marco para las pruebas de visibilidad; durante una toma fija (el refri) siguen a la cámara de verdad.
+const camView = { yaw: 0, yawT: 0, c: 1, s: 0, vc: 1, vs: 0 };
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 
 const skyMesh = (() => {

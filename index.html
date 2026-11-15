@@ -69,6 +69,7 @@ button{font-family:inherit;color:inherit}
 .need.low i{animation:needlow 1s ease-in-out infinite}
 .need.low svg{animation:needshake .9s ease-in-out infinite}
 .need.up i{box-shadow:0 0 0 3px var(--sun)}
+.nlab{font-weight:900;font-size:13.5px;margin-left:1px}
 @keyframes needlow{50%{background:#ffd0d0}}
 @keyframes needshake{25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
 
@@ -90,8 +91,9 @@ button{font-family:inherit;color:inherit}
 .quests li.done em{background:var(--mint)}
 .quests p{margin:4px 0 0;font-size:12.5px;font-weight:700;line-height:1.35;opacity:.8}
 .qnote{font-size:12.5px;font-weight:700;line-height:1.4;opacity:.7;margin:10px 0 0}
-#diary h3+.qnote{margin-top:0}
-.btn.home{margin:10px 0 6px}
+.where{display:flex;align-items:center;gap:10px;margin-bottom:2px}
+.where .qnote{margin:0;flex:1;min-width:0}
+.btn.home{flex:none}
 .phead{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:0 16px 6px}
 .pbody{flex:1;min-height:0;overflow-y:auto;padding:0 16px 4px;touch-action:pan-y;overscroll-behavior:contain}
 .phead h2{font-family:var(--font-display);font-weight:400;font-size:24px;margin:0;line-height:1.1;text-wrap:balance}
@@ -185,6 +187,7 @@ body.diary #touch,body.diary #help{display:none}
         <span class="need n-panza" data-k="panza" title="Panza"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 6.6c-1.6-1.3-5.5-1.5-6 2.6-.4 3.4 2 7.4 4 7.4.8 0 1.2-.4 2-.4s1.2.4 2 .4c2 0 4.4-4 4-7.4-.5-4.1-4.4-3.9-6-2.6z" fill="#ff6b6b" stroke="#231d3b" stroke-width="1.6"/><path d="M10 6.6c0-2 .8-3.3 2.4-4" fill="none" stroke="#231d3b" stroke-width="1.6" stroke-linecap="round"/><path d="M11.4 4.3c1.6-1.4 3.4-1 3.8-.6-.6 1.4-2.4 1.8-3.8.6z" fill="#57c06a" stroke="#231d3b" stroke-width="1.2"/></svg><i><b></b></i></span>
         <span class="need n-energia" data-k="energia" title="Energía"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.6 2.8a7.4 7.4 0 1 0 3.6 11.1 6.2 6.2 0 0 1-3.6-11.1z" fill="#ffd23f" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/></svg><i><b></b></i></span>
         <span class="need n-diversion" data-k="diversion" title="Diversión"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z" fill="#ff8fb1" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/></svg><i><b></b></i></span>
+        <span class="nlab">Diario</span>
       </button>
     </div>
     <div class="tools">
@@ -217,14 +220,13 @@ body.diary #touch,body.diary #help{display:none}
       <button id="dClose" class="btn" type="button">Listo</button>
     </div>
     <div class="pbody">
+    <h3>Dónde está</h3>
+    <div class="where"><button id="dHome" class="btn home" type="button">Volver al inicio</button><p class="qnote">Se queda donde lo dejaste, aunque cierres la página.</p></div>
     <h3>Cómo está</h3>
     <div id="needList"></div>
     <h3>Encargos</h3>
     <ul id="questList" class="quests"></ul>
     <p id="questNote" class="qnote"></p>
-    <h3>Dónde está</h3>
-    <p class="qnote">Tamachin se queda donde lo dejaste, aunque cierres la página.</p>
-    <button id="dHome" class="btn home" type="button">Volver al inicio</button>
     </div>
   </aside>
 
@@ -232,8 +234,8 @@ body.diary #touch,body.diary #help{display:none}
   <div id="toast" role="status"></div>
 
   <div id="help">
-    <p class="k"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> o flechas para caminar · <kbd>Shift</kbd> corre · <kbd>Espacio</kbd> salta · <kbd>E</kbd> interactúa · <kbd>J</kbd> diario.<br>Haz clic en Tamachin para un truco. Mueve el mouse en círculos a su alrededor y se marea.<br>Cuida su panza, su energía y su diversión.</p>
-    <p class="t">Camina con la palanca. Toca a Tamachin para un truco y dibuja círculos con el dedo a su alrededor para marearlo. Toca los medidores de arriba para ver su diario.</p>
+    <p class="k"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> o flechas para caminar · <kbd>Shift</kbd> corre · <kbd>Espacio</kbd> salta · <kbd>E</kbd> interactúa · <kbd>J</kbd> diario.<br>Arrastra con el mouse (o <kbd>Z</kbd> <kbd>X</kbd>) para girar la cámara. Haz clic en Tamachin para un truco. Mueve el mouse en círculos a su alrededor y se marea.<br>Cuida su panza, su energía y su diversión.</p>
+    <p class="t">Camina con la palanca. Gira la cámara con dos dedos y pellizca para acercar. Toca a Tamachin para un truco y dibuja círculos con el dedo a su alrededor para marearlo. Toca Diario, arriba, para ver cómo está y sus encargos.</p>
     <button id="helpOk" class="btn" type="button">Entendido</button>
   </div>
 

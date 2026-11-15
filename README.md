@@ -55,8 +55,9 @@ git config core.hooksPath .githooks
 | Saltar | Espacio | Botón Saltar |
 | Interactuar / truco | E | Botón de acción |
 | Personalizar | C | Botón Personalizar |
-| Diario (necesidades y encargos) | J | Tocar los medidores |
-| Zoom | Rueda del mouse | Botón Acercar |
+| Diario (necesidades y encargos) | J | Botón Diario (junto a los medidores) |
+| Girar la cámara | Arrastrar con el mouse, o Z y X | Arrastrar con dos dedos (o con uno mientras usas la palanca) |
+| Zoom | Rueda del mouse | Botón Acercar, o pellizcar |
 
 Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su alrededor: se marea.
 
@@ -64,11 +65,11 @@ Clic o toque sobre Tamachin: hace un truco. Mover el puntero en círculos a su a
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
 - Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades, encargos y el lugar donde quedó Tamachin (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin y hacia dónde mira la cámara (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
 
 ## Mapa (unidades en metros)
 
-- La cámara siempre mira al norte (−Z). La puerta de la casa mira al sur (+Z).
+- Al empezar, la cámara mira al norte (−Z); se puede girar. La puerta de la casa mira al sur (+Z).
 - Ciudad: X y Z entre −62 y 62. Calles en X = ±24 y Z = ±24.
 - Casa: manzana central. Parque: manzana norte del centro, con el portón hacia el camino.
 - Camino: de Z = −62 a Z = −160. Bosque: de Z = −160 a Z = −268, con el río cerca de Z = −205.

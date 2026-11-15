@@ -18,12 +18,15 @@
 - **Ánimos**: una entrada en `MOODS` (párpados, boca, pupila especial, velocidad) y un ícono en `MOOD_ICON` (`06-main.js`).
 - **Textos**: todo en español, sin emojis en la interfaz.
 
-## Visibilidad con cámara fija
+## Cámara que gira y visibilidad
 
-La cámara no gira. Lo que queda entre la cámara y Tamachin se aparta solo, en `updateScenery()`:
-edificios (`occluders`) se vuelven transparentes, los árboles se agachan y la casa pierde techo y fachada al entrar. Si agregas algo alto al sur de una zona caminable, regístralo ahí. Los edificios guardan cuánto sobresalen sus toldos a cada lado (`padW`, `padE`) para que la prueba de lado los cuente.
+La cámara gira alrededor de Tamachin: arrastrando con el mouse, con dos dedos (o uno mientras se usa la palanca) y con Z/X. El ángulo está en `camView` (`01-core.js`): `yaw` 0 es la cámara al sur mirando al norte, como al empezar; `c` y `s` son su coseno y seno. La derecha de la pantalla es `(c, -s)` en el mundo y "hacia la cámara" es `(s, c)`. Caminar es relativo a la cámara (arriba en la palanca es alejarse de ella). El ángulo se guarda; `goHome()` lo regresa a 0.
 
-La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead` en `06-main.js`), sobre todo al sur, y al detenerse conserva el adelanto. Por eso esas pruebas usan el rayo real cámara→Tamachin (`camPos`, `camSlope`, `rayX`), no una distancia fija detrás de él.
+Lo que queda entre la cámara y Tamachin se aparta solo, en `updateScenery()`: edificios (`occluders`) se vuelven transparentes, los árboles se agachan y la casa pierde techo y fachada al entrar (y sus paredes, si la cámara la mira desde otro lado). Todas las pruebas van en el marco de la cámara (`u` a la derecha, `d` hacia la cámara; `camBox`, `rayCrosses`, `rayU`), así que con `yaw` 0 dan lo mismo que cuando la cámara era fija. Si agregas algo alto junto a una zona caminable, regístralo en `occluders` con su planta y altura, y si tiene toldos, cuánto sobresalen por lado (`padW`, `padE`, `padN`, `padS`). Lo que no es edificio pero tapa (el techo del kiosco, el librero de la casa) va en su propia malla para poder transparentarlo.
+
+La cámara se adelanta hacia donde camina Tamachin (`LEAD` y `camLead`, en el marco de la cámara), sobre todo hacia ella, y al detenerse conserva el adelanto. Por eso esas pruebas usan el rayo real cámara→Tamachin (`camPos`, `camSlope`), no una distancia fija detrás de él.
+
+El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest`). Las tomas fijas (`startBusy` con `cam`, como el refri) están en coordenadas del mundo y no giran.
 
 ## Necesidades, encargos y secuencias (`06-main.js`)
 
@@ -52,7 +55,7 @@ El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redon
 
 ## Cómo se probó
 
-Chrome sin interfaz con Playwright, interceptando la URL de cdnjs para servir una copia local de `three@0.128.0`. `window.__tamachin` expone `player`, `cars`, `npcs`, `ui`, `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar al jugador en pruebas.
+Chrome sin interfaz con Playwright, interceptando la URL de cdnjs para servir una copia local de `three@0.128.0`. `window.__tamachin` expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar al jugador en pruebas.
 Con render por software corre a ~3 fps y el reloj del juego avanza lento (dt se limita a 0.05 s), así que las esperas deben ser generosas.
 
 ## Sin verificar

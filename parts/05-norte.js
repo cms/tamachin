@@ -98,18 +98,19 @@ function northCollide(pos, r) {
 
 // ───────────────────────── árboles que se agachan (en el shader) ─────────────────────────
 // Los árboles del norte son miles: en vez de recorrerlos en cada cuadro, el vertex shader agacha a los que quedan entre
-// la cámara y Tamachin (misma prueba que updateScenery hace con los de casa). uDuck = (x, z de Tamachin, x, z de la cámara).
-const duckU = { uDuck: { value: new THREE.Vector4(0, 0, 0, 10) }, uDuckR: { value: 1 } };
+// la cámara y Tamachin (misma prueba que updateScenery hace con los de casa), en el marco de la cámara (u a la derecha, d hacia ella).
+// uDuck = (x, z de Tamachin, c, s de camView); uDuckC = (u de la cámara, d de la cámara), relativos a Tamachin.
+const duckU = { uDuck: { value: new THREE.Vector4(0, 0, 1, 0) }, uDuckC: { value: new THREE.Vector2(0, 10) }, uDuckR: { value: 1 } };
 const DUCK_GLSL = `#include <begin_vertex>
 #ifdef USE_INSTANCING
 { vec3 io = instanceMatrix[3].xyz; float sc = length(instanceMatrix[0].xyz);
-  float dz = io.z - uDuck.y, back = max(1.0, uDuck.w - uDuck.y);
-  float rx = uDuck.x + (uDuck.z - uDuck.x) * clamp(dz / back, 0.0, 1.0), reach = (2.4 + 5.5 * sc) * uDuckR;
-  float k = smoothstep(0.3, 1.2, dz) * (1.0 - smoothstep(reach - 1.5, reach, dz)) * (1.0 - smoothstep(1.7 * sc + 0.6, 1.7 * sc + 1.6, abs(io.x - rx)));
+  vec2 q = io.xz - uDuck.xy; float u = q.x * uDuck.z - q.y * uDuck.w, dz = q.x * uDuck.w + q.y * uDuck.z, back = max(1.0, uDuckC.y);
+  float rx = uDuckC.x * clamp(dz / back, 0.0, 1.0), reach = (2.4 + 5.5 * sc) * uDuckR;
+  float k = smoothstep(0.3, 1.2, dz) * (1.0 - smoothstep(reach - 1.5, reach, dz)) * (1.0 - smoothstep(1.7 * sc + 0.6, 1.7 * sc + 1.6, abs(u - rx)));
   transformed.y *= 1.0 - 0.72 * k; transformed.xz *= 1.0 + 0.25 * k; }
 #endif`;
 function duckify(m) {
-  m.onBeforeCompile = (sh) => { sh.uniforms.uDuck = duckU.uDuck; sh.uniforms.uDuckR = duckU.uDuckR; sh.vertexShader = 'uniform vec4 uDuck;\nuniform float uDuckR;\n' + sh.vertexShader.replace('#include <begin_vertex>', DUCK_GLSL); };
+  m.onBeforeCompile = (sh) => { sh.uniforms.uDuck = duckU.uDuck; sh.uniforms.uDuckC = duckU.uDuckC; sh.uniforms.uDuckR = duckU.uDuckR; sh.vertexShader = 'uniform vec4 uDuck;\nuniform vec2 uDuckC;\nuniform float uDuckR;\n' + sh.vertexShader.replace('#include <begin_vertex>', DUCK_GLSL); };
   m.customProgramCacheKey = () => 'agacharse'; return m;
 }
 const duckDepth = duckify(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));   // la sombra también se agacha
@@ -273,7 +274,11 @@ const townB = new Batch();
   const KZ = TOWN_Z;
   townB.cyl('#f4efe4', 0, 0.3, KZ, 5.2, 5.4, 0.6, 16).cyl('#e6d8bd', 0, 0.62, KZ, 5.0, 5.0, 0.04, 16);
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + Math.PI / 8; townB.cyl('#ffffff', Math.cos(a) * 4.4, 2.3, KZ + Math.sin(a) * 4.4, 0.12, 0.14, 3.4, 8); solidCircle(Math.cos(a) * 4.4, KZ + Math.sin(a) * 4.4, 0.18); }
-  townB.cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3);
+  { // el techo va aparte para transparentarse cuando Tamachin pasa por detrás (como los edificios)
+    const km = new THREE.MeshLambertMaterial({ vertexColors: true });
+    scene.add(new Batch().cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3).mesh(km));
+    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], op: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
+  }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; townB.box('#ffffff', Math.cos(a) * 4.45, 1.05, KZ + Math.sin(a) * 4.45, 0.12, 0.7, 3.2, -a); }
   solidCircle(0, KZ, 5.4);
   for (const q of [[-12, -12], [12, -12], [-12, 12], [12, 12]]) { addStatic('oak', q[0], 0, KZ + q[1], r2(1.0, 1.15)); northCircle(q[0], KZ + q[1], 0.38); }
@@ -371,7 +376,7 @@ for (const k in FK) {
   for (let i = 0; i < SLOTS * d.cap; i++) { d.mesh.setMatrixAt(i, _z0); d.mesh.setColorAt(i, _ic.setRGB(1, 1, 1)); }
   d.mesh.frustumCulled = false; d.mesh.castShadow = !!d.shadow; d.mesh.receiveShadow = true; if (d.duck) d.mesh.customDepthMaterial = duckDepth; d.mesh.visible = false; scene.add(d.mesh);
 }
-const forest = { live: new Map(), free: Array.from({ length: SLOTS }, (_, i) => i), pci: null, pcj: null, eaten: new Map() };
+const forest = { live: new Map(), free: Array.from({ length: SLOTS }, (_, i) => i), pci: null, pcj: null, wk: -1, eaten: new Map() };
 function genChunk(ci, cj) {
   const R = mulberry(((ci * 73856093) ^ (cj * 19349663) ^ 0x2545f491) | 0), r2 = (a, b) => a + (b - a) * R();
   const x0 = ci * CS, zS = Z_FOREST2 - cj * CS, it = {}, used = [], plants = [], circles = [];
@@ -435,10 +440,14 @@ function setFruit(c, f, k) {
 }
 function updateForest() {
   const P = player.pos, pci = Math.floor(P.x / CS), pcj = Math.floor((Z_FOREST2 - P.z) / CS), near = P.z < Z_FOREST2 + 80;
-  if (pci === forest.pci && pcj === forest.pcj && near === forest.near) return;
-  forest.pci = pci; forest.pcj = pcj; forest.near = near;
-  const want = new Set();
-  if (near) for (let i = -WIN.w; i <= WIN.w; i++) for (let j = -WIN.s; j <= WIN.n; j++) if (pcj + j >= 0) want.add((pci + i) + ',' + (pcj + j));
+  // la ventana se alarga hacia donde mira la cámara: 2 casillas adelante, 1 atrás y 2 a cada lado (cerca de 45° no cambia, para no rehacer casillas)
+  const fi = -camView.s, fj = camView.c, alongI = forest.wk >= 2 ? Math.abs(fi) > Math.abs(fj) * 0.8 : Math.abs(fi) > Math.abs(fj) * 1.25;
+  const wk = (alongI ? 2 : 0) + ((alongI ? fi : fj) >= 0 ? 1 : 0);
+  if (pci === forest.pci && pcj === forest.pcj && near === forest.near && wk === forest.wk) return;
+  forest.pci = pci; forest.pcj = pcj; forest.near = near; forest.wk = wk;
+  const want = new Set(), lo = wk & 1 ? -WIN.s : -WIN.n, hi = wk & 1 ? WIN.n : WIN.s;
+  const i0 = alongI ? lo : -WIN.w, i1 = alongI ? hi : WIN.w, j0 = alongI ? -WIN.w : lo, j1 = alongI ? WIN.w : hi;
+  if (near) for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (pcj + j >= 0) want.add((pci + i) + ',' + (pcj + j));
   for (const [k, c] of forest.live) if (!want.has(k)) { writeChunk(c, true); forest.free.push(c.slot); forest.live.delete(k); }
   for (const k of want) if (!forest.live.has(k)) { const [ci, cj] = k.split(',').map(Number), c = genChunk(ci, cj); c.slot = forest.free.pop(); writeChunk(c); forest.live.set(k, c); }
   for (const k in FK) FK[k].mesh.visible = forest.live.size > 0;      // fuera del bosque no cuesta nada

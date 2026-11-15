@@ -35,6 +35,10 @@ const FOG = new THREE.Color(0xd6f0ff);
 scene.background = FOG.clone();
 scene.fog = new THREE.Fog(FOG.getHex(), 60, 300);
 const camera = new THREE.PerspectiveCamera(48, 1, 0.3, 800);
+// Hacia dónde mira la cámara. Se gira arrastrando (06-main.js). yaw 0: la cámara al sur de Tamachin, mirando al norte.
+// c y s son coseno y seno de yaw: la derecha de la pantalla es (c, -s) en el mundo y "hacia la cámara" es (s, c).
+// vc y vs: el mismo marco para las pruebas de visibilidad; durante una toma fija (el refri) siguen a la cámara de verdad.
+const camView = { yaw: 0, yawT: 0, c: 1, s: 0, vc: 1, vs: 0 };
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 
 const skyMesh = (() => {
@@ -751,7 +755,7 @@ function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla p
   const pm = new THREE.MeshLambertMaterial({ vertexColors: true }); scene.add(b.mesh(pm));
   solidBox(x0, x1, z0, z1);
   const pad = (ry) => (fronts.some((f) => Math.abs(f.ry - ry) < 0.01) ? 1.35 : 0);   // los toldos sobresalen de la fachada
-  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], op: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2) });
+  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], op: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2), padN: pad(Math.PI), padS: pad(0) });
 }
 function genBlock(i, j) {
   const bx = BLOCKS[i], bz = BLOCKS[j], rs = { w: i > 0, e: i < 2, n: j > 0, s: j < 2 };
@@ -845,7 +849,7 @@ for (const sx of [-1, 1]) { cityB.rbox(STONE, sx * 5.1, 1.4, -63.2, 1.3, 2.8, 1.
 const house = (() => {
   const H = HOUSE, WT = 0.3, WALL = '#fff0cf', ROOF = '#f0625a', cz = (H.z0 + H.z1) / 2;
   const mk = () => new THREE.MeshLambertMaterial({ vertexColors: true });
-  const wallsB = new Batch(), frontB = new Batch(), roofB = new Batch(), furnB = new Batch();
+  const wallsB = new Batch(), frontB = new Batch(), roofB = new Batch(), furnB = new Batch(), shelfB = new Batch();   // shelfB: lo alto pegado a la pared norte, se transparenta con las paredes
   wallsB.box(WALL, 0, H.h / 2, H.z0 + WT / 2, 12, H.h, WT).box(WALL, H.x0 + WT / 2, H.h / 2, cz, WT, H.h, 9).box(WALL, H.x1 - WT / 2, H.h / 2, cz, WT, H.h, 9);
   wallsB.box('#e7d3a8', 0, 0.12, H.z0 + WT + 0.03, 11.4, 0.24, 0.06).box('#bfe6ff', 2.9, 2.3, H.z0 + WT / 2, 1.8, 1.1, WT + 0.08).box('#ffffff', 2.9, 2.3, H.z0 + WT / 2, 2.0, 1.3, WT + 0.04);
   wallsB.box('#ffffff', -4.4, 2.5, H.z0 + WT + 0.04, 1.3, 1.0, 0.06).box('#8fd6ff', -4.4, 2.5, H.z0 + WT + 0.06, 1.1, 0.8, 0.06).sph('#ffd23f', -4.1, 2.65, H.z0 + WT + 0.1, 0.16, 0.16, 0.03).box('#57c06a', -4.4, 2.2, H.z0 + WT + 0.09, 1.1, 0.2, 0.02);
@@ -865,8 +869,8 @@ const house = (() => {
   furnB.box('#b07a4f', -4.4, 0.3, -10.9, 2.2, 0.6, 3.4).rbox('#fffaf0', -4.4, 0.69, -10.9, 2.0, 0.28, 3.2, 0.1).rbox('#ff8a7a', -4.4, 0.78, -10.3, 2.08, 0.22, 2.0, 0.08)
     .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); solidBox(-5.5, -3.3, -12.6, -9.2);
   furnB.box('#b07a4f', -2.8, 0.35, -12.3, 0.7, 0.7, 0.6).cyl('#8a6a4a', -2.8, 0.9, -12.3, 0.04, 0.1, 0.4, 8).cone('#ffe9a8', -2.8, 1.25, -12.3, 0.28, 0.36, 12); solidBox(-3.15, -2.45, -12.6, -12.0);
-  furnB.box('#9a6540', -0.9, 1.2, -12.5, 2.4, 2.4, 0.5);
-  for (let lv = 0; lv < 3; lv++) { let x = -1.95; while (x < 0.05) { const w = rr(0.12, 0.24), hh = rr(0.42, 0.6); furnB.box(pick(['#ff6b6b', '#ffd23f', '#4fc3a1', '#5aa9ff', '#c58bff', '#ff9f6b', '#f4f1e8']), x + w / 2, 0.32 + lv * 0.72 + hh / 2, -12.3, w, hh, 0.3); x += w + 0.02; } furnB.box('#b98552', -0.9, 0.28 + lv * 0.72, -12.28, 2.3, 0.06, 0.42); }
+  shelfB.box('#9a6540', -0.9, 1.2, -12.5, 2.4, 2.4, 0.5);
+  for (let lv = 0; lv < 3; lv++) { let x = -1.95; while (x < 0.05) { const w = rr(0.12, 0.24), hh = rr(0.42, 0.6); shelfB.box(pick(['#ff6b6b', '#ffd23f', '#4fc3a1', '#5aa9ff', '#c58bff', '#ff9f6b', '#f4f1e8']), x + w / 2, 0.32 + lv * 0.72 + hh / 2, -12.3, w, hh, 0.3); x += w + 0.02; } shelfB.box('#b98552', -0.9, 0.28 + lv * 0.72, -12.28, 2.3, 0.06, 0.42); }
   solidBox(-2.1, 0.3, -12.8, -12.25);
   furnB.box('#f4f1e8', 3.0, 0.5, -12.3, 3.0, 1.0, 0.9).box('#8fd1c1', 3.0, 1.03, -12.3, 3.1, 0.08, 1.0).box('#3b4252', 2.2, 1.08, -12.3, 0.9, 0.04, 0.7).cyl('#c9ced6', 3.7, 1.08, -12.3, 0.3, 0.3, 0.05, 14)
     .cyl('#ff8a5c', 2.0, 1.2, -12.35, 0.16, 0.14, 0.2, 10).cyl('#ffd23f', 2.45, 1.17, -12.2, 0.13, 0.13, 0.14, 10); solidBox(1.5, 4.5, -12.75, -11.85);
@@ -891,9 +895,9 @@ const house = (() => {
   furnB.cyl('#ffd76a', 0.6, 0.065, -8.0, 2.3, 2.3, 0.03, 30).cyl('#ff8a7a', 0.6, 0.075, -8.0, 1.7, 1.7, 0.03, 30).cyl('#fffaf0', 0.6, 0.085, -8.0, 1.0, 1.0, 0.03, 30);
   furnB.cyl('#c8553d', 5.1, 0.3, -4.95, 0.36, 0.26, 0.6, 12).ico('#57c06a', 5.1, 1.0, -4.95, 0.5, 0.6, 0.5).ico('#62cc76', 4.9, 1.45, -4.9, 0.36).ico('#4db460', 5.25, 1.3, -5.1, 0.34); solidCircle(5.1, -4.95, 0.4);
   furnB.cyl('#3b4252', -5.3, 0.9, -4.75, 0.04, 0.04, 1.8, 6).cyl('#3b4252', -5.3, 0.03, -4.75, 0.22, 0.24, 0.06, 12).cone('#ffe9a8', -5.3, 1.9, -4.75, 0.34, 0.44, 14);
-  furnB.sph('#ff6b9d', -1.0, 0.3, -10.6, 0.26).cyl('#fff', 4.0, 2.7, H.z0 + WT + 0.04, 0.36, 0.36, 0.06, 20, Math.PI / 2).cyl('#3b4252', 4.0, 2.7, H.z0 + WT + 0.08, 0.04, 0.04, 0.02, 8, Math.PI / 2);
-  const mWalls = mk(), mFront = mk(), mRoof = mk();
-  const walls = wallsB.mesh(mWalls), front = frontB.mesh(mFront), roof = roofB.mesh(mRoof); scene.add(walls, front, roof, furnB.mesh());
+  furnB.sph('#ff6b9d', -1.0, 0.3, -10.6, 0.26); shelfB.cyl('#fff', 4.0, 2.7, H.z0 + WT + 0.04, 0.36, 0.36, 0.06, 20, Math.PI / 2).cyl('#3b4252', 4.0, 2.7, H.z0 + WT + 0.08, 0.04, 0.04, 0.02, 8, Math.PI / 2);
+  const mWalls = mk(), mFront = mk(), mRoof = mk(), mShelf = mk();
+  const walls = wallsB.mesh(mWalls), front = frontB.mesh(mFront), roof = roofB.mesh(mRoof); scene.add(walls, front, roof, furnB.mesh(), shelfB.mesh(mShelf));
   solidBox(H.x0 - 0.1, H.x1 + 0.1, H.z0 - 0.1, H.z0 + WT + 0.05); solidBox(H.x0 - 0.1, H.x0 + WT + 0.05, H.z0, H.z1); solidBox(H.x1 - WT - 0.05, H.x1 + 0.1, H.z0, H.z1);
   solidBox(H.x0 - 0.1, -1.15, H.z1 - WT - 0.05, H.z1 + 0.05); solidBox(1.15, H.x1 + 0.1, H.z1 - WT - 0.05, H.z1 + 0.05);
   const floorTex = canvasTex(256, 256, (g) => { g.fillStyle = '#e2b886'; g.fillRect(0, 0, 256, 256); for (let i = 0; i < 8; i++) { g.fillStyle = i % 2 ? '#d9ad79' : '#e8c190'; g.fillRect(0, i * 32, 256, 30); g.fillStyle = 'rgba(120,80,40,.25)'; g.fillRect((i * 97) % 256, i * 32, 2, 30); g.fillRect((i * 53 + 120) % 256, i * 32, 2, 30); } });
@@ -936,7 +940,7 @@ const house = (() => {
     const beam = new THREE.Mesh(bg, beamMat); beam.visible = false; scene.add(beam);
     return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
   })();
-  return { walls, front, roof, mWalls, mFront, mRoof, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
+  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín
@@ -1618,18 +1622,19 @@ function northCollide(pos, r) {
 
 // ───────────────────────── árboles que se agachan (en el shader) ─────────────────────────
 // Los árboles del norte son miles: en vez de recorrerlos en cada cuadro, el vertex shader agacha a los que quedan entre
-// la cámara y Tamachin (misma prueba que updateScenery hace con los de casa). uDuck = (x, z de Tamachin, x, z de la cámara).
-const duckU = { uDuck: { value: new THREE.Vector4(0, 0, 0, 10) }, uDuckR: { value: 1 } };
+// la cámara y Tamachin (misma prueba que updateScenery hace con los de casa), en el marco de la cámara (u a la derecha, d hacia ella).
+// uDuck = (x, z de Tamachin, c, s de camView); uDuckC = (u de la cámara, d de la cámara), relativos a Tamachin.
+const duckU = { uDuck: { value: new THREE.Vector4(0, 0, 1, 0) }, uDuckC: { value: new THREE.Vector2(0, 10) }, uDuckR: { value: 1 } };
 const DUCK_GLSL = `#include <begin_vertex>
 #ifdef USE_INSTANCING
 { vec3 io = instanceMatrix[3].xyz; float sc = length(instanceMatrix[0].xyz);
-  float dz = io.z - uDuck.y, back = max(1.0, uDuck.w - uDuck.y);
-  float rx = uDuck.x + (uDuck.z - uDuck.x) * clamp(dz / back, 0.0, 1.0), reach = (2.4 + 5.5 * sc) * uDuckR;
-  float k = smoothstep(0.3, 1.2, dz) * (1.0 - smoothstep(reach - 1.5, reach, dz)) * (1.0 - smoothstep(1.7 * sc + 0.6, 1.7 * sc + 1.6, abs(io.x - rx)));
+  vec2 q = io.xz - uDuck.xy; float u = q.x * uDuck.z - q.y * uDuck.w, dz = q.x * uDuck.w + q.y * uDuck.z, back = max(1.0, uDuckC.y);
+  float rx = uDuckC.x * clamp(dz / back, 0.0, 1.0), reach = (2.4 + 5.5 * sc) * uDuckR;
+  float k = smoothstep(0.3, 1.2, dz) * (1.0 - smoothstep(reach - 1.5, reach, dz)) * (1.0 - smoothstep(1.7 * sc + 0.6, 1.7 * sc + 1.6, abs(u - rx)));
   transformed.y *= 1.0 - 0.72 * k; transformed.xz *= 1.0 + 0.25 * k; }
 #endif`;
 function duckify(m) {
-  m.onBeforeCompile = (sh) => { sh.uniforms.uDuck = duckU.uDuck; sh.uniforms.uDuckR = duckU.uDuckR; sh.vertexShader = 'uniform vec4 uDuck;\nuniform float uDuckR;\n' + sh.vertexShader.replace('#include <begin_vertex>', DUCK_GLSL); };
+  m.onBeforeCompile = (sh) => { sh.uniforms.uDuck = duckU.uDuck; sh.uniforms.uDuckC = duckU.uDuckC; sh.uniforms.uDuckR = duckU.uDuckR; sh.vertexShader = 'uniform vec4 uDuck;\nuniform vec2 uDuckC;\nuniform float uDuckR;\n' + sh.vertexShader.replace('#include <begin_vertex>', DUCK_GLSL); };
   m.customProgramCacheKey = () => 'agacharse'; return m;
 }
 const duckDepth = duckify(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));   // la sombra también se agacha
@@ -1793,7 +1798,11 @@ const townB = new Batch();
   const KZ = TOWN_Z;
   townB.cyl('#f4efe4', 0, 0.3, KZ, 5.2, 5.4, 0.6, 16).cyl('#e6d8bd', 0, 0.62, KZ, 5.0, 5.0, 0.04, 16);
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + Math.PI / 8; townB.cyl('#ffffff', Math.cos(a) * 4.4, 2.3, KZ + Math.sin(a) * 4.4, 0.12, 0.14, 3.4, 8); solidCircle(Math.cos(a) * 4.4, KZ + Math.sin(a) * 4.4, 0.18); }
-  townB.cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3);
+  { // el techo va aparte para transparentarse cuando Tamachin pasa por detrás (como los edificios)
+    const km = new THREE.MeshLambertMaterial({ vertexColors: true });
+    scene.add(new Batch().cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3).mesh(km));
+    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], op: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
+  }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; townB.box('#ffffff', Math.cos(a) * 4.45, 1.05, KZ + Math.sin(a) * 4.45, 0.12, 0.7, 3.2, -a); }
   solidCircle(0, KZ, 5.4);
   for (const q of [[-12, -12], [12, -12], [-12, 12], [12, 12]]) { addStatic('oak', q[0], 0, KZ + q[1], r2(1.0, 1.15)); northCircle(q[0], KZ + q[1], 0.38); }
@@ -1891,7 +1900,7 @@ for (const k in FK) {
   for (let i = 0; i < SLOTS * d.cap; i++) { d.mesh.setMatrixAt(i, _z0); d.mesh.setColorAt(i, _ic.setRGB(1, 1, 1)); }
   d.mesh.frustumCulled = false; d.mesh.castShadow = !!d.shadow; d.mesh.receiveShadow = true; if (d.duck) d.mesh.customDepthMaterial = duckDepth; d.mesh.visible = false; scene.add(d.mesh);
 }
-const forest = { live: new Map(), free: Array.from({ length: SLOTS }, (_, i) => i), pci: null, pcj: null, eaten: new Map() };
+const forest = { live: new Map(), free: Array.from({ length: SLOTS }, (_, i) => i), pci: null, pcj: null, wk: -1, eaten: new Map() };
 function genChunk(ci, cj) {
   const R = mulberry(((ci * 73856093) ^ (cj * 19349663) ^ 0x2545f491) | 0), r2 = (a, b) => a + (b - a) * R();
   const x0 = ci * CS, zS = Z_FOREST2 - cj * CS, it = {}, used = [], plants = [], circles = [];
@@ -1955,10 +1964,14 @@ function setFruit(c, f, k) {
 }
 function updateForest() {
   const P = player.pos, pci = Math.floor(P.x / CS), pcj = Math.floor((Z_FOREST2 - P.z) / CS), near = P.z < Z_FOREST2 + 80;
-  if (pci === forest.pci && pcj === forest.pcj && near === forest.near) return;
-  forest.pci = pci; forest.pcj = pcj; forest.near = near;
-  const want = new Set();
-  if (near) for (let i = -WIN.w; i <= WIN.w; i++) for (let j = -WIN.s; j <= WIN.n; j++) if (pcj + j >= 0) want.add((pci + i) + ',' + (pcj + j));
+  // la ventana se alarga hacia donde mira la cámara: 2 casillas adelante, 1 atrás y 2 a cada lado (cerca de 45° no cambia, para no rehacer casillas)
+  const fi = -camView.s, fj = camView.c, alongI = forest.wk >= 2 ? Math.abs(fi) > Math.abs(fj) * 0.8 : Math.abs(fi) > Math.abs(fj) * 1.25;
+  const wk = (alongI ? 2 : 0) + ((alongI ? fi : fj) >= 0 ? 1 : 0);
+  if (pci === forest.pci && pcj === forest.pcj && near === forest.near && wk === forest.wk) return;
+  forest.pci = pci; forest.pcj = pcj; forest.near = near; forest.wk = wk;
+  const want = new Set(), lo = wk & 1 ? -WIN.s : -WIN.n, hi = wk & 1 ? WIN.n : WIN.s;
+  const i0 = alongI ? lo : -WIN.w, i1 = alongI ? hi : WIN.w, j0 = alongI ? -WIN.w : lo, j1 = alongI ? WIN.w : hi;
+  if (near) for (let i = i0; i <= i1; i++) for (let j = j0; j <= j1; j++) if (pcj + j >= 0) want.add((pci + i) + ',' + (pcj + j));
   for (const [k, c] of forest.live) if (!want.has(k)) { writeChunk(c, true); forest.free.push(c.slot); forest.live.delete(k); }
   for (const k of want) if (!forest.live.has(k)) { const [ci, cj] = k.split(',').map(Number), c = genChunk(ci, cj); c.slot = forest.free.pop(); writeChunk(c); forest.live.set(k, c); }
   for (const k in FK) FK[k].mesh.visible = forest.live.size > 0;      // fuera del bosque no cuesta nada
@@ -2028,7 +2041,7 @@ const player = { T: makeTamachin({ shape: 'bola', color: '#ffc93c', mood: 'conte
   baseMood: 'contento', tempMood: null, tempT: 0, onTempEnd: null, inv: 0, idleT: 0, speedN: 0, spin: 0, flySpin: 0, flatT: 0, sleepT: 0, inWater: false, inHouse: false, lastTrick: null, moved: 0,
   needLow: null, needMood: null, busy: null, carry: null };
 player.pos = player.T.pos; player.pos.set(0, 0, 3.5); player.bubblePos = player.T.bubblePos;
-const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0 };
+const ui = { closeup: false, zoom: 1, zoomTarget: 1, zoomIdx: 0, faceYaw: 0 };
 const ZOOMS = [1, 0.62, 1.42], ZOOM_LABEL = ['Acercar', 'Alejar', 'Vista normal'];
 const ptr = { x: 0, y: 0, active: false, moveT: -9, a: 0, hasA: false, down: false, sx: 0, sy: 0, st: 0, id: null };
 const pScreen = { x: 0, y: 0, r: 40 };
@@ -2120,7 +2133,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2) }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3) }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -2399,8 +2412,9 @@ window.addEventListener('keyup', (e) => { keys[e.code] = false; if (e.key === 'M
 window.addEventListener('blur', () => { for (const k in keys) keys[k] = false; });
 document.addEventListener('click', (e) => { const b = e.target && e.target.closest && e.target.closest('button'); if (b && e.detail > 0) b.blur(); });
 
-function setPtr(e) {
+function setPtr(e, noSpin) {
   const r = canvas.getBoundingClientRect(); ptr.x = e.clientX - r.left; ptr.y = e.clientY - r.top; ptr.active = true; ptr.moveT = clock;
+  if (noSpin) { ptr.hasA = false; return; }                        // girando la cámara no se marea
   const dx = ptr.x - pScreen.x, dy = ptr.y - pScreen.y, dist = Math.hypot(dx, dy);
   if (dist > pScreen.r * 0.3 && dist < Math.max(150, pScreen.r * 5)) {
     const a = Math.atan2(dy, dx);
@@ -2408,18 +2422,45 @@ function setPtr(e) {
     ptr.a = a; ptr.hasA = true;
   } else ptr.hasA = false;
 }
+// Arrastrar gira la cámara: con el mouse; en pantallas táctiles con dos dedos (y pellizcar acerca o aleja), o con uno mientras
+// la otra mano usa la palanca. Un dedo solo sigue siendo para tocar a Tamachin y para dibujarle círculos.
+const DRAG_K = 0.0075;                                             // radianes por pixel
+const touches = new Map(), two = { on: false, mx: 0, d0: 1, z0: 1 }, drag = { on: false, x: 0 };
+function twoFingers() { const [a, b] = touches.values(); return { mx: (a.x + b.x) / 2, d: Math.max(24, Math.hypot(a.x - b.x, a.y - b.y)) }; }
+function baseTwo() { const g = twoFingers(); Object.assign(two, { on: true, mx: g.mx, d0: g.d, z0: ui.zoomTarget }); }   // cada vez que cambia el par de dedos, sin saltos
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch') document.body.classList.add('touch');
   unlockAudio(); try { canvas.focus({ preventScroll: true }); } catch (_) { /* sin foco */ }
-  if (ptr.id !== null && e.pointerType === 'touch') return;
-  ptr.id = e.pointerId; ptr.down = true; ptr.sx = e.clientX; ptr.sy = e.clientY; ptr.st = performance.now(); ptr.hasA = false; setPtr(e);
   try { canvas.setPointerCapture(e.pointerId); } catch (_) { /* sin captura */ }
+  if (e.pointerType === 'touch') {
+    touches.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    if (touches.size === 2) {                                       // segundo dedo: el primero deja de ser toque o círculo
+      baseTwo(); ptr.down = false; ptr.hasA = false; ptr.active = false; drag.on = false; return;
+    }
+    if (touches.size > 1 || two.on || ptr.id !== null) return;
+  }
+  ptr.id = e.pointerId; ptr.down = true; ptr.sx = e.clientX; ptr.sy = e.clientY; ptr.st = performance.now(); ptr.hasA = false; drag.on = false; setPtr(e);
 });
-canvas.addEventListener('pointermove', (e) => { if (e.pointerType === 'touch' && e.pointerId !== ptr.id) return; setPtr(e); });
+canvas.addEventListener('pointermove', (e) => {
+  if (e.pointerType === 'touch') {
+    const t = touches.get(e.pointerId); if (!t) return; t.x = e.clientX; t.y = e.clientY;
+    if (two.on) { if (touches.size >= 2) { const g = twoFingers(); camView.yawT += (g.mx - two.mx) * DRAG_K; two.mx = g.mx; ui.zoomTarget = clamp(two.z0 * two.d0 / g.d, 0.5, 1.6); } return; }
+    if (e.pointerId !== ptr.id) return;
+  }
+  if (ptr.down && e.pointerId === ptr.id) {
+    if (!drag.on && (e.pointerType !== 'touch' || joy.id !== null) && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) >= 12) { drag.on = true; drag.x = e.clientX; }
+    if (drag.on) { camView.yawT += (e.clientX - drag.x) * DRAG_K; drag.x = e.clientX; setPtr(e, true); return; }
+  }
+  setPtr(e);
+});
 function ptrEnd(e) {
+  if (e.pointerType === 'touch') {
+    touches.delete(e.pointerId);
+    if (two.on) { if (!touches.size) { two.on = false; ptr.id = null; ptr.down = false; } else if (touches.size === 2) baseTwo(); return; }   // al soltar los dos dedos no hay toque
+  }
   if (e.pointerId !== ptr.id) return;
-  if (e.type === 'pointerup' && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) < 12 && performance.now() - ptr.st < 450) { const r = canvas.getBoundingClientRect(); handleClick(e.clientX - r.left, e.clientY - r.top); }
-  ptr.down = false; ptr.id = null; if (e.pointerType !== 'mouse') { ptr.active = false; ptr.hasA = false; }
+  if (e.type === 'pointerup' && !drag.on && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) < 12 && performance.now() - ptr.st < 450) { const r = canvas.getBoundingClientRect(); handleClick(e.clientX - r.left, e.clientY - r.top); }
+  ptr.down = false; ptr.id = null; drag.on = false; if (e.pointerType !== 'mouse') { ptr.active = false; ptr.hasA = false; }
 }
 canvas.addEventListener('pointerup', ptrEnd); canvas.addEventListener('pointercancel', ptrEnd);
 canvas.addEventListener('pointerleave', (e) => { if (e.pointerType === 'mouse') { ptr.active = false; ptr.hasA = false; } });
@@ -2501,6 +2542,7 @@ function togglePanel(on) {
   if (on === undefined) on = panelEl.hidden;
   if (on && player.state === 'sleep') wake();
   if (on && !diaryEl.hidden) toggleDiary(false);
+  if (on && !ui.closeup) ui.faceYaw = camView.yaw;
   panelEl.hidden = !on; ui.closeup = on; document.body.classList.toggle('custom', on); bCustom.setAttribute('aria-expanded', String(on)); bCustom.textContent = on ? 'Volver al mundo' : 'Personalizar';
   if (on) { syncPanel(); for (const k in keys) keys[k] = false; }
 }
@@ -2542,7 +2584,7 @@ function goHome() {
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
-  P.pos.set(START.x, 0, START.z); camInit = false;
+  P.pos.set(START.x, 0, START.z); camInit = false; camView.yaw = camView.yawT = 0;   // también la cámara, de frente a la casa
   toggleDiary(false); say(P, '¡De vuelta en casa!', 2.2); P.T.doTrick('hop'); burst('spark', P.pos.x, 1.6, P.pos.z, 6); SFX.nice(); save();
 }
 bHome.addEventListener('click', goHome);
@@ -2571,6 +2613,7 @@ function updatePlayer(dt) {
     ix = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) + joy.x;
     iz = ((keys.KeyS || keys.ArrowDown) ? 1 : 0) - ((keys.KeyW || keys.ArrowUp) ? 1 : 0) + joy.y;
     run = !!(keys.ShiftLeft || keys.ShiftRight) || Math.hypot(joy.x, joy.y) > 0.93;
+    const c = camView.c, s = camView.s, wx = ix * c + iz * s; iz = -ix * s + iz * c; ix = wx;   // de la pantalla al mundo: arriba es alejarse de la cámara
   } else if (P.state === 'sleep' && P.sleepT > 0.8 && (keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD || keys.ArrowUp || keys.ArrowDown || keys.ArrowLeft || keys.ArrowRight)) wake();
   let mag = Math.hypot(ix, iz); if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
   const m = MOODS[T.mood];
@@ -2590,8 +2633,8 @@ function updatePlayer(dt) {
       P.heading += angDiff(P.heading, Math.atan2(ix, iz)) * Math.min(1, dt * 12); P.idleT = 0; P.moved += speed * mag * dt;
     } else {
       P.vx = damp(P.vx, 0, 14, dt); P.vz = damp(P.vz, 0, 14, dt); P.idleT += dt;
-      if (ptr.active && clock - ptr.moveT < 0.3 && Math.abs(P.spin) > 1.2) P.heading += angDiff(P.heading, Math.atan2(ptr.x - pScreen.x, ptr.y - pScreen.y)) * Math.min(1, dt * 14);
-      else if (ui.closeup) P.heading += angDiff(P.heading, 0) * Math.min(1, dt * 5);
+      if (ptr.active && clock - ptr.moveT < 0.3 && Math.abs(P.spin) > 1.2) P.heading += angDiff(P.heading, Math.atan2(ptr.x - pScreen.x, ptr.y - pScreen.y) + camView.yaw) * Math.min(1, dt * 14);
+      else if (ui.closeup) P.heading += angDiff(P.heading, ui.faceYaw) * Math.min(1, dt * 5);   // mira a la cámara como estaba al abrir: si la giras, se le ve de lado
     }
   } else if (P.state === 'fly') { const k = Math.exp(-0.6 * dt); P.vx *= k; P.vz *= k; P.flySpin += dt * 13; }
   else { P.vx = P.vz = 0; }
@@ -2622,23 +2665,25 @@ function updatePlayer(dt) {
   if (Math.abs(P.spin) > 12.5 && P.state === 'normal' && T.mood !== 'mareado') makeDizzy(5.5);
   const st = { speed: P.onGround ? P.speedN : 0.25, air: !P.onGround && P.state !== 'sleep', wobble: wob, spinY: P.state === 'fly' ? P.flySpin : 0, near: true };
   if (ptr.active && clock - ptr.moveT < 2.5 && P.state !== 'sleep') {
-    const k = Math.cos(P.heading), sc = Math.max(30, pScreen.r * 3);
+    const k = Math.cos(P.heading - camView.yaw), sc = Math.max(30, pScreen.r * 3);
     st.lookX = clamp((ptr.x - pScreen.x) / sc, -1, 1) * (k >= 0 ? 1 : -1); st.lookY = clamp(-(ptr.y - (pScreen.y - pScreen.r * 0.3)) / sc, -1, 1);
   }
   T.update(dt, st);
 }
 
 const camPos = new THREE.Vector3(), camTgt = new THREE.Vector3(), _cp = new THREE.Vector3(), _ct = new THREE.Vector3(); let camInit = false, camSlope = 0.7;
-// Adelanto: la cámara mira hacia donde camina Tamachin, sobre todo al sur, donde la vista es corta (la cámara está al sur).
-// Metros a zoom 1 y fuera de casa. Solo cambia mientras camina: al detenerse se conserva, para poder mirar lo que viene.
+// Adelanto: la cámara mira hacia donde camina Tamachin, sobre todo hacia la cámara, donde la vista es corta.
+// Metros a zoom 1 y fuera de casa, en el marco de la cámara (x a la derecha de la pantalla, z hacia la cámara).
+// Solo cambia mientras camina: al detenerse se conserva, para poder mirar lo que viene.
 const LEAD = { south: 4.4, north: 1.4, side: 0.35, grow: 1.6, maxRate: 5, house: 0.3 };
 const camLead = { x: 0, z: 0, k: 1 }, CAM_D0 = Math.hypot(7.6, 11.2), CAM_SLOPE0 = 7.6 / 11.2;
 function updateLead(dt) {
   const P = player;
   if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly') {
     const halfW = Math.tan(camera.fov * Math.PI / 360) * camera.aspect * CAM_D0;           // medio ancho visible a la distancia de Tamachin
-    const gx = clamp(P.vx / 8.6, -1, 1) * LEAD.side * halfW;
-    const gz = P.vz > 0 ? Math.min(P.vz / 5.2, 1.66) * LEAD.south : Math.max(P.vz / 5.2, -1.66) * LEAD.north;
+    const vr = P.vx * camView.c - P.vz * camView.s, vb = P.vx * camView.s + P.vz * camView.c;   // a la derecha y hacia la cámara
+    const gx = clamp(vr / 8.6, -1, 1) * LEAD.side * halfW;
+    const gz = vb > 0 ? Math.min(vb / 5.2, 1.66) * LEAD.south : Math.max(vb / 5.2, -1.66) * LEAD.north;
     const k = 1 - Math.exp(-LEAD.grow * dt), mx = LEAD.maxRate * dt;
     camLead.x += clamp((gx - camLead.x) * k, -mx, mx); camLead.z += clamp((gz - camLead.z) * k, -mx, mx);
   }
@@ -2648,14 +2693,26 @@ function updateCamera(dt) {
   const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, ox = 0, tx = P.pos.x, ty, tz = P.pos.z;
   const base = P.pos.z < NORTH_Z ? Math.max(0, groundY(P.pos.x, P.pos.z)) : 0;   // en las montañas la cámara sigue al suelo
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
+  // girar: el arrastre y las teclas Z y X mueven yawT; yaw lo sigue suave
+  const V = camView, kz = (keys.KeyZ ? 1 : 0) - (keys.KeyX ? 1 : 0);
+  if (kz && P.state !== 'busy') V.yawT += kz * 1.9 * dt;
+  const yaw0 = V.yaw; V.yaw = camInit ? damp(V.yaw, V.yawT, 14, dt) : V.yawT;
+  if (V.yaw > Math.PI) { V.yaw -= TAU; V.yawT -= TAU; } else if (V.yaw < -Math.PI) { V.yaw += TAU; V.yawT += TAU; }
+  const c = V.c = Math.cos(V.yaw), s = V.s = Math.sin(V.yaw), fixed = P.state === 'busy' && P.busy.cam;
+  if (camInit && !fixed && V.yaw !== yaw0) {                         // al girar, la cámara da la vuelta por el círculo, no por la cuerda
+    const a = angDiff(yaw0, V.yaw), ca = Math.cos(a), sa = Math.sin(a), wx = camPos.x - camTgt.x, wz = camPos.z - camTgt.z;
+    camPos.x = camTgt.x + wx * ca + wz * sa; camPos.z = camTgt.z - wx * sa + wz * ca;
+  }
   if (!camInit) camLead.x = camLead.z = 0;
   updateLead(dt);
-  if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) tx += 1.3; else { oy = 2.5; oz = 6.4; ty = P.pos.y - 0.5; } }
+  if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) { tx += 1.3 * c; tz -= 1.3 * s; } else { oy = 2.5; oz = 6.4; ty = P.pos.y - 0.5; } }
   else {
     const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
-    const f = z * camLead.k, xl = xLimitAt(P.pos.z); tx = clamp(tx + camLead.x * f, -xl, xl); tz = Math.min(tz + camLead.z * f, LIMIT);   // sin mirar más allá del borde
+    const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = xLimitAt(P.pos.z);
+    tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, LIMIT);   // sin mirar más allá del borde
   }
-  if (P.state === 'busy' && P.busy.cam) { const c = P.busy.cam; tx = c.x; ty = c.y; tz = c.z; ox = c.ox || 0; oy = c.oy; oz = c.oz; }   // toma cercana (el refri)
+  if (fixed) { const b = P.busy.cam; tx = b.x; ty = b.y; tz = b.z; ox = b.ox || 0; oy = b.oy; oz = b.oz; }   // toma cercana (el refri), fija en el mundo
+  else { const wx = ox * c + oz * s; oz = -ox * s + oz * c; ox = wx; }   // la cámara gira alrededor de Tamachin
   _ct.set(tx, ty, tz); _cp.set(tx + ox, ty + oy, tz + oz);
   if (P.pos.z < NORTH_Z + 15) {                                     // bajando una ladera la cámara queda cuesta arriba: se sube lo necesario
     let lift = 0;
@@ -2666,34 +2723,63 @@ function updateCamera(dt) {
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
   if (P.pos.z < NORTH_Z + 15) camPos.y = Math.max(camPos.y, groundY(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
-  camSlope = (camPos.y - ty) / Math.max(1, camPos.z - P.pos.z);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
+  V.vc = c; V.vs = s;
+  if (fixed) { const hx = camPos.x - P.pos.x, hz = camPos.z - P.pos.z, h = Math.hypot(hx, hz); if (h > 0.5) { V.vs = hx / h; V.vc = hz / h; } }   // toma fija: el marco sigue a la cámara real
+  camSlope = (camPos.y - ty) / Math.max(1, (camPos.x - P.pos.x) * V.vs + (camPos.z - P.pos.z) * V.vc);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
   camera.position.copy(camPos); camera.lookAt(camTgt);
   skyMesh.position.copy(camPos);
-  sun.target.position.set(P.pos.x, base, P.pos.z - 6); sun.position.copy(sun.target.position).add(SUN_OFF);
+  sun.target.position.set(P.pos.x - 6 * s, base, P.pos.z - 6 * c); sun.position.copy(sun.target.position).add(SUN_OFF);   // la sombra cubre más hacia donde se mira
   _sv.set(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z).project(camera);
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
 }
 
-// ¿El rayo cámara→Tamachin pasa sobre la planta del edificio por debajo de su altura? sx: deriva lateral del rayo por metro hacia el sur.
-// Edificio al sur de Tamachin: margen amplio (2.2 m), como siempre. Edificio a un lado: solo si el rayo entra (pasa con el adelanto lateral).
+// Las pruebas de visibilidad van en el marco de la cámara: u a la derecha de la pantalla y d hacia la cámara, en metros desde Tamachin.
+// Con yaw 0, u es x y d es z (la cámara al sur), y todo da lo mismo que cuando la cámara no giraba.
+// camBox: una planta rectangular en ese marco. dmin: dónde empieza, contando desde Tamachin hacia la cámara; umin y umax: su ancho.
+const _cb = { dmin: 0, umin: 0, umax: 0 };
+function camBox(x0, x1, z0, z1, x, z) {
+  const c = camView.vc, s = camView.vs, ax = (x0 - x) * c, bx = (x1 - x) * c, az = (z0 - z) * s, bz = (z1 - z) * s;
+  _cb.umin = Math.min(ax, bx) - Math.max(az, bz); _cb.umax = Math.max(ax, bx) - Math.min(az, bz);
+  _cb.dmin = Math.min((x0 - x) * s, (x1 - x) * s) + Math.min((z0 - z) * c, (z1 - z) * c);
+  return _cb;
+}
+const HOUSE_OCC = { x0: HOUSE.x0, x1: HOUSE.x1, z0: HOUSE.z0, z1: HOUSE.z1, h: 6, padW: 0, padE: 0, padN: 0, padS: 0 };   // la casa con su techo, para rayCrosses
+// ¿El rayo cámara→Tamachin pasa sobre la planta del edificio por debajo de su altura? sx: deriva lateral del rayo por metro hacia la cámara.
+// Edificio entre Tamachin y la cámara: margen amplio (2.2 m). Edificio a un lado: solo si el rayo entra (pasa con el adelanto lateral).
+// El margen es lateral (a lo largo de la derecha de la pantalla), así que en cada eje cuenta según cuánto apunta la derecha hacia él.
 function rayCrosses(o, x, z, sx, back) {
-  const m = o.z0 - z > -0.3 ? 2.2 : 0.8;
-  let a = Math.max(0, o.z0 - z), b = Math.min(o.z1 - z, back);                   // tramo en dz (metros al sur de Tamachin)
-  const w = o.x0 - m - (m < 1 ? o.padW : 0), e = o.x1 + m + (m < 1 ? o.padE : 0);   // a un lado cuenta el toldo, si lo hay
-  if (Math.abs(sx) > 1e-4) { const p = (w - x) / sx, q = (e - x) / sx; a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q)); }
+  const c = camView.vc, s = camView.vs, ac = Math.abs(c), as = Math.abs(s);
+  const m = camBox(o.x0, o.x1, o.z0, o.z1, x, z).dmin > -0.3 ? 2.2 : 0.8, side = m < 1;
+  const w = o.x0 - m * ac - (side ? o.padW * ac : 0), e = o.x1 + m * ac + (side ? o.padE * ac : 0);   // a un lado cuenta el toldo, si lo hay
+  const n = o.z0 - m * as - (side ? o.padN * as : 0), so = o.z1 + m * as + (side ? o.padS * as : 0);
+  const dx = s + sx * c, dz = c - sx * s;                                          // el rayo avanza (dx, dz) por metro hacia la cámara
+  let a = 0, b = back;
+  if (Math.abs(dx) > 1e-4) { const p = (w - x) / dx, q = (e - x) / dx; a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q)); }
   else if (x < w || x > e) return false;
+  if (Math.abs(dz) > 1e-4) { const p = (n - z) / dz, q = (so - z) / dz; a = Math.max(a, Math.min(p, q)); b = Math.min(b, Math.max(p, q)); }
+  else if (z < n || z > so) return false;
   return a <= b && a * camSlope < o.h + 1.5;
 }
 function fadeMat(m, op) { m.opacity = op; const tr = op < 0.985; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
 const treeDirty = [false, false], GRASS_P = 2000 / 260;
 function updateScenery(dt) {
-  const P = player, x = P.pos.x, z = P.pos.z;
+  const P = player, x = P.pos.x, z = P.pos.z, c = camView.vc, s = camView.vs;
   // Las pruebas siguen el rayo real cámara→Tamachin: con el adelanto la cámara puede quedar más lejos y de lado.
-  const back = Math.max(1, camPos.z - z), rayX = (dz) => x + (camPos.x - x) * Math.max(0, dz) / back;   // x del rayo a dz metros al sur
+  const cu = (camPos.x - x) * c - (camPos.z - z) * s, cd = (camPos.x - x) * s + (camPos.z - z) * c;   // la cámara en su propio marco
+  const back = Math.max(1, cd), rayU = (d) => cu * Math.max(0, d) / back;           // u del rayo a d metros hacia la cámara
   // casa: sin techo ni fachada cuando Tamachin está dentro; transparente cuando pasa por detrás
-  const inside = P.inHouse, behind = !inside && z < HOUSE.z0 + 0.6 && (HOUSE.z0 - z) * camSlope < 7.5 && Math.abs(rayX(HOUSE.z0 - z)) < 9.5;
-  house.oWalls = damp(house.oWalls, behind ? 0.16 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : behind ? 0.12 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : behind ? 0.12 : 1, 9, dt);
-  fadeMat(house.mWalls, house.oWalls); fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
+  const inside = P.inHouse, hb = camBox(HOUSE.x0, HOUSE.x1, HOUSE.z0, HOUSE.z1, x, z), hu = rayU(hb.dmin);
+  const behind = !inside && (hb.dmin > -0.6 ? hb.dmin * camSlope < 7.5 && hu > hb.umin - 3.5 && hu < hb.umax + 3.5
+    : rayCrosses(HOUSE_OCC, x, z, cu / back, back));                // a un lado (cámara en diagonal): solo si el rayo la cruza
+  // dentro, con la cámara de otro lado que no es el sur, la pared por donde sale el rayo también estorba (la fachada ya se esconde)
+  let wallHit = false;
+  if (inside && c < 0.9) {
+    const dx = s + cu / back * c, dz = c - cu / back * s;
+    const tx = dx > 1e-4 ? (HOUSE.x1 - x) / dx : dx < -1e-4 ? (HOUSE.x0 - x) / dx : Infinity, tz = dz > 1e-4 ? (HOUSE.z1 - z) / dz : dz < -1e-4 ? (HOUSE.z0 - z) / dz : Infinity;
+    wallHit = !(tz <= tx && dz > 0) && Math.min(tx, tz) * camSlope < HOUSE.h;
+  }
+  house.oWalls = damp(house.oWalls, behind || wallHit ? 0.16 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : behind ? 0.12 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : behind ? 0.12 : 1, 9, dt);
+  fadeMat(house.mWalls, house.oWalls); fadeMat(house.mShelf, house.oWalls); fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
   house.front.visible = house.oFront > 0.03; house.roof.visible = house.oRoof > 0.03; house.doorPivot.visible = house.oFront > 0.03;
   house.roof.castShadow = house.oRoof > 0.5; house.front.castShadow = house.oFront > 0.5;
   house.doorA = damp(house.doorA, Math.hypot(x, z + 4.1) < 3.3 ? 1.8 : 0, 7, dt); house.doorPivot.rotation.y = house.doorA;
@@ -2701,19 +2787,21 @@ function updateScenery(dt) {
   // edificios que tapan a Tamachin
   for (const o of occluders) {
     if (o.op > 0.996 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
-    const dz = o.z0 - z, rx = rayX(dz), hide = ui.closeup ? dz > -0.3 && dz < 7 && rx > o.x0 - 2.2 && rx < o.x1 + 2.2 : rayCrosses(o, x, z, (camPos.x - x) / back, back);
+    let hide;
+    if (ui.closeup) { const b = camBox(o.x0, o.x1, o.z0, o.z1, x, z), ru = rayU(b.dmin); hide = b.dmin > -0.3 && b.dmin < 7 && ru > b.umin - 2.2 && ru < b.umax + 2.2; }
+    else hide = rayCrosses(o, x, z, cu / back, back);
     const t = hide ? 0.13 : 1; if (Math.abs(o.op - t) < 0.004) continue;
     o.op = damp(o.op, t, 9, dt); for (const m of o.mats) fadeMat(m, o.op);
   }
   // árboles: se agachan si quedan entre la cámara y Tamachin
   const reach = ui.closeup ? 1 : Math.max(1, CAM_SLOPE0 / camSlope);   // con el rayo más plano, tapan árboles más lejanos
   for (const t of trees) {
-    const dz = t.z - z; let target = 1;
-    if (dz > 0.5 && dz < (2.4 + TREE_H[t.type] * t.s) * reach && Math.abs(t.x - rayX(dz)) < TREE_R[t.type] * t.s + 0.9) target = 0.28;
+    const tx = t.x - x, tz = t.z - z, d = tx * s + tz * c; let target = 1;
+    if (d > 0.5 && d < (2.4 + TREE_H[t.type] * t.s) * reach && Math.abs(tx * c - tz * s - rayU(d)) < TREE_R[t.type] * t.s + 0.9) target = 0.28;
     if (Math.abs(t.k - target) > 0.004) { t.k = damp(t.k, target, 9, dt); setTreeMatrix(t); treeDirty[t.type] = true; }
   }
   for (let i = 0; i < 2; i++) if (treeDirty[i]) { treeMesh[i].instanceMatrix.needsUpdate = true; treeDirty[i] = false; }
-  duckU.uDuck.value.set(x, z, camPos.x, camPos.z); duckU.uDuckR.value = reach;     // los del norte se agachan en el shader
+  duckU.uDuck.value.set(x, z, c, s); duckU.uDuckC.value.set(cu, back); duckU.uDuckR.value = reach;     // los del norte se agachan en el shader
   ground.position.set(Math.round(x / GRASS_P) * GRASS_P, 0, -100 + Math.round((z + 100) / GRASS_P) * GRASS_P);   // el pasto sigue a Tamachin sin que se mueva el dibujo
   windmill.rotation.z -= dt * 0.9;
   waterTex.offset.y -= dt * 0.16;
@@ -2787,6 +2875,7 @@ function boot(data) {
   restoreQuests();
   if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }   // donde se quedó
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
+  if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);
@@ -2802,6 +2891,6 @@ window.addEventListener('pagehide', () => save());
 document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
-window.__tamachin = { player, cars, npcs, ui, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
+window.__tamachin = { player, cars, npcs, ui, view: camView, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
 if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
 })();
