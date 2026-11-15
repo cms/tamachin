@@ -29,6 +29,7 @@ catch (e) { fail('Tu navegador no pudo iniciar los gráficos 3D (WebGL). Prueba 
 const COARSE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, COARSE ? 1.75 : 2));
 renderer.shadowMap.enabled = true;
+renderer.localClippingEnabled = true;                        // edificios que se cortan a media altura (06-main.js)
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const FOG = new THREE.Color(0xd6f0ff);

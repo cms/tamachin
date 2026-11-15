@@ -166,7 +166,7 @@ function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla p
   const pm = new THREE.MeshLambertMaterial({ vertexColors: true }); scene.add(b.mesh(pm));
   solidBox(x0, x1, z0, z1);
   const pad = (ry) => (fronts.some((f) => Math.abs(f.ry - ry) < 0.01) ? 1.35 : 0);   // los toldos sobresalen de la fachada
-  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], op: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2), padN: pad(Math.PI), padS: pad(0) });
+  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], walls: side, k: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2), padN: pad(Math.PI), padS: pad(0) });
 }
 function genBlock(i, j) {
   const bx = BLOCKS[i], bz = BLOCKS[j], rs = { w: i > 0, e: i < 2, n: j > 0, s: j < 2 };
@@ -351,7 +351,8 @@ const house = (() => {
     const beam = new THREE.Mesh(bg, beamMat); beam.visible = false; scene.add(beam);
     return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
   })();
-  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
+  const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);   // corte a media altura cuando estorba (06-main.js)
+  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, plane, cutMats: [mWalls, mShelf, mFront, mRoof, doorMat], cutWalls: [mWalls, mFront], doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín

@@ -1,5 +1,6 @@
 // Que nada tape a Tamachin: junto a cada cara de los edificios, dentro y alrededor de la casa y en el bosque, con la cámara en
-// varios ángulos; pegado a una pared caminando; detrás del kiosco; y en la toma del refri con la cámara girada.
+// varios ángulos; pegado a una pared caminando; detrás del kiosco; que lo que estorba se corte al ras y no se vuelva transparente;
+// y en la toma del refri con la cámara girada.
 const { openGame, BLOCKER, sleep } = require('./lib.cjs');
 
 const ANGLES = [0, 45, 90, 135, 180, 270];
@@ -37,7 +38,19 @@ module.exports = {
 
     // el kiosco de Valle Alegre
     await E(() => window.__tamachin.go(0, -1360)); await sleep(1500);
-    T.check('detrás del kiosco, su techo se transparenta', await E(() => window.__dbg.occluders.find((o) => Math.abs(o.z0 - (-1358.2)) < 0.1).op < 0.5));
+    T.check('detrás del kiosco, su techo se quita', await E(() => window.__dbg.occluders.find((o) => Math.abs(o.z0 - (-1358.2)) < 0.1).k < 0.05));
+
+    // lo que estorba se corta al ras (sin transparencias: eran ventanas fantasma) y vuelve entero al alejarse
+    const cutState = (i) => E((i) => { const o = window.__dbg.occluders.filter((q) => q.z1 < 62 && q.z0 > -62)[i];
+      return { k: o.k, y: o.plane ? o.plane.constant : null, clip: o.mats.every((m) => !!m.clippingPlanes), seeThrough: o.mats.some((m) => m.transparent), inner: o.walls.side === THREE.DoubleSide }; }, i);
+    await setYaw(0); await E(() => { const o = window.__dbg.occluders.filter((q) => q.z1 < 62 && q.z0 > -62)[1]; window.__tamachin.go((o.x0 + o.x1) / 2, o.z0 - 1.2); }); await sleep(1500);
+    let c = await cutState(1);
+    T.check('un edificio entre la cámara y Tamachin se corta a 0.75 m, sin transparencia', c.k < 0.01 && c.clip && Math.abs(c.y - 0.75) < 0.05 && !c.seeThrough && c.inner, JSON.stringify(c));
+    await E(() => window.__tamachin.go(0, 3.5)); await sleep(1500); c = await cutState(1);
+    T.check('al alejarse vuelve entero (sin plano de corte)', c.k === 1 && !c.clip && !c.inner, JSON.stringify(c));
+    await E(() => window.__tamachin.go(0, -14.5)); await sleep(1500);
+    const h = await E(() => { const H = window.__dbg.house; return { walls: H.oWalls, clip: H.cutMats.every((m) => !!m.clippingPlanes), seeThrough: [H.mWalls, H.mShelf, H.mFront, H.mRoof].some((m) => m.transparent) }; });
+    T.check('detrás de la casa: se corta (techo fuera, paredes al ras) sin transparencia', h.walls < 0.01 && h.clip && !h.seeThrough, JSON.stringify(h));
 
     // el refri con la cámara girada: la toma es fija y las paredes no se transparentan
     for (const deg of [135, 180]) {

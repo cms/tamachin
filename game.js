@@ -29,6 +29,7 @@ catch (e) { fail('Tu navegador no pudo iniciar los gráficos 3D (WebGL). Prueba 
 const COARSE = !!(window.matchMedia && matchMedia('(pointer: coarse)').matches);
 renderer.setPixelRatio(Math.min(window.devicePixelRatio || 1, COARSE ? 1.75 : 2));
 renderer.shadowMap.enabled = true;
+renderer.localClippingEnabled = true;                        // edificios que se cortan a media altura (06-main.js)
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 const scene = new THREE.Scene();
 const FOG = new THREE.Color(0xd6f0ff);
@@ -753,7 +754,7 @@ function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla p
   const pm = new THREE.MeshLambertMaterial({ vertexColors: true }); scene.add(b.mesh(pm));
   solidBox(x0, x1, z0, z1);
   const pad = (ry) => (fronts.some((f) => Math.abs(f.ry - ry) < 0.01) ? 1.35 : 0);   // los toldos sobresalen de la fachada
-  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], op: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2), padN: pad(Math.PI), padS: pad(0) });
+  occluders.push({ x0, x1, z0, z1, h, mats: [side, roof, pm], walls: side, k: 1, padW: pad(-Math.PI / 2), padE: pad(Math.PI / 2), padN: pad(Math.PI), padS: pad(0) });
 }
 function genBlock(i, j) {
   const bx = BLOCKS[i], bz = BLOCKS[j], rs = { w: i > 0, e: i < 2, n: j > 0, s: j < 2 };
@@ -938,7 +939,8 @@ const house = (() => {
     const beam = new THREE.Mesh(bg, beamMat); beam.visible = false; scene.add(beam);
     return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
   })();
-  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
+  const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);   // corte a media altura cuando estorba (06-main.js)
+  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, plane, cutMats: [mWalls, mShelf, mFront, mRoof, doorMat], cutWalls: [mWalls, mFront], doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín
@@ -1797,7 +1799,7 @@ const townB = new Batch();
   { // el techo va aparte para transparentarse cuando Tamachin pasa por detrás (como los edificios)
     const km = new THREE.MeshLambertMaterial({ vertexColors: true });
     scene.add(new Batch().cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3).mesh(km));
-    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], op: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
+    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], k: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
   }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; townB.box('#ffffff', Math.cos(a) * 4.45, 1.05, KZ + Math.sin(a) * 4.45, 0.12, 0.7, 3.2, -a); }
   solidCircle(0, KZ, 5.4);
@@ -2766,6 +2768,17 @@ function rayCrosses(o, x, z, sx, back) {
   return a <= b && a * camSlope < o.h + 1.5;
 }
 function fadeMat(m, op) { m.opacity = op; const tr = op < 0.985; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
+// Lo que tapa a Tamachin no se vuelve transparente (eso dibujaba ventanas fantasma enormes): se corta casi al ras del suelo,
+// como una casa de muñecas. Un plano horizontal baja desde arriba del techo hasta CUT_Y; queda la planta, las paredes se ven por
+// dentro (walls) y la sombra sigue entera (clipShadows es falso). k: 1 entero, 0 cortado.
+const CUT_Y = 0.75;                                              // apenas sobre el zócalo de 0.5 m: no le tapa la boca aunque esté pegado
+function cutY(k, h) { return CUT_Y + (h + 3.5 - CUT_Y) * k; }   // con k = 1 queda sobre lo que hay en las azoteas
+function cutMats(mats, walls, plane, on) {
+  for (const m of mats) {
+    if (!!m.clippingPlanes === on) continue;
+    m.clippingPlanes = on ? [plane] : null; if (walls.includes(m)) m.side = on ? THREE.DoubleSide : THREE.FrontSide; m.needsUpdate = true;
+  }
+}
 const treeDirty = [false, false], GRASS_P = 2000 / 260;
 function updateScenery(dt) {
   const P = player, x = P.pos.x, z = P.pos.z, c = camView.vc, s = camView.vs;
@@ -2783,20 +2796,25 @@ function updateScenery(dt) {
     const tx = dx > 1e-4 ? (HOUSE.x1 - x) / dx : dx < -1e-4 ? (HOUSE.x0 - x) / dx : Infinity, tz = dz > 1e-4 ? (HOUSE.z1 - z) / dz : dz < -1e-4 ? (HOUSE.z0 - z) / dz : Infinity;
     wallHit = !(tz <= tx && dz > 0) && Math.min(tx, tz) * camSlope < HOUSE.h;
   }
-  house.oWalls = damp(house.oWalls, behind || wallHit ? 0.16 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : behind ? 0.12 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : behind ? 0.12 : 1, 9, dt);
-  fadeMat(house.mWalls, house.oWalls); fadeMat(house.mShelf, house.oWalls); fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
+  // oWalls: qué tan entera está (1) o cortada (0); dentro, la fachada y el techo se esconden como siempre (oFront, oRoof)
+  house.oWalls = damp(house.oWalls, behind || wallHit ? 0 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : 1, 9, dt);
+  house.plane.constant = cutY(house.oWalls, HOUSE.h + 3);
+  cutMats(house.cutMats, house.cutWalls, house.plane, house.oWalls < 0.999);
+  fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
   house.front.visible = house.oFront > 0.03; house.roof.visible = house.oRoof > 0.03; house.doorPivot.visible = house.oFront > 0.03;
   house.roof.castShadow = house.oRoof > 0.5; house.front.castShadow = house.oFront > 0.5;
   house.doorA = damp(house.doorA, Math.hypot(x, z + 4.1) < 3.3 ? 1.8 : 0, 7, dt); house.doorPivot.rotation.y = house.doorA;
   if (house.tvOn) house.tvMat.color.setHSL((clock * 0.23) % 1, 0.7, 0.55 + Math.sin(clock * 9) * 0.08);
   // edificios que tapan a Tamachin
   for (const o of occluders) {
-    if (o.op > 0.996 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
+    if (o.k === 1 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
     let hide;
     if (ui.closeup) { const b = camBox(o.x0, o.x1, o.z0, o.z1, x, z), ru = rayU(b.dmin); hide = b.dmin > -0.3 && b.dmin < 7 && ru > b.umin - 2.2 && ru < b.umax + 2.2; }
     else hide = rayCrosses(o, x, z, cu / back, back);
-    const t = hide ? 0.13 : 1; if (Math.abs(o.op - t) < 0.004) continue;
-    o.op = damp(o.op, t, 9, dt); for (const m of o.mats) fadeMat(m, o.op);
+    const t = hide ? 0 : 1; if (o.k === t) continue;
+    o.k = Math.abs(o.k - t) < 0.001 ? t : damp(o.k, t, 9, dt);
+    if (!o.plane) o.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);
+    o.plane.constant = cutY(o.k, o.h); o.cut = o.k < 0.999; cutMats(o.mats, o.walls ? [o.walls] : [], o.plane, o.cut);
   }
   // árboles: se agachan si quedan entre la cámara y Tamachin
   const reach = ui.closeup ? 1 : Math.max(1, CAM_SLOPE0 / camSlope);   // con el rayo más plano, tapan árboles más lejanos

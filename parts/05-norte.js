@@ -277,7 +277,7 @@ const townB = new Batch();
   { // el techo va aparte para transparentarse cuando Tamachin pasa por detrás (como los edificios)
     const km = new THREE.MeshLambertMaterial({ vertexColors: true });
     scene.add(new Batch().cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3).mesh(km));
-    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], op: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
+    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], k: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
   }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; townB.box('#ffffff', Math.cos(a) * 4.45, 1.05, KZ + Math.sin(a) * 4.45, 0.12, 0.7, 3.2, -a); }
   solidCircle(0, KZ, 5.4);

@@ -734,6 +734,17 @@ function rayCrosses(o, x, z, sx, back) {
   return a <= b && a * camSlope < o.h + 1.5;
 }
 function fadeMat(m, op) { m.opacity = op; const tr = op < 0.985; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
+// Lo que tapa a Tamachin no se vuelve transparente (eso dibujaba ventanas fantasma enormes): se corta casi al ras del suelo,
+// como una casa de muñecas. Un plano horizontal baja desde arriba del techo hasta CUT_Y; queda la planta, las paredes se ven por
+// dentro (walls) y la sombra sigue entera (clipShadows es falso). k: 1 entero, 0 cortado.
+const CUT_Y = 0.75;                                              // apenas sobre el zócalo de 0.5 m: no le tapa la boca aunque esté pegado
+function cutY(k, h) { return CUT_Y + (h + 3.5 - CUT_Y) * k; }   // con k = 1 queda sobre lo que hay en las azoteas
+function cutMats(mats, walls, plane, on) {
+  for (const m of mats) {
+    if (!!m.clippingPlanes === on) continue;
+    m.clippingPlanes = on ? [plane] : null; if (walls.includes(m)) m.side = on ? THREE.DoubleSide : THREE.FrontSide; m.needsUpdate = true;
+  }
+}
 const treeDirty = [false, false], GRASS_P = 2000 / 260;
 function updateScenery(dt) {
   const P = player, x = P.pos.x, z = P.pos.z, c = camView.vc, s = camView.vs;
@@ -751,20 +762,25 @@ function updateScenery(dt) {
     const tx = dx > 1e-4 ? (HOUSE.x1 - x) / dx : dx < -1e-4 ? (HOUSE.x0 - x) / dx : Infinity, tz = dz > 1e-4 ? (HOUSE.z1 - z) / dz : dz < -1e-4 ? (HOUSE.z0 - z) / dz : Infinity;
     wallHit = !(tz <= tx && dz > 0) && Math.min(tx, tz) * camSlope < HOUSE.h;
   }
-  house.oWalls = damp(house.oWalls, behind || wallHit ? 0.16 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : behind ? 0.12 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : behind ? 0.12 : 1, 9, dt);
-  fadeMat(house.mWalls, house.oWalls); fadeMat(house.mShelf, house.oWalls); fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
+  // oWalls: qué tan entera está (1) o cortada (0); dentro, la fachada y el techo se esconden como siempre (oFront, oRoof)
+  house.oWalls = damp(house.oWalls, behind || wallHit ? 0 : 1, 9, dt); house.oFront = damp(house.oFront, inside ? 0 : 1, 9, dt); house.oRoof = damp(house.oRoof, inside ? 0 : 1, 9, dt);
+  house.plane.constant = cutY(house.oWalls, HOUSE.h + 3);
+  cutMats(house.cutMats, house.cutWalls, house.plane, house.oWalls < 0.999);
+  fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
   house.front.visible = house.oFront > 0.03; house.roof.visible = house.oRoof > 0.03; house.doorPivot.visible = house.oFront > 0.03;
   house.roof.castShadow = house.oRoof > 0.5; house.front.castShadow = house.oFront > 0.5;
   house.doorA = damp(house.doorA, Math.hypot(x, z + 4.1) < 3.3 ? 1.8 : 0, 7, dt); house.doorPivot.rotation.y = house.doorA;
   if (house.tvOn) house.tvMat.color.setHSL((clock * 0.23) % 1, 0.7, 0.55 + Math.sin(clock * 9) * 0.08);
   // edificios que tapan a Tamachin
   for (const o of occluders) {
-    if (o.op > 0.996 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
+    if (o.k === 1 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
     let hide;
     if (ui.closeup) { const b = camBox(o.x0, o.x1, o.z0, o.z1, x, z), ru = rayU(b.dmin); hide = b.dmin > -0.3 && b.dmin < 7 && ru > b.umin - 2.2 && ru < b.umax + 2.2; }
     else hide = rayCrosses(o, x, z, cu / back, back);
-    const t = hide ? 0.13 : 1; if (Math.abs(o.op - t) < 0.004) continue;
-    o.op = damp(o.op, t, 9, dt); for (const m of o.mats) fadeMat(m, o.op);
+    const t = hide ? 0 : 1; if (o.k === t) continue;
+    o.k = Math.abs(o.k - t) < 0.001 ? t : damp(o.k, t, 9, dt);
+    if (!o.plane) o.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);
+    o.plane.constant = cutY(o.k, o.h); o.cut = o.k < 0.999; cutMats(o.mats, o.walls ? [o.walls] : [], o.plane, o.cut);
   }
   // árboles: se agachan si quedan entre la cámara y Tamachin
   const reach = ui.closeup ? 1 : Math.max(1, CAM_SLOPE0 / camSlope);   // con el rayo más plano, tapan árboles más lejanos
