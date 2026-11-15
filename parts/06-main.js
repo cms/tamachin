@@ -97,7 +97,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3) }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), sound: snd.on, helpSeen: helpEl.hidden }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -558,8 +558,10 @@ bHome.addEventListener('click', goHome);
 bCustom.addEventListener('click', () => togglePanel()); $('#pClose').addEventListener('click', () => togglePanel(false));
 const bZoom = $('#bZoom'), bSound = $('#bSound'), helpEl = $('#help');
 bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.textContent = ZOOM_LABEL[ui.zoomIdx]; });
-bSound.addEventListener('click', () => { snd.on = !snd.on; bSound.textContent = snd.on ? 'Sonido: sí' : 'Sonido: no'; bSound.setAttribute('aria-pressed', String(snd.on)); if (snd.on) { unlockAudio(); SFX.pop(); } });
-$('#helpOk').addEventListener('click', () => { helpEl.hidden = true; });
+function setSound(on) { snd.on = on; bSound.textContent = on ? 'Sonido: sí' : 'Sonido: no'; bSound.setAttribute('aria-pressed', String(on)); }
+bSound.addEventListener('click', () => { setSound(!snd.on); if (snd.on) { unlockAudio(); SFX.pop(); } save(); });
+function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
+$('#helpOk').addEventListener('click', hideHelp);
 
 // ───────────────────────── actualización por cuadro ─────────────────────────
 function resolvePlayer() {
@@ -809,7 +811,7 @@ function updateHud(dt) {
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
-  if (!helpEl.hidden && P.moved > 14) helpEl.hidden = true;
+  if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
 }
 
@@ -848,6 +850,8 @@ function boot(data) {
   if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { player.pos.set(s.x, 0, s.z); resolvePlayer(); player.pos.y = groundY(player.pos.x, player.pos.z); }   // donde se quedó
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
+  if (s.sound === false) setSound(false);
+  if (s.helpSeen === true) helpEl.hidden = true;
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);

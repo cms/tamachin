@@ -1,8 +1,8 @@
-// Lo que se guarda al recargar: lugar, rumbo y ángulo de la cámara; "Volver al inicio" con doble toque lejos de casa.
+// Lo que se guarda al recargar: lugar, rumbo, ángulo de la cámara, sonido y ayuda; "Volver al inicio" con doble toque lejos de casa.
 const { openGame, sleep } = require('./lib.cjs');
 
 module.exports = {
-  titulo: 'al recargar sigue donde estaba; Volver al inicio',
+  titulo: 'al recargar sigue donde estaba, con su sonido y su ayuda; Volver al inicio',
   async run(T) {
     const { ctx, page, errors, E } = await openGame(T, { help: true });
     const where = () => E(() => { const p = window.__tamachin.player.pos; return [p.x, p.y, p.z].map((v) => +v.toFixed(1)); });
@@ -10,12 +10,15 @@ module.exports = {
     const near = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]) < 0.3;
 
     T.check('la primera vez empieza frente a la casa', near(await where(), [0, 0, 3.5]), JSON.stringify(await where()));
-    await page.click('#helpOk');
+    await page.click('#helpOk'); await page.click('#bSound');
     await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 2; window.__tamachin.go(7, -1700); }); await sleep(1200);
     await reload();
     T.check('en el bosque sin fin: sigue ahí', near(await where(), [7, 0, -1700]), JSON.stringify(await where()));
     T.check('la cámara conserva su ángulo', Math.abs(await E(() => window.__tamachin.view.yaw) - 2) < 0.01);
-    await E(() => { document.querySelector('#help').hidden = true; });
+    T.check('el sonido sigue apagado', (await page.textContent('#bSound')) === 'Sonido: no' && await E(() => document.querySelector('#bSound').getAttribute('aria-pressed') === 'false'));
+    T.check('la ayuda ya cerrada no vuelve a salir', await E(() => document.querySelector('#help').hidden));
+    await page.click('#bSound'); await reload();
+    T.check('al prenderlo, sigue prendido después de recargar', (await page.textContent('#bSound')) === 'Sonido: sí');
 
     await E(() => window.__tamachin.go(2, -762)); await sleep(1500); await reload();
     const top = await where();
