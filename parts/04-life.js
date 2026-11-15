@@ -80,7 +80,6 @@ const LINES = {
   asombrado: ['¡Oh! ¿Viste eso? ¡Cambió el semáforo!', '¡Guau! ¿Vienes desde tu casa?', '¡Increíble! Pasó un autobús enorme.'],
   dormido: ['Zzz… cinco minutitos más…', 'Mmm… ¿ya es de día?', 'Zzz… sueño con gelatina…'],
   enamorado: ['Ay… el parque está tan bonito hoy…', '¿Me acompañas a ver la fuente?', 'Suspiro… qué ojos tan grandes tienes.'],
-  mareado: ['Uy… todo da vueltas…'],
 };
 const npcs = [];
 // rutas cerradas: una polilínea que se recorre por distancia. Al trazar una, que no pase por sólidos (bancas, arbustos, árboles).

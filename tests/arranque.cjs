@@ -7,6 +7,8 @@ module.exports = {
     {
       const { ctx, page, errors, E } = await openGame(T, { help: true });
       T.check('escritorio: sin errores ni archivos faltantes', !errors.length, errors.join(' | ') || undefined);
+      // Chrome sin interfaz no pide /favicon.ico, así que el 404 de antes no se veía en `errors`: se revisa el enlace
+      T.check('tiene ícono (dentro de la página, sin archivo aparte)', await E(() => /^data:image\/svg\+xml,/.test((document.querySelector('link[rel=icon]') || {}).href || '')));
       T.check('empieza en el jardín de casa', (await page.textContent('#zone')) === 'Jardín de casa');
       T.check('la ayuda se ve al empezar', await E(() => !document.querySelector('#help').hidden));
       await page.keyboard.press('KeyJ'); await sleep(300);

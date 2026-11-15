@@ -399,7 +399,6 @@ const parkB = new Batch();
 
 // ───────────────────────── camino al bosque ─────────────────────────
 const meadowB = new Batch();
-const signs = [];
 function sign(text, x, z, w) {
   const tex = canvasTex(512, 160, (g, W, Hh) => {
     g.fillStyle = '#b98552'; g.fillRect(0, 0, W, Hh);
@@ -410,7 +409,7 @@ function sign(text, x, z, w) {
     g.fillStyle = '#fff8e6'; g.fillText(text, W / 2, Hh / 2 + 4);
   });
   const h = w * 160 / 512, m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: tex }));
-  m.position.set(x, 2.25, z + 0.08); scene.add(m); signs.push(m);
+  m.position.set(x, 2.25, z + 0.08); scene.add(m);
   meadowB.box('#8a5a34', x, 2.25, z, w + 0.12, h + 0.12, 0.12).cyl(TRUNK, x - w * 0.32, 1.1, z - 0.12, 0.09, 0.11, 2.2, 8).cyl(TRUNK, x + w * 0.32, 1.1, z - 0.12, 0.09, 0.11, 2.2, 8);
   solidCircle(x - w * 0.32, z - 0.12, 0.16); solidCircle(x + w * 0.32, z - 0.12, 0.16);
 }

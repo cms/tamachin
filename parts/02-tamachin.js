@@ -112,7 +112,7 @@ function makeEye(lidMat, specMat) {
   lidG.add(new THREE.Mesh(G_LID, lidMat), rim); g.add(lidG);
   return { g, pupilG, special, lidG };
 }
-const TRICK_DUR = { hop: 0.7, spin: 0.85, flip: 0.8, dance: 1.7, wave: 1.3, giggle: 0.9, wink: 0.9, shake: 0.8, bow: 1.0 };
+const TRICK_DUR = { hop: 0.7, spin: 0.85, flip: 0.8, dance: 1.7, wave: 1.3, giggle: 0.9, wink: 0.9, shake: 0.8 };
 const _tv = new THREE.Vector3();
 
 function makeTamachin(o) {
@@ -203,7 +203,6 @@ function makeTamachin(o) {
         case 'giggle': sqAdd = Math.sin(p * TAU * 6) * 0.09; break;
         case 'wink': wink = 1; swayZ = 0.14 * Math.sin(p * Math.PI); break;
         case 'shake': yaw = Math.sin(p * TAU * 3.5) * 0.5 * (1 - p); break;
-        case 'bow': swayX = Math.sin(p * Math.PI) * 0.5; break;
       }
     }
     T.dz = damp(T.dz, T.mood === 'mareado' ? 1 : (st.wobble || 0) * 0.45, 4, dt);

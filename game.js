@@ -124,7 +124,6 @@ function smoothNormals(g) {
   for (let i = 0; i < P.count; i++) { const a = map.get(keys[i]), l = Math.hypot(a[0], a[1], a[2]) || 1; N.setXYZ(i, a[0] / l, a[1] / l, a[2] / l); }
   return g;
 }
-function whiteColors(g) { const n = g.attributes.position.count, a = new Float32Array(n * 3).fill(1); g.setAttribute('color', new THREE.BufferAttribute(a, 3)); return g; }
 
 // ───────────────────────── Batch: muchas piezas, una sola malla ─────────────────────────
 const _bm = new THREE.Matrix4(), _bq = new THREE.Quaternion(), _be = new THREE.Euler(), _bp = new THREE.Vector3(),
@@ -434,7 +433,7 @@ function makeEye(lidMat, specMat) {
   lidG.add(new THREE.Mesh(G_LID, lidMat), rim); g.add(lidG);
   return { g, pupilG, special, lidG };
 }
-const TRICK_DUR = { hop: 0.7, spin: 0.85, flip: 0.8, dance: 1.7, wave: 1.3, giggle: 0.9, wink: 0.9, shake: 0.8, bow: 1.0 };
+const TRICK_DUR = { hop: 0.7, spin: 0.85, flip: 0.8, dance: 1.7, wave: 1.3, giggle: 0.9, wink: 0.9, shake: 0.8 };
 const _tv = new THREE.Vector3();
 
 function makeTamachin(o) {
@@ -525,7 +524,6 @@ function makeTamachin(o) {
         case 'giggle': sqAdd = Math.sin(p * TAU * 6) * 0.09; break;
         case 'wink': wink = 1; swayZ = 0.14 * Math.sin(p * Math.PI); break;
         case 'shake': yaw = Math.sin(p * TAU * 3.5) * 0.5 * (1 - p); break;
-        case 'bow': swayX = Math.sin(p * Math.PI) * 0.5; break;
       }
     }
     T.dz = damp(T.dz, T.mood === 'mareado' ? 1 : (st.wobble || 0) * 0.45, 4, dt);
@@ -988,7 +986,6 @@ const parkB = new Batch();
 
 // ───────────────────────── camino al bosque ─────────────────────────
 const meadowB = new Batch();
-const signs = [];
 function sign(text, x, z, w) {
   const tex = canvasTex(512, 160, (g, W, Hh) => {
     g.fillStyle = '#b98552'; g.fillRect(0, 0, W, Hh);
@@ -999,7 +996,7 @@ function sign(text, x, z, w) {
     g.fillStyle = '#fff8e6'; g.fillText(text, W / 2, Hh / 2 + 4);
   });
   const h = w * 160 / 512, m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: tex }));
-  m.position.set(x, 2.25, z + 0.08); scene.add(m); signs.push(m);
+  m.position.set(x, 2.25, z + 0.08); scene.add(m);
   meadowB.box('#8a5a34', x, 2.25, z, w + 0.12, h + 0.12, 0.12).cyl(TRUNK, x - w * 0.32, 1.1, z - 0.12, 0.09, 0.11, 2.2, 8).cyl(TRUNK, x + w * 0.32, 1.1, z - 0.12, 0.09, 0.11, 2.2, 8);
   solidCircle(x - w * 0.32, z - 0.12, 0.16); solidCircle(x + w * 0.32, z - 0.12, 0.16);
 }
@@ -1249,7 +1246,6 @@ const LINES = {
   asombrado: ['¡Oh! ¿Viste eso? ¡Cambió el semáforo!', '¡Guau! ¿Vienes desde tu casa?', '¡Increíble! Pasó un autobús enorme.'],
   dormido: ['Zzz… cinco minutitos más…', 'Mmm… ¿ya es de día?', 'Zzz… sueño con gelatina…'],
   enamorado: ['Ay… el parque está tan bonito hoy…', '¿Me acompañas a ver la fuente?', 'Suspiro… qué ojos tan grandes tienes.'],
-  mareado: ['Uy… todo da vueltas…'],
 };
 const npcs = [];
 // rutas cerradas: una polilínea que se recorre por distancia. Al trazar una, que no pase por sólidos (bancas, arbustos, árboles).
