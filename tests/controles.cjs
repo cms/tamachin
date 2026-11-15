@@ -12,7 +12,7 @@ module.exports = {
     {
       const { ctx, page, errors, E } = await openGame(T, { expose: 'pScreen, camera, player, forest' });
       const st = () => E(() => { const T = window.__tamachin, P = T.player, s = window.__dbg.pScreen; return { yaw: T.view.yawT * 180 / Math.PI, trick: P.lastTrick, mood: P.T.mood, heading: P.heading, ps: [s.x, s.y, s.r] }; });
-      const reset = async () => { await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 0; window.__tamachin.go(0, 3.5); }); await sleep(700); };
+      const reset = async () => { await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 0; V.pitch = V.pitchT = Math.atan2(7.6, 11.2); window.__tamachin.go(0, 3.5); }); await sleep(700); };
       await reset();
 
       let s = await st();
@@ -46,6 +46,20 @@ module.exports = {
       await page.mouse.up(); await sleep(800);
       const rec = await E(() => { window.__recOn = false; return window.__rec; });
       T.check('arrastre rápido de 180°: la cámara no se acerca', Math.min(...rec) > rec[0] - 0.3, rec[0].toFixed(1) + ' m → mínimo ' + Math.min(...rec).toFixed(1) + ' m');
+
+      // arrastrar hacia abajo baja la cámara (se ve más el horizonte), hacia arriba la sube: entre 15° y 60°, sin girar de lado
+      await reset(); await sleep(400);
+      const ang = () => E(() => { const D = window.__dbg, c = D.camera.position, P = D.player.pos; return Math.atan2(c.y - P.y - 1.25, Math.hypot(c.x - P.x, c.z - P.z)) * 180 / Math.PI; });
+      const vdrag = async (dy, steps) => { await page.mouse.move(420, 300); await page.mouse.down(); for (let i = 1; i <= steps; i++) { await page.mouse.move(420, 300 + i * dy / steps); await sleep(16); } await page.mouse.up(); await sleep(900); };
+      let a = await ang();
+      T.check('al empezar, la cámara a 34° sobre el suelo', near(a, 34.2, 1), a.toFixed(1) + '°');
+      await vdrag(60, 10); a = await ang(); t = await st();
+      T.check('arrastrar 60 px hacia abajo la baja a unos 20° (y no gira de lado)', near(a, 20.4, 2.5) && near(t.yaw, 0, 0.5), a.toFixed(1) + '°, giro ' + t.yaw.toFixed(1) + '°');
+      await vdrag(300, 20); a = await ang();
+      T.check('no baja de 15°', near(a, 15, 1), a.toFixed(1) + '°');
+      await vdrag(-600, 30); a = await ang();
+      T.check('hacia arriba sube, hasta 60°', near(a, 60, 1.5), a.toFixed(1) + '°');
+      await reset();
 
       // caminar con W se aleja de la cámara, gire como gire
       for (const d of [90, 180, -90]) {
@@ -81,7 +95,7 @@ module.exports = {
     {
       const { ctx, page, errors, E } = await openGame(T, { device: PHONE, expose: 'pScreen' });
       const touch = await touchscreen(ctx, page);
-      const st = () => E(() => { const T = window.__tamachin, P = T.player, s = window.__dbg.pScreen; return { yaw: T.view.yawT * 180 / Math.PI, zoom: T.ui.zoomTarget, trick: P.lastTrick, mood: P.T.mood, x: P.pos.x, z: P.pos.z, ps: [s.x, s.y, s.r] }; });
+      const st = () => E(() => { const T = window.__tamachin, P = T.player, s = window.__dbg.pScreen; return { yaw: T.view.yawT * 180 / Math.PI, pitch: T.view.pitchT * 180 / Math.PI, zoom: T.ui.zoomTarget, trick: P.lastTrick, mood: P.T.mood, x: P.pos.x, z: P.pos.z, ps: [s.x, s.y, s.r] }; });
       await E(() => window.__tamachin.go(0, 3.5)); await sleep(700);
 
       let s = await st();
@@ -116,6 +130,19 @@ module.exports = {
       for (let i = 0; i <= 160; i++) { const a = i / 16 * Math.PI * 2; await touch('touchMove', [[s.ps[0] + Math.cos(a) * R, s.ps[1] + Math.sin(a) * R, 4]]); await sleep(12); }
       await touch('touchEnd', []); t = await st();
       T.check('círculos con un dedo ya no lo marean', t.mood !== 'mareado', t.mood);
+
+      // un dedo hacia abajo baja la cámara; dos dedos hacia abajo, también
+      const P0 = Math.atan2(7.6, 11.2), resetTilt = () => E((p) => { const V = window.__tamachin.view; V.pitch = V.pitchT = p; }, P0);
+      await resetTilt(); s = await st();
+      await touch('touchStart', [[200, 300, 20]]); for (let i = 1; i <= 6; i++) { await touch('touchMove', [[200, 300 + i * 10, 20]]); await sleep(16); }
+      await touch('touchEnd', []); await sleep(300); t = await st();
+      T.check('un dedo 60 px hacia abajo baja la cámara unos 11°', near(t.pitch, 22.7, 2) && near(t.yaw, s.yaw, 1), s.pitch.toFixed(1) + '° → ' + t.pitch.toFixed(1) + '°');
+      await resetTilt(); s = await st();
+      await touch('touchStart', [[150, 300, 21]]); await touch('touchStart', [[150, 300, 21], [250, 300, 22]]);
+      for (let i = 1; i <= 4; i++) { await touch('touchMove', [[150, 300 + i * 10, 21], [250, 300 + i * 10, 22]]); await sleep(16); }
+      await touch('touchEnd', []); await sleep(300); t = await st();
+      T.check('dos dedos 40 px hacia abajo la bajan unos 11° (sin zoom)', near(t.pitch, 22.7, 2) && near(t.zoom, s.zoom, 0.01), s.pitch.toFixed(1) + '° → ' + t.pitch.toFixed(1) + '°');
+      await resetTilt();
 
       // muchos toques seguidos sí lo marean
       await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 0; window.__tamachin.go(0, 3.5); }); await sleep(2500); s = await st();

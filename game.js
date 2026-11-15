@@ -39,7 +39,10 @@ const camera = new THREE.PerspectiveCamera(48, 1, 0.3, 800);
 // Hacia dónde mira la cámara. Se gira arrastrando (06-main.js). yaw 0: la cámara al sur de Tamachin, mirando al norte.
 // c y s son coseno y seno de yaw: la derecha de la pantalla es (c, -s) en el mundo y "hacia la cámara" es (s, c).
 // vc y vs: el mismo marco para las pruebas de visibilidad; durante una toma fija (el refri) siguen a la cámara de verdad.
-const camView = { yaw: 0, yawT: 0, c: 1, s: 0, vc: 1, vs: 0 };
+// pitch: el ángulo de la cámara sobre el suelo, visto desde Tamachin (34° al empezar); se cambia arrastrando hacia arriba o abajo.
+// En casa va `house` más alto, para ver por encima de las paredes.
+const PITCH = { def: Math.atan2(7.6, 11.2), min: 15 * Math.PI / 180, max: 60 * Math.PI / 180, house: Math.atan2(8.4, 7.2) - Math.atan2(7.6, 11.2) };
+const camView = { yaw: 0, yawT: 0, pitch: PITCH.def, pitchT: PITCH.def, c: 1, s: 0, vc: 1, vs: 0 };
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 
 const skyMesh = (() => {
@@ -837,6 +840,19 @@ for (const r of ROADS) {
   cityB.merge(PF_PORTAL, r, 0, 60, 0); solidBox(r - 5, r + 5, 59.5, 64);
   cityB.merge(PF_PORTAL, -60, 0, r, -Math.PI / 2); solidBox(-64, -59.5, r - 5, r + 5);
   cityB.merge(PF_PORTAL, 60, 0, r, Math.PI / 2); solidBox(59.5, 64, r - 5, r + 5);
+}
+// Qué tan alto es el borde de la ciudad en (x, z): setos (2.4 m con sus bultos), túneles (4.9 m) y la loma detrás de cada uno
+// (una esfera de 11 m de radio hundida 2.5 m). Con la cámara baja, updateCamera la sube lo necesario para ver por encima.
+const PORTALS = ROADS.flatMap((r) => [[r, -60, 0, -1], [r, 60, 0, 1], [-60, r, -1, 0], [60, r, 1, 0]]);   // x, z y hacia fuera
+function edgeTop(x, z) {
+  const ax = Math.abs(x), az = Math.abs(z); if (ax < 59 && az < 59) return 0;
+  let h = (ax > 62.2 && ax < 64.2 && az < 64.2) || (az > 62.2 && az < 64.2 && ax < 64.2) ? 2.4 : 0;
+  for (const [px, pz, nx, nz] of PORTALS) {
+    const w = (x - px) * nx + (z - pz) * nz, u = (x - px) * nz - (z - pz) * nx, d2 = u * u + (w - 11) * (w - 11);
+    if (Math.abs(u) < 5.3 && w > -0.7 && w < 10.6) h = Math.max(h, 4.9);
+    if (d2 < 121) h = Math.max(h, Math.sqrt(121 - d2) - 2.5);
+  }
+  return h;
 }
 const HEDGE = '#4fae5a', HEDGE2 = '#5fc06a';
 function hedge(x0, z0, x1, z1) {
@@ -2019,7 +2035,7 @@ const farForest = (() => {
 })();
 
 buildStatic(); scene.add(northB.mesh(), townB.mesh());
-camera.far = 1700; camera.updateProjectionMatrix();                 // desde las cimas se ve el valle entero
+camera.far = 1700; camera.updateProjectionMatrix();                 // desde las cimas se ve el valle entero (updateCamera la acorta a la niebla)
 
 // ───────────────────────── cada cuadro ─────────────────────────
 const northSeen = {};
@@ -2135,7 +2151,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), sound: snd.on, helpSeen: helpEl.hidden }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.on, helpSeen: helpEl.hidden }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -2431,12 +2447,14 @@ function setPtr(e, noSpin) {
     ptr.a = a; ptr.hasA = true;
   } else ptr.hasA = false;
 }
-// Arrastrar gira la cámara, con el mouse o con un dedo (desde 12 px; menos es un toque o un clic). Con dos dedos también gira y
-// pellizcar acerca o aleja. La palanca y los botones son elementos aparte: un dedo en ellos nunca gira.
-const DRAG_K = 0.0075;                                             // radianes por pixel
-const touches = new Map(), two = { on: false, mx: 0, d0: 1, z0: 1 }, drag = { on: false, x: 0 };
-function twoFingers() { const [a, b] = touches.values(); return { mx: (a.x + b.x) / 2, d: Math.max(24, Math.hypot(a.x - b.x, a.y - b.y)) }; }
-function baseTwo() { const g = twoFingers(); Object.assign(two, { on: true, mx: g.mx, d0: g.d, z0: ui.zoomTarget }); }   // cada vez que cambia el par de dedos, sin saltos
+// Arrastrar gira la cámara, con el mouse o con un dedo (desde 12 px; menos es un toque o un clic): de lado la rodea, hacia abajo
+// la baja (se ve más el horizonte) y hacia arriba la sube. Con dos dedos también, y pellizcar acerca o aleja. La palanca y los
+// botones son elementos aparte: un dedo en ellos nunca gira.
+const DRAG_K = 0.0075, TILT_K = 0.005;                             // radianes por pixel
+const touches = new Map(), two = { on: false, mx: 0, my: 0, d0: 1, z0: 1 }, drag = { on: false, x: 0, y: 0 };
+function twoFingers() { const [a, b] = touches.values(); return { mx: (a.x + b.x) / 2, my: (a.y + b.y) / 2, d: Math.max(24, Math.hypot(a.x - b.x, a.y - b.y)) }; }
+function baseTwo() { const g = twoFingers(); Object.assign(two, { on: true, mx: g.mx, my: g.my, d0: g.d, z0: ui.zoomTarget }); }   // cada vez que cambia el par de dedos, sin saltos
+function tilt(dy) { if (!ui.closeup) camView.pitchT = clamp(camView.pitchT - dy * TILT_K, PITCH.min, PITCH.max); }   // en Personalizar la cámara va a su altura
 canvas.addEventListener('pointerdown', (e) => {
   if (e.pointerType === 'touch') document.body.classList.add('touch');
   unlockAudio(); try { canvas.focus({ preventScroll: true }); } catch (_) { /* sin foco */ }
@@ -2453,12 +2471,12 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') {
     const t = touches.get(e.pointerId); if (!t) return; t.x = e.clientX; t.y = e.clientY;
-    if (two.on) { if (touches.size >= 2) { const g = twoFingers(); camView.yawT += (g.mx - two.mx) * DRAG_K; two.mx = g.mx; ui.zoomTarget = clamp(two.z0 * two.d0 / g.d, 0.5, 1.6); } return; }
+    if (two.on) { if (touches.size >= 2) { const g = twoFingers(); camView.yawT += (g.mx - two.mx) * DRAG_K; tilt(g.my - two.my); two.mx = g.mx; two.my = g.my; ui.zoomTarget = clamp(two.z0 * two.d0 / g.d, 0.5, 1.6); } return; }
     if (e.pointerId !== ptr.id) return;
   }
   if (ptr.down && e.pointerId === ptr.id) {
-    if (!drag.on && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) >= 12) { drag.on = true; drag.x = e.clientX; }
-    if (drag.on) { camView.yawT += (e.clientX - drag.x) * DRAG_K; drag.x = e.clientX; setPtr(e, true); return; }
+    if (!drag.on && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) >= 12) { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; }
+    if (drag.on) { camView.yawT += (e.clientX - drag.x) * DRAG_K; tilt(e.clientY - drag.y); drag.x = e.clientX; drag.y = e.clientY; setPtr(e, true); return; }
   }
   setPtr(e);
 });
@@ -2603,7 +2621,7 @@ function goHome() {
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
-  P.pos.set(START.x, 0, START.z); camInit = false; camView.yaw = camView.yawT = 0;   // también la cámara, de frente a la casa
+  P.pos.set(START.x, 0, START.z); camInit = false; camView.yaw = camView.yawT = 0; camView.pitch = camView.pitchT = PITCH.def;   // también la cámara, de frente a la casa
   toggleDiary(false); say(P, '¡De vuelta en casa!', 2.2); P.T.doTrick('hop'); burst('spark', P.pos.x, 1.6, P.pos.z, 6); SFX.nice(); save();
 }
 bHome.addEventListener('click', goHome);
@@ -2715,7 +2733,7 @@ const camPos = new THREE.Vector3(), camTgt = new THREE.Vector3(), _cp = new THRE
 // Metros a zoom 1 y fuera de casa, en el marco de la cámara (x a la derecha de la pantalla, z hacia la cámara).
 // Solo cambia mientras camina: al detenerse se conserva, para poder mirar lo que viene.
 const LEAD = { south: 4.4, north: 1.4, side: 0.35, grow: 1.6, maxRate: 5, house: 0.3 };
-const camLead = { x: 0, z: 0, k: 1 }, CAM_D0 = Math.hypot(7.6, 11.2), CAM_SLOPE0 = 7.6 / 11.2;
+const camLead = { x: 0, z: 0, k: 1 }, CAM_D0 = Math.hypot(7.6, 11.2), CAM_DH = Math.hypot(8.4, 7.2), CAM_SLOPE0 = 7.6 / 11.2;   // distancias a zoom 1
 function updateLead(dt) {
   const P = player;
   if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly') {
@@ -2735,7 +2753,7 @@ function updateCamera(dt) {
   // girar: el arrastre y las teclas Z y X mueven yawT; yaw lo sigue suave
   const V = camView, kz = (keys.KeyZ ? 1 : 0) - (keys.KeyX ? 1 : 0);
   if (kz && P.state !== 'busy') V.yawT += kz * 1.9 * dt;
-  const yaw0 = V.yaw; V.yaw = camInit ? damp(V.yaw, V.yawT, 14, dt) : V.yawT;
+  const yaw0 = V.yaw; V.yaw = camInit ? damp(V.yaw, V.yawT, 14, dt) : V.yawT; V.pitch = camInit ? damp(V.pitch, V.pitchT, 14, dt) : V.pitchT;
   if (V.yaw > Math.PI) { V.yaw -= TAU; V.yawT -= TAU; } else if (V.yaw < -Math.PI) { V.yaw += TAU; V.yawT += TAU; }
   const c = V.c = Math.cos(V.yaw), s = V.s = Math.sin(V.yaw), fixed = P.state === 'busy' && P.busy.cam;
   if (camInit && !fixed && V.yaw !== yaw0) {                         // al girar, la cámara da la vuelta por el círculo, no por la cuerda
@@ -2746,17 +2764,22 @@ function updateCamera(dt) {
   updateLead(dt);
   if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) { tx += 1.3 * c; tz -= 1.3 * s; } else { oy = 0.75; oz = 6.2; } }   // en teléfono también a la altura de sus ojos (desde arriba se veía con sueño)
   else {
-    const z = ui.zoom; if (P.inHouse) { oy = 8.4 * Math.min(z, 1.1); oz = 7.2 * Math.min(z, 1.1); } else { oy = 7.6 * z; oz = 11.2 * z; } ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
+    const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z, p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
+    oy = d * Math.sin(p); oz = d * Math.cos(p); ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
     const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = xLimitAt(P.pos.z);
     tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, LIMIT);   // sin mirar más allá del borde
   }
   if (fixed) { const b = P.busy.cam; tx = b.x; ty = b.y; tz = b.z; ox = b.ox || 0; oy = b.oy; oz = b.oz; }   // toma cercana (el refri), fija en el mundo
   else { const wx = ox * c + oz * s; oz = -ox * s + oz * c; ox = wx; }   // la cámara gira alrededor de Tamachin
   _ct.set(tx, ty, tz); _cp.set(tx + ox, ty + oy, tz + oz);
-  if (P.pos.z < NORTH_Z + 15) {                                     // bajando una ladera la cámara queda cuesta arriba: se sube lo necesario
-    let lift = 0;
-    const fy = P.pos.y + 0.3;                                     // desde los pies: que se vea entero, no solo la cabeza
-    for (let i = 1; i <= 10; i++) { const k = i / 10, need = groundY(lerp(P.pos.x, _cp.x, k), lerp(P.pos.z, _cp.z, k)) + 0.35 + 0.8 * k - lerp(fy, _cp.y, k); if (need > 0) lift = Math.max(lift, need / k); }
+  const hills = P.pos.z < NORTH_Z + 15;
+  if (hills || (!fixed && !ui.closeup)) {                           // bajando una ladera, o con la cámara baja tras un seto, un túnel o su
+    let lift = 0;                                                   // loma (edgeTop), el rayo hacia Tamachin choca: se sube lo necesario
+    const fy = P.pos.y + 0.3;                                       // desde los pies: que se vea entero, no solo la cabeza
+    for (let i = 1; i <= 10; i++) {
+      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? groundY(x, z) : edgeTop(x, z);
+      const need = top + 0.35 + 0.8 * k - lerp(fy, _cp.y, k); if (need > 0) lift = Math.max(lift, need / k);
+    }
     _cp.y += lift;
   }
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
@@ -2770,6 +2793,9 @@ function updateCamera(dt) {
   const shiftT = ui.closeup && !wide ? VH / 2 - (topEl.offsetHeight + (panelEl.getBoundingClientRect().top || VH * 0.53)) / 2 : 0;
   ui.shift = camInit ? damp(ui.shift, shiftT, 6, dt) : shiftT;
   if (Math.abs(ui.shift) > 0.5) camera.setViewOffset(VW, VH, 0, ui.shift, VW, VH); else if (camera.view && camera.view.enabled) camera.clearViewOffset();
+  // no se dibuja lo que la niebla ya borró del todo (con la cámara baja se ve hasta el horizonte); el cielo queda dentro
+  const far = Math.min(1700, scene.fog.far + 10);
+  if (Math.abs(camera.far - far) > 2) { camera.far = far; camera.updateProjectionMatrix(); skyMesh.scale.setScalar(Math.min(1, far * 0.95 / 520)); }
   skyMesh.position.copy(camPos);
   sun.target.position.set(P.pos.x - 6 * s, base, P.pos.z - 6 * c); sun.position.copy(sun.target.position).add(SUN_OFF);   // la sombra cubre más hacia donde se mira
   _sv.set(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z).project(camera);
@@ -2950,6 +2976,7 @@ function boot(data) {
     player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(groundY(player.pos.x, player.pos.z), top); }
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
+  if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
   if (s.sound === false) setSound(false);
   if (s.helpSeen === true) helpEl.hidden = true;
   applyMood(); syncPanel();

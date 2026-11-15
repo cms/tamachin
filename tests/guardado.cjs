@@ -11,10 +11,10 @@ module.exports = {
 
     T.check('la primera vez empieza frente a la casa', near(await where(), [0, 0, 3.5]), JSON.stringify(await where()));
     await page.click('#helpOk'); await page.click('#bSound');
-    await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 2; window.__tamachin.go(7, -1700); }); await sleep(1200);
+    await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 2; V.pitch = V.pitchT = 0.3; window.__tamachin.go(7, -1700); }); await sleep(1200);
     await reload();
     T.check('en el bosque sin fin: sigue ahí', near(await where(), [7, 0, -1700]), JSON.stringify(await where()));
-    T.check('la cámara conserva su ángulo', Math.abs(await E(() => window.__tamachin.view.yaw) - 2) < 0.01);
+    T.check('la cámara conserva su ángulo y su altura', await E(() => Math.abs(window.__tamachin.view.yaw - 2) < 0.01 && Math.abs(window.__tamachin.view.pitch - 0.3) < 0.01));
     T.check('el sonido sigue apagado', (await page.textContent('#bSound')) === 'Sonido: no' && await E(() => document.querySelector('#bSound').getAttribute('aria-pressed') === 'false'));
     T.check('la ayuda ya cerrada no vuelve a salir', await E(() => document.querySelector('#help').hidden));
     await page.click('#bSound'); await reload();
@@ -30,7 +30,7 @@ module.exports = {
     T.check('a los 4 s el botón vuelve a la normalidad', (await page.textContent('#dHome')) === 'Volver al inicio');
     await page.click('#dHome'); await sleep(200); await page.click('#dHome'); await sleep(800);
     T.check('dos toques: de vuelta en casa, con el diario cerrado', near(await where(), [0, 0, 3.5]) && await E(() => document.querySelector('#diary').hidden));
-    T.check('y la cámara de frente a la casa', Math.abs(await E(() => window.__tamachin.view.yaw)) < 0.01);
+    T.check('y la cámara de frente a la casa, a la altura de siempre', await E(() => Math.abs(window.__tamachin.view.yaw) < 0.01 && Math.abs(window.__tamachin.view.pitch - Math.atan2(7.6, 11.2)) < 0.01));
     await reload();
     T.check('después de recargar sigue en casa', near(await where(), [0, 0, 3.5]));
 

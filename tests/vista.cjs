@@ -1,16 +1,18 @@
 // Que nada tape a Tamachin: junto a cada cara de los edificios, dentro y alrededor de la casa y en el bosque, con la cámara en
-// varios ángulos; pegado a una pared caminando; detrás del kiosco; que lo que estorba se corte al ras y no se vuelva transparente;
+// varios ángulos y alturas; pegado a una pared caminando; detrás del kiosco; que lo que estorba se corte al ras y no se vuelva transparente;
 // y en la toma del refri con la cámara girada.
 const { openGame, BLOCKER, sleep } = require('./lib.cjs');
 
-const ANGLES = [0, 45, 90, 135, 180, 270];
+// [giro, altura de la cámara] en grados: los seis giros a la altura de siempre (34°), y algunos con la cámara baja y alta
+const VIEWS = [0, 45, 90, 135, 180, 270].map((d) => [d, 34.2]).concat([[0, 15], [135, 15], [270, 15], [45, 60]]);
 
 module.exports = {
   titulo: 'edificios, casa y árboles se apartan desde cualquier ángulo',
   async run(T) {
     const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house' });
     await E(BLOCKER);
-    const setYaw = (deg) => E((y) => { const V = window.__tamachin.view; V.yaw = V.yawT = y; }, deg * Math.PI / 180);
+    const setView = (deg, p) => E(([y, p]) => { const V = window.__tamachin.view; V.yaw = V.yawT = y; V.pitch = V.pitchT = p; }, [deg * Math.PI / 180, p * Math.PI / 180]);
+    const setYaw = (deg) => setView(deg, 34.2);
     const spots = await E(() => {
       const out = [], city = window.__dbg.occluders.filter((o) => o.z1 < 62 && o.z0 > -62).slice(0, 14);
       for (const o of city) { const cx = (o.x0 + o.x1) / 2, cz = (o.z0 + o.z1) / 2; out.push([cx, o.z0 - 1.2], [cx, o.z1 + 1.2], [o.x0 - 1.2, cz], [o.x1 + 1.2, cz]); }
@@ -18,15 +20,15 @@ module.exports = {
       out.push([3, -175], [-6, -190], [12, -232], [-20, -250], [30, -170], [-35, -186]);                            // el bosque
       return out;
     });
-    for (const deg of ANGLES) {
-      await setYaw(deg); const hits = [];
+    for (const [deg, p] of VIEWS) {
+      await setView(deg, p); const hits = [], name = deg + '°' + (p !== 34.2 ? ' (cámara a ' + p + '°)' : '');
       for (const [x, z] of spots) {
         await E(([x, z]) => window.__tamachin.go(x, z), [x, z]); await sleep(550);
         const b = await E(() => window.__blocker()); if (b) hits.push('(' + x.toFixed(1) + ',' + z.toFixed(1) + ') ' + b);
       }
       const hard = hits.filter((h) => /edificio|casa/.test(h));
-      T.check(deg + '°: ningún edificio ni la casa tapa a Tamachin (' + spots.length + ' lugares)', !hard.length, hard.join('; ') || undefined);
-      T.check(deg + '°: postes, muebles o árboles pegados lo tapan a lo más en 4 lugares', hits.length <= 4, hits.join('; ') || undefined);
+      T.check(name + ': ningún edificio ni la casa tapa a Tamachin (' + spots.length + ' lugares)', !hard.length, hard.join('; ') || undefined);
+      T.check(name + ': postes, muebles o árboles pegados lo tapan a lo más en 4 lugares', hits.length <= 4, hits.join('; ') || undefined);
     }
 
     // caminando hacia la cámara pegado a la pared de un edificio (los toldos tapaban)

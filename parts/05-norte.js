@@ -493,7 +493,7 @@ const farForest = (() => {
 })();
 
 buildStatic(); scene.add(northB.mesh(), townB.mesh());
-camera.far = 1700; camera.updateProjectionMatrix();                 // desde las cimas se ve el valle entero
+camera.far = 1700; camera.updateProjectionMatrix();                 // desde las cimas se ve el valle entero (updateCamera la acorta a la niebla)
 
 // ───────────────────────── cada cuadro ─────────────────────────
 const northSeen = {};

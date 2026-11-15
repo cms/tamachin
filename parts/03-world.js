@@ -247,6 +247,19 @@ for (const r of ROADS) {
   cityB.merge(PF_PORTAL, -60, 0, r, -Math.PI / 2); solidBox(-64, -59.5, r - 5, r + 5);
   cityB.merge(PF_PORTAL, 60, 0, r, Math.PI / 2); solidBox(59.5, 64, r - 5, r + 5);
 }
+// Qué tan alto es el borde de la ciudad en (x, z): setos (2.4 m con sus bultos), túneles (4.9 m) y la loma detrás de cada uno
+// (una esfera de 11 m de radio hundida 2.5 m). Con la cámara baja, updateCamera la sube lo necesario para ver por encima.
+const PORTALS = ROADS.flatMap((r) => [[r, -60, 0, -1], [r, 60, 0, 1], [-60, r, -1, 0], [60, r, 1, 0]]);   // x, z y hacia fuera
+function edgeTop(x, z) {
+  const ax = Math.abs(x), az = Math.abs(z); if (ax < 59 && az < 59) return 0;
+  let h = (ax > 62.2 && ax < 64.2 && az < 64.2) || (az > 62.2 && az < 64.2 && ax < 64.2) ? 2.4 : 0;
+  for (const [px, pz, nx, nz] of PORTALS) {
+    const w = (x - px) * nx + (z - pz) * nz, u = (x - px) * nz - (z - pz) * nx, d2 = u * u + (w - 11) * (w - 11);
+    if (Math.abs(u) < 5.3 && w > -0.7 && w < 10.6) h = Math.max(h, 4.9);
+    if (d2 < 121) h = Math.max(h, Math.sqrt(121 - d2) - 2.5);
+  }
+  return h;
+}
 const HEDGE = '#4fae5a', HEDGE2 = '#5fc06a';
 function hedge(x0, z0, x1, z1) {
   const horiz = Math.abs(x1 - x0) > Math.abs(z1 - z0), len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;

@@ -74,7 +74,8 @@ Hay ocho grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controle
 | Interactuar / truco | E | Botón de acción |
 | Personalizar | C | Botón Personalizar |
 | Diario (necesidades y encargos) | J | Botón Diario (junto a los medidores) |
-| Girar la cámara | Arrastrar con el mouse, o Z y X | Arrastrar con un dedo (o con dos) |
+| Girar la cámara | Arrastrar con el mouse de lado, o Z y X | Arrastrar con un dedo (o con dos) de lado |
+| Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
 | Zoom | Rueda del mouse | Botón Acercar, o pellizcar |
 
 Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
@@ -85,7 +86,7 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
 - Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara, si el sonido está apagado y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, si el sonido está apagado y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
 
 ## Mapa (unidades en metros)
 
