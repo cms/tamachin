@@ -5,7 +5,8 @@ const { openGame, sleep } = require('./lib.cjs');
 module.exports = {
   titulo: 'saltar: brincar la cerca, subirse a cosas, rebotar en la cama',
   async run(T) {
-    const { ctx, page, errors, E } = await openGame(T, { expose: 'player, perches, circles, occluders, needs, TOWN_Z, BR' });    await E(() => { for (const c of window.__tamachin.cars) { c.v = 0; c.pause = 1e9; } });   // que ningún auto lo atropelle junto al bote
+    const { ctx, page, errors, E } = await openGame(T, { expose: 'player, perches, circles, occluders, needs, TOWN_Z, BR' });
+    await E(() => { for (const c of window.__tamachin.cars) { c.v = 0; c.pause = 1e9; } });   // que ningún auto lo atropelle junto al bote
     const st = () => E(() => { const P = window.__tamachin.player; return { x: P.pos.x, y: P.pos.y, z: P.pos.z, g: P.onGround, perch: P.perch ? P.perch.top : null, mood: P.T.mood, state: P.state }; });
     const place = async (x, z) => { await E(([x, z]) => { const V = window.__tamachin.view; V.yaw = V.yawT = 0; window.__tamachin.go(x, z); }, [x, z]); await sleep(700); };
     const drop = async (x, z) => { await E(([x, z]) => { const P = window.__tamachin.player; P.pos.set(x, 2.2, z); P.vx = P.vz = P.vy = 0; P.onGround = false; }, [x, z]); await sleep(900); };

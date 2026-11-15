@@ -10,12 +10,15 @@ module.exports = {
     const go = (x, z) => E(([x, z]) => window.__tamachin.go(x, z), [x, z]);
     const npc = (name) => E((n) => { const q = window.__dbg.npcs.find((v) => v.name === n); return [q.pos.x, q.pos.z]; }, name);
     const talk = (name) => E((n) => window.__dbg.talkTo(window.__dbg.npcs.find((v) => v.name === n)), name);
-    // si un encargo de acompañar falla, cómo quedó todo (estas dos revisiones han fallado a veces sin causa conocida)
+    // si un encargo de acompañar falla, cómo quedó todo
     const why = (who) => E((who) => { const D = window.__dbg, P = D.player, f = who === 'conejo' ? D.creatures.find((c) => c.kind === 'conejo') : D.npcs.find((n) => n.name === who);
       return JSON.stringify({ q: D.quests, at: [P.pos.x, P.pos.y, P.pos.z].map((v) => +v.toFixed(1)), state: P.state, mood: P.T.mood, toast: document.querySelector('#toast').textContent,
         [who]: [f.pos.x, f.pos.z].map((v) => +v.toFixed(1)), dist: +Math.hypot(f.pos.x - P.pos.x, f.pos.z - P.pos.z).toFixed(1), follow: !!f.follow }); }, who);
     await E(() => {
       const D = window.__dbg;
+      // sin tráfico: estos caminos van por en medio de la calle, y un atropello lo dejaba mareado y el conejo o Lulú se perdían
+      // (así fallaban a veces estos encargos). Los autos quedan quietos donde estaban y ya no chocan con nadie.
+      window.__tamachin.cars.length = 0;
       // camina con la palanca por una lista de puntos (con colisiones, como un jugador)
       window.__walk = (pts) => new Promise((res) => { let i = 0; const t0 = performance.now();
         const id = setInterval(() => { const p = D.player.pos, w = pts[i], dx = w[0] - p.x, dz = w[1] - p.z, d = Math.hypot(dx, dz);
