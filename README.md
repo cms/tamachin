@@ -92,7 +92,16 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 
 ## Música
 
-Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toque o tecla (antes el navegador no deja sonar nada). En la casa suena una caja de música; en el jardín, el parque y la ciudad, una pieza con marimba que suma o quita instrumentos según el lugar (la percusión entra en la ciudad). Del camino al norte, por ahora, suena una versión tranquila de esa misma. Con la pestaña oculta se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
+Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toque o tecla (antes el navegador no deja sonar nada). Cada lugar tiene la suya, hecha del mismo tema:
+
+- Casa: una caja de música.
+- Jardín, parque y ciudad: marimba, bajo y acordes; la percusión entra en la ciudad.
+- Camino y bosque: arpa y flautita, con huecos para los pájaros.
+- Montañas: acordes amplios y campanitas sueltas; mientras más alto, menos notas y más viento.
+- Valle Alegre: un vals de acordeón, más fuerte cerca del kiosco.
+- Bosque sin fin: nunca se repite; los acordes y la flautita se inventan al momento.
+
+De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 
 ## Mapa (unidades en metros)
 

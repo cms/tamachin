@@ -363,11 +363,13 @@ const INST = {
     const c = E.ctx, len = Math.min(0.35, dur + 0.12), o = osc(c, 'triangle', mtof(m), t, t + len), g = c.createGain();
     env(g, t, v, 0.004, len); o.connect(g); g.connect(d);
   },
-  pad(E, d, t, m, dur, v) {   // colchón: dos triángulos un poco desafinados, filtrados
-    const c = E.ctx, f = mtof(m), end = t + dur + 0.9, fl = c.createBiquadFilter(), g = c.createGain();
+  pad(E, d, t, m, dur, v, att) {   // colchón: dos triángulos un poco desafinados, filtrados; `att`: cuánto tarda en entrar (si es lento, en línea recta:
+    // la curva exponencial se queda casi muda la mayor parte del tiempo y entre acorde y acorde quedaba un hueco)
+    const c = E.ctx, f = mtof(m), a = att || 0.5, hold = t + Math.max(a, dur), end = hold + 0.9, fl = c.createBiquadFilter(), g = c.createGain();
     fl.type = 'lowpass'; fl.frequency.value = 1400;
     for (const det of [-8, 8]) { const o = osc(c, 'triangle', f, t, end); o.detune.value = det; o.connect(fl); }
-    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.5); g.gain.setValueAtTime(v, t + Math.max(0.5, dur)); g.gain.exponentialRampToValueAtTime(0.0001, end);
+    g.gain.setValueAtTime(0.0001, t); if (a > 0.5) g.gain.linearRampToValueAtTime(v, t + a); else g.gain.exponentialRampToValueAtTime(v, t + a);
+    g.gain.setValueAtTime(v, hold); g.gain.exponentialRampToValueAtTime(0.0001, end);
     fl.connect(g); g.connect(d);
   },
   whistle(E, d, t, m, dur, v) {   // flautita: entra un poquito abajo y vibra
@@ -377,11 +379,24 @@ const INST = {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.035); g.gain.setValueAtTime(v, t + len); g.gain.exponentialRampToValueAtTime(0.0001, end);
     o.connect(g); g.connect(d);
   },
+  flute(E, d, t, m, dur, v) { INST.whistle(E, d, t, m, dur, v); noiseHit(E, d, t, v * 0.12, 'bandpass', Math.min(8000, mtof(m) * 2), 2, 0.09); },   // con soplido
+  harp(E, d, t, m, dur, v) {   // arpa: cuerda pulsada, diente de sierra con un filtro que se cierra rápido
+    const c = E.ctx, f = mtof(m), o = osc(c, 'sawtooth', f, t, t + 1.3), fl = c.createBiquadFilter(), g = c.createGain();
+    fl.type = 'lowpass'; fl.Q.value = 0.7; fl.frequency.setValueAtTime(Math.min(9000, f * 9), t); fl.frequency.exponentialRampToValueAtTime(f * 1.3, t + 0.35);
+    env(g, t, v, 0.003, 1.3); o.connect(fl); fl.connect(g); g.connect(d);
+  },
+  accordion(E, d, t, m, dur, v) {   // acordeón: dos dientes de sierra desafinados (el temblor del musette), filtrados
+    const c = E.ctx, f = mtof(m), len = Math.max(0.08, dur * 0.92), end = t + len + 0.08, fl = c.createBiquadFilter(), g = c.createGain();
+    fl.type = 'lowpass'; fl.frequency.value = Math.min(4000, f * 5); fl.Q.value = 0.8;
+    for (const det of [-9, 9]) { const o = osc(c, 'sawtooth', f, t, end); o.detune.value = det; o.connect(fl); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.03); g.gain.setValueAtTime(v, t + len); g.gain.exponentialRampToValueAtTime(0.0001, end);
+    fl.connect(g); g.connect(d);
+  },
   shaker(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'highpass', 6500, 0.7, 0.05); },
   snap(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'bandpass', 1900, 1.3, 0.1); },
 };
 // Armonía: acordes por nombre ('C', 'Am', 'D7'), cada nota en la octava que empieza en `lo` (así no saltan de un acorde a otro).
-const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, CHORD_Q = { '': [0, 4, 7], m: [0, 3, 7], 7: [0, 4, 7, 10] }, SCALE = [0, 2, 4, 5, 7, 9, 11];
+const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, CHORD_Q = { '': [0, 4, 7], m: [0, 3, 7], 7: [0, 4, 7, 10], add9: [0, 4, 7, 14] }, SCALE = [0, 2, 4, 5, 7, 9, 11];
 const inOct = (pc, lo) => lo + (((pc - lo) % 12) + 12) % 12;
 function voicing(name, lo) { return CHORD_Q[name.slice(1)].map((i) => inOct(PC[name[0]] + i, lo)).sort((a, b) => a - b); }
 const rootIn = (name, lo) => inOct(PC[name[0]], lo);
@@ -401,6 +416,19 @@ const MEL_B = melIndex([[0, 69, 2], [2, 72, 2], [4, 76, 4], [8, 77, 2], [10, 76,
   [48, 69, 2], [50, 72, 2], [52, 74, 2], [54, 78, 2], [56, 79, 6]]);
 const PROG_A = [['C'], ['G'], ['Am'], ['F'], ['C'], ['G'], ['F', 'G'], ['C']], PROG_B = [['Am'], ['F'], ['C'], ['G'], ['Am'], ['F'], ['D7'], ['G']];
 const chordAt = (prog, bar, s) => { const c = prog[bar]; return c[c.length > 1 && s >= 4 ? 1 : 0]; };
+// el tema en vals (3/4: 6 corcheas por compás, 16 compases)
+const MEL_W = melIndex([[0, 67, 2], [2, 72, 2], [4, 76, 2], [6, 74, 4], [10, 71, 2], [12, 69, 2], [14, 72, 2], [16, 76, 2], [18, 72, 4], [22, 69, 2],
+  [24, 67, 2], [26, 72, 2], [28, 76, 2], [30, 79, 4], [34, 77, 1], [35, 76, 1], [36, 72, 2], [38, 69, 2], [40, 72, 2], [42, 74, 6],
+  [48, 76, 2], [50, 79, 2], [52, 76, 2], [54, 74, 2], [56, 71, 2], [58, 67, 2], [60, 69, 2], [62, 72, 2], [64, 76, 2], [66, 77, 4], [70, 76, 1], [71, 74, 1],
+  [72, 76, 2], [74, 72, 2], [76, 67, 2], [78, 71, 2], [80, 74, 2], [82, 79, 2], [84, 77, 2], [86, 74, 2], [88, 71, 2], [90, 72, 6]]);
+const PROG_W = ['C', 'G', 'Am', 'F', 'C', 'G', 'F', 'G', 'C', 'G', 'Am', 'F', 'C', 'G', 'G7', 'C'];
+const PROG_M = ['Cadd9', 'G', 'Am', 'Fadd9', 'Cadd9', 'G', 'G', 'Cadd9'];   // la de A, con novenas que la vuelven más abierta
+// el bosque sin fin: mi menor pentatónica, acordes que pasean, dibujos de arpa (índices de [raíz, quinta, octava, décima, duodécima])
+const PENT = [64, 67, 69, 71, 74, 76, 79, 81, 83, 86];
+const WANDER = { Em: ['C', 'G', 'Am', 'D'], C: ['G', 'Em', 'Am', 'D'], G: ['D', 'C', 'Em'], D: ['Em', 'C', 'G'], Am: ['C', 'Em', 'D'] };
+const RHYTHMS = [[2, 2, 4], [1, 1, 2, 4], [3, 1, 2, 2], [2, 1, 1, 4], [4, 2, 2], [2, 2, 2, 2], [6, 2]];
+const ARPS = [[0, 1, 2, 3, 4, 3, 2, 1], [0, 2, 1, 3, 2, 4, 3, 1], [0, null, 2, null, 3, null, 2, null], [4, 3, 2, 1, 0, 1, 2, 3], [0, 1, 2, null, 3, 2, 1, null]];
+const harpTones = (ch, lo) => { const r = rootIn(ch, lo), th = CHORD_Q[ch.slice(1)][1]; return [r, r + 7, r + 12, r + 12 + th, r + 19]; };
 // Piezas: tempo, swing (cuánto se atrasan las corcheas de contratiempo), reverberación, volumen, capas (volumen y paneo; lo sostenido
 // suena mucho más que lo pulsado, por eso el bajo y el colchón llevan tan poco) y `step`, que toca la
 // corchea `i` (cuenta desde que empezó la pieza) en el tiempo `t`; `sd` es lo que dura una corchea.
@@ -438,17 +466,84 @@ const MUSIC = {
         for (const m of voicing(ch, 60)) INST.pad(E, L.pad, t, m + K, len, 1);
       }
     } },
+  bosque: { bpm: 76, swing: 0, wet: 0.45, vol: 0.1,   // arpa en sol; la flautita toca el tema en la primera y la tercera vuelta, en las otras quedan el arpa y los pájaros
+    layers: { mel: { vol: 0.22, pan: 0.15 }, harp: { vol: 0.4, pan: -0.2 }, bass: { vol: 0.028 } },
+    step(E, L, i, t, sd) {
+      const K = 7, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 4, B = pass >= 2, prog = B ? PROG_B : PROG_A, ch = chordAt(prog, bar, s);
+      const n = pass % 2 ? null : (B ? MEL_B : MEL_A)[i % 64]; if (n) INST.flute(E, L.mel, t, n[0] + K, n[1] * sd, s % 4 ? 0.8 : 1);
+      INST.harp(E, L.harp, t, harpTones(ch, 41)[(pass % 2 ? ARPS[3] : ARPS[0])[s]] + K, sd, s ? 0.7 : 1);
+      const split = prog[bar].length > 1; if (s === 0 || (s === 4 && split)) INST.pad(E, L.bass, t, rootIn(ch, 41) + K, (split ? 4 : 8) * sd, 1);
+    } },
+  montes: { bpm: 60, swing: 0, wet: 0.7, vol: 0.24,   // en re: colchón amplio que entra despacio y campanitas sueltas (las notas fuertes del tema, luego al azar); más arriba, menos notas
+    layers: { pad: { vol: 0.015 }, low: { vol: 0.02 }, bell: { vol: 0.4, pan: 0.2 } },
+    step(E, L, i, t, sd) {
+      const K = 2, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 2, ch = PROG_M[bar], few = (E.param.alt || 0) * 0.7;
+      if (s === 0) { const len = 8 * sd + 1.2; for (const m of voicing(ch, 55)) INST.pad(E, L.pad, t, m + K, len, 1, 1.6); INST.pad(E, L.low, t, rootIn(ch, 43) + K, len, 1, 1.6); }   // se enciman mientras entra el siguiente
+      if (pass === 0) { const n = MEL_A[i % 64]; if (n && s % 4 === 0 && Math.random() >= few) INST.bell(E, L.bell, t, n[0] + K + 12, 0, 0.8); }
+      else if (s % 2 === 0 && Math.random() < 0.3 * (1 - few)) INST.bell(E, L.bell, t, choose(voicing(ch, 72)) + K, 0, rand(0.5, 0.9));
+    } },
+  pueblo: { bpm: 150, swing: 0, wet: 0.3, vol: 0.155,   // vals en la: acordeón con el tema en 3/4, bajo en el uno, acordes en el dos y el tres; suena más cerca del kiosco
+    layers: { mel: { vol: 0.12, pan: 0.1 }, chords: { vol: 0.05, pan: -0.25 }, bass: { vol: 0.25 }, bell: { vol: 0.3, pan: 0.3 }, shk: { vol: 0.6, pan: 0.2 } },
+    step(E, L, i, t, sd) {
+      const K = -3, s = i % 6, bar = Math.floor(i / 6) % 16, pass = Math.floor(i / 96) % 3, ch = PROG_W[bar], n = MEL_W[i % 96], v0 = 0.5 + 0.5 * (E.param.near == null ? 1 : E.param.near);
+      if (n) {
+        const [m, d] = n; INST.accordion(E, L.mel, t, m + K, d * sd, v0 * (s ? 0.85 : 1));
+        const h = pass === 1 ? harmonyBelow(m, ch) : null; if (h !== null) INST.accordion(E, L.mel, t, h + K, d * sd, v0 * 0.45);   // segunda vuelta: a dos voces
+        if (pass === 2) INST.bell(E, L.bell, t, m + K + 12, 0, v0 * 0.6);   // tercera: con campanita
+      }
+      if (s === 0) INST.bass(E, L.bass, t, rootIn(ch, 45) + K + (bar % 2 ? 7 : 0), sd * 1.6, v0);   // raíz y quinta, compás por compás
+      else if (s === 2 || s === 4) for (const m of voicing(ch, 57)) INST.accordion(E, L.chords, t, m + K, sd * 0.7, v0 * (s === 2 ? 1 : 0.8));
+      if (s % 2 === 0) INST.shaker(E, L.shk, t, 0, 0, v0 * (s ? 0.6 : 1));
+    } },
+  sinfin: { bpm: 66, swing: 0, wet: 0.55, vol: 0.12,   // nunca igual: los acordes pasean al azar, el arpa cambia de dibujo y la flautita inventa frases cortas, con silencios
+    layers: { mel: { vol: 0.23, pan: 0.15 }, harp: { vol: 0.34, pan: -0.2 }, pad: { vol: 0.015 } },
+    step(E, L, i, t, sd) {
+      const s = i % 8, bar = i >> 3;
+      if (i === 0 || !E.gen) E.gen = { ch: 'Em', arp: ARPS[0], play: false, cell: [], note: 76 };
+      const G = E.gen;
+      if (s === 0 && bar % 2 === 0) { if (i) G.ch = choose(WANDER[G.ch]); G.arp = choose(ARPS); for (const m of voicing(G.ch, 55)) INST.pad(E, L.pad, t, m, 16 * sd + 1, 1, 1.2); }
+      if (s === 0) {   // cada compás: ¿frase o silencio?, y con qué ritmo (dos compases suele tocar, dos suele callar)
+        G.play = Math.random() < (bar % 4 < 2 ? 0.8 : 0.2); G.cell = []; let k = 0; for (const d of choose(RHYTHMS)) { G.cell[k] = d; k += d; }
+      }
+      const d = G.play && G.cell[s];
+      if (d) {   // camina por la escala cerca de la nota anterior; en tiempo fuerte cae en una nota del acorde
+        const pcs = voicing(G.ch, 0).map((x) => x % 12); let j = clamp(PENT.indexOf(G.note) + choose([-2, -1, -1, 1, 1, 2]), 0, PENT.length - 1);
+        if (s % 4 === 0) { const ok = PENT.map((x, q) => q).filter((q) => pcs.includes(PENT[q] % 12)); if (ok.length) j = ok.reduce((a, q) => (Math.abs(q - j) < Math.abs(a - j) ? q : a)); }
+        G.note = PENT[j]; INST.flute(E, L.mel, t, G.note, d * sd, rand(0.7, 1));
+      }
+      const a = G.arp[s]; if (a !== null) INST.harp(E, L.harp, t, harpTones(G.ch, 40)[a], sd, s % 4 ? rand(0.55, 0.75) : 0.9);
+    } },
 };
-// Mezcla de cada lugar: qué pieza y cuánto de cada capa (lo que no aparece va entero).
+// Mezcla de cada lugar: qué pieza, cuánto de cada capa (lo que no aparece va entero) y lo de fondo (`amb`: pájaros, río, viento, de 0 a 1).
 const MUSIC_ZONES = {
-  casa: { piece: 'casa', mix: {} },
-  jardin: { piece: 'ciudad', mix: { keys: 0.8, bass: 0.8, shk: 0.45, snap: 0 } },
-  parque: { piece: 'ciudad', mix: { bass: 0.9, shk: 0.7, snap: 0.5 } },
-  ciudad: { piece: 'ciudad', mix: {} },
-  lejos: { piece: 'ciudad', mix: { mel: 0.85, keys: 0.6, bass: 0.6, shk: 0, snap: 0 } },   // camino, bosque y el norte, mientras no tengan la suya
+  casa: { piece: 'casa', mix: {}, amb: {} },
+  jardin: { piece: 'ciudad', mix: { keys: 0.8, bass: 0.8, shk: 0.45, snap: 0 }, amb: { birds: 0.3 } },
+  parque: { piece: 'ciudad', mix: { bass: 0.9, shk: 0.7, snap: 0.5 }, amb: { birds: 0.45 } },
+  ciudad: { piece: 'ciudad', mix: {}, amb: { birds: 0.1 } },
+  camino: { piece: 'bosque', mix: { mel: 0.8, harp: 0.85 }, amb: { birds: 0.55, wind: 0.1 } },
+  bosque: { piece: 'bosque', mix: {}, amb: { birds: 1, river: 1, wind: 0.06 } },
+  montes: { piece: 'montes', mix: {}, amb: { birds: 0.5, wind: 0.25 } },
+  pueblo: { piece: 'pueblo', mix: {}, amb: { birds: 0.35, wind: 0.05 } },
+  sinfin: { piece: 'sinfin', mix: {}, amb: { birds: 1, wind: 0.12 } },
 };
+// lo de fondo de un lugar: `near` es qué tan cerca está el río (0 a 1) y `alt` la altura en las montañas (0 a 1): arriba, más viento y menos pájaros
+function ambFor(key, near, alt) {
+  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0;
+  return { birds: (a.birds || 0) * Math.max(0, 1 - up * 1.6), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75) };
+}
+// pájaros: pío-pío, silbido de dos notas o trino; cada uno de un lado y a su distancia
+function bird(E, d, t) {
+  const c = E.ctx, g = c.createGain(), f = rand(0.85, 1.2), kind = Math.floor(Math.random() * 3);
+  g.gain.value = rand(0.35, 1);
+  if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = rand(-0.8, 0.8); g.connect(p); p.connect(d); } else g.connect(d);
+  const chirp = (t0, f0, f1, len, v) => { const o = osc(c, 'sine', f0, t0, t0 + len), e = c.createGain(); o.frequency.setValueAtTime(f0, t0); o.frequency.exponentialRampToValueAtTime(f1, t0 + len); env(e, t0, v, 0.006, len); o.connect(e); e.connect(g); };
+  if (kind === 0) { const n = 2 + Math.floor(Math.random() * 3); for (let k = 0; k < n; k++) chirp(t + k * 0.1, 4300 * f, 2900 * f, 0.07, 1); }
+  else if (kind === 1) { chirp(t, 2500 * f, 2700 * f, 0.16, 0.9); chirp(t + 0.22, 2000 * f, 1950 * f, 0.28, 0.8); }
+  else { const o = osc(c, 'sine', 3300 * f, t, t + 0.45), lfo = osc(c, 'sine', 28, t, t + 0.45), lg = c.createGain(), e = c.createGain(); lg.gain.value = 420 * f; lfo.connect(lg); lg.connect(o.frequency); env(e, t, 0.7, 0.02, 0.45); o.connect(e); e.connect(g); }
+}
+const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03 };   // el río en la orilla: RMS ≈ 0.006, debajo de la música
 function makeMusic(ctx, dest) {
-  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0 };
+  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1 } };
   E.noise = ctx.createBuffer(1, sr, sr); const nz = E.noise.getChannelData(0); for (let i = 0; i < sr; i++) nz[i] = Math.random() * 2 - 1;
   const n = Math.floor(sr * 2), ir = ctx.createBuffer(2, n, sr);   // reverberación: ruido que se apaga en 2 s
   for (let ch = 0; ch < 2; ch++) { const a = ir.getChannelData(ch); for (let i = 0; i < n; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); }
@@ -466,6 +561,29 @@ function makeMusic(ctx, dest) {
     E.players[k] = pl;
   }
   const glide = (prm, v, t, tc) => { prm.cancelScheduledValues(t); prm.setTargetAtTime(v, t, tc); };
+  // Lo de fondo va aparte de la música (sigue con «Solo efectos»): río y viento son ruido filtrado que se mueve solo, siempre corriendo
+  // con volumen 0 donde no hay; los pájaros se agendan al azar.
+  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), g: {}, lv: { river: 0, wind: 0 }, birds: 0, next: 0, calls: 0 };
+  A.out.connect(dest); A.bird.gain.value = AMB_VOL.birds; A.bird.connect(A.out);
+  const long = ctx.createBuffer(1, sr * 4, sr), ld = long.getChannelData(0); for (let i = 0; i < ld.length; i++) ld[i] = Math.random() * 2 - 1;
+  const src = (off) => { const s = ctx.createBufferSource(); s.buffer = long; s.loop = true; s.start(0, off); return s; };
+  const biq = (type, f, q) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
+  const wobble = (prm, f, depth) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(prm); o.start(0); };
+  for (const k of ['river', 'wind']) { A.g[k] = ctx.createGain(); A.g[k].gain.value = 0; A.g[k].connect(A.out); }
+  { const s = src(0), hp = biq('highpass', 250, 0.5), lp = biq('lowpass', 1600, 0.4), bab = biq('bandpass', 1100, 4), bg = ctx.createGain();   // río: rumor y gorgoteo
+    bg.gain.value = 0.6; wobble(bab.frequency, 0.7, 450); wobble(bab.frequency, 0.23, 300);
+    s.connect(hp); hp.connect(lp); lp.connect(A.g.river); s.connect(bab); bab.connect(bg); bg.connect(A.g.river); }
+  { const s = src(1.7), bp = biq('bandpass', 420, 1.1), gust = ctx.createGain();   // viento: una banda que sube y baja, y ráfagas
+    wobble(bp.frequency, 0.07, 220); wobble(bp.frequency, 0.19, 90); gust.gain.value = 0.7; wobble(gust.gain, 0.11, 0.3);
+    s.connect(bp); bp.connect(gust); gust.connect(A.g.wind); }
+  E.ambient = (a, t) => {
+    for (const k of ['river', 'wind']) { const v = a[k] || 0; if (Math.abs(v - A.lv[k]) > 0.01 || (v === 0 && A.lv[k] !== 0)) { A.lv[k] = v; glide(A.g[k].gain, v * AMB_VOL[k], t, 0.8); } }
+    A.birds = a.birds || 0;
+  };
+  E.pumpAmb = (now, until) => {
+    if (A.next < now) A.next = now + rand(0.2, 1.5);
+    while (A.next < until) { if (Math.random() < A.birds) { bird(E, A.bird, A.next); A.calls++; } A.next += rand(1.1, 3.4); }
+  };
   // otro lugar: si es la misma pieza solo cambian las capas; si no, la de antes se apaga y la nueva empieza desde el principio
   E.zone = (key, t) => {
     const Z = MUSIC_ZONES[key]; if (!Z) return;
@@ -2800,29 +2918,40 @@ function setSound(mode, chirp) {
   snd.mode = mode; snd.on = mode !== 'no'; snd.music = mode === 'todo'; bSound.textContent = SOUND[mode][0]; bSound.title = SOUND[mode][1];
   const c = snd.ctx;
   if (c && mus && !snd.music) mus.stop(c.currentTime);
+  if (c && mus) { const g = mus.amb.out.gain; g.cancelScheduledValues(c.currentTime); g.setTargetAtTime(snd.on ? 1 : 0, c.currentTime, 0.08); }   // lo de fondo se apaga suave antes de suspender y vuelve igual
   if (c && !snd.on) setTimeout(() => { if (!snd.on && c.state === 'running') c.suspend().catch(() => {}); }, 400);   // después de apagar la música
   if (chirp && snd.on) { unlockAudio(); const c2 = snd.ctx; if (c2 && c2.state !== 'running') c2.resume().then(() => SFX.pop()).catch(() => {}); else SFX.pop(); }
 }
 bSound.addEventListener('click', () => { setSound(SOUND[snd.mode][2], true); save(); });
 
-// ───────────────────────── música ─────────────────────────
+// ───────────────────────── música y lo de fondo ─────────────────────────
 // Sigue al lugar con `musicZone` (más grueso que el nombre del HUD, que lleva metros) y espera 0.8 s antes de cambiar, para que
-// asomarse a la puerta de la casa no la cambie a cada rato. Si algo falla, se apaga sola y queda en `musErr` (las pruebas lo revisan).
+// asomarse a la puerta de la casa no la cambie a cada rato. Lo de fondo (pájaros, río, viento) sigue al instante, con rampas, y suena
+// también con «Solo efectos». Si algo falla, todo se apaga y el error queda en `musErr` (las pruebas lo revisan).
 let mus = null, musWant = null, musT = 0, musErr = null;
 function musicZone() {
   const P = player, x = P.pos.x, z = P.pos.z;
   if (P.inHouse) return 'casa';
-  if (z < -63) return 'lejos';
+  if (z < Z_TOWN_N) return 'sinfin';
+  if (z < Z_TOWN_S) return 'pueblo';
+  if (z < NORTH_Z) return 'montes';
+  if (z < FOREST_Z) return 'bosque';
+  if (z < -63) return 'camino';
   if (Math.abs(x) < 20 && Math.abs(z) < 20) return 'jardin';
   if (Math.abs(x) < 20 && z < -28) return 'parque';
   return 'ciudad';
 }
+const riverNear = (x, z) => Math.pow(clamp(1 - Math.max(0, Math.abs(z - riverZ(x)) - RIVER_HALF) / 28, 0, 1), 2);   // 1 en la orilla, 0 a 28 m
 function updateMusic(dt) {
-  const c = snd.ctx; if (!c || c.state !== 'running' || !snd.music || musErr) return;
+  const c = snd.ctx; if (!c || c.state !== 'running' || !snd.on || musErr) return;
   if (!mus) mus = makeMusic(c, c.destination);
-  const k = musicZone(); if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
-  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, c.currentTime + 0.05);
-  mus.pump(c.currentTime, c.currentTime + 0.45);
+  const P = player, now = c.currentTime, k = musicZone(), alt = clamp(P.pos.y / 400, 0, 1);
+  if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
+  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt), now); mus.pumpAmb(now, now + 0.45);
+  if (!snd.music) return;   // con «Solo efectos», setSound ya apagó la música
+  mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
+  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, now + 0.05);
+  mus.pump(now, now + 0.45);
 }
 function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
 $('#helpOk').addEventListener('click', hideHelp);
@@ -3151,7 +3280,7 @@ function frame(now) {
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
-  try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { mus.stop(snd.ctx.currentTime); } catch (_) { /* nada */ } }
+  try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }

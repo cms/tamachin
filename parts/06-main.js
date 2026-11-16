@@ -581,29 +581,40 @@ function setSound(mode, chirp) {
   snd.mode = mode; snd.on = mode !== 'no'; snd.music = mode === 'todo'; bSound.textContent = SOUND[mode][0]; bSound.title = SOUND[mode][1];
   const c = snd.ctx;
   if (c && mus && !snd.music) mus.stop(c.currentTime);
+  if (c && mus) { const g = mus.amb.out.gain; g.cancelScheduledValues(c.currentTime); g.setTargetAtTime(snd.on ? 1 : 0, c.currentTime, 0.08); }   // lo de fondo se apaga suave antes de suspender y vuelve igual
   if (c && !snd.on) setTimeout(() => { if (!snd.on && c.state === 'running') c.suspend().catch(() => {}); }, 400);   // después de apagar la música
   if (chirp && snd.on) { unlockAudio(); const c2 = snd.ctx; if (c2 && c2.state !== 'running') c2.resume().then(() => SFX.pop()).catch(() => {}); else SFX.pop(); }
 }
 bSound.addEventListener('click', () => { setSound(SOUND[snd.mode][2], true); save(); });
 
-// ───────────────────────── música ─────────────────────────
+// ───────────────────────── música y lo de fondo ─────────────────────────
 // Sigue al lugar con `musicZone` (más grueso que el nombre del HUD, que lleva metros) y espera 0.8 s antes de cambiar, para que
-// asomarse a la puerta de la casa no la cambie a cada rato. Si algo falla, se apaga sola y queda en `musErr` (las pruebas lo revisan).
+// asomarse a la puerta de la casa no la cambie a cada rato. Lo de fondo (pájaros, río, viento) sigue al instante, con rampas, y suena
+// también con «Solo efectos». Si algo falla, todo se apaga y el error queda en `musErr` (las pruebas lo revisan).
 let mus = null, musWant = null, musT = 0, musErr = null;
 function musicZone() {
   const P = player, x = P.pos.x, z = P.pos.z;
   if (P.inHouse) return 'casa';
-  if (z < -63) return 'lejos';
+  if (z < Z_TOWN_N) return 'sinfin';
+  if (z < Z_TOWN_S) return 'pueblo';
+  if (z < NORTH_Z) return 'montes';
+  if (z < FOREST_Z) return 'bosque';
+  if (z < -63) return 'camino';
   if (Math.abs(x) < 20 && Math.abs(z) < 20) return 'jardin';
   if (Math.abs(x) < 20 && z < -28) return 'parque';
   return 'ciudad';
 }
+const riverNear = (x, z) => Math.pow(clamp(1 - Math.max(0, Math.abs(z - riverZ(x)) - RIVER_HALF) / 28, 0, 1), 2);   // 1 en la orilla, 0 a 28 m
 function updateMusic(dt) {
-  const c = snd.ctx; if (!c || c.state !== 'running' || !snd.music || musErr) return;
+  const c = snd.ctx; if (!c || c.state !== 'running' || !snd.on || musErr) return;
   if (!mus) mus = makeMusic(c, c.destination);
-  const k = musicZone(); if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
-  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, c.currentTime + 0.05);
-  mus.pump(c.currentTime, c.currentTime + 0.45);
+  const P = player, now = c.currentTime, k = musicZone(), alt = clamp(P.pos.y / 400, 0, 1);
+  if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
+  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt), now); mus.pumpAmb(now, now + 0.45);
+  if (!snd.music) return;   // con «Solo efectos», setSound ya apagó la música
+  mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
+  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, now + 0.05);
+  mus.pump(now, now + 0.45);
 }
 function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
 $('#helpOk').addEventListener('click', hideHelp);
@@ -932,7 +943,7 @@ function frame(now) {
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
-  try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { mus.stop(snd.ctx.currentTime); } catch (_) { /* nada */ } }
+  try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
