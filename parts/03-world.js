@@ -145,6 +145,16 @@ function shopfront(w, R) {
   b.box(hue, 0, 3.85, 0.1, aw * 0.5, 0.62, 0.16).box('#ffffff', 0, 3.85, 0.19, aw * 0.5 - 0.3, 0.3, 0.03);
   return b;
 }
+// las ventanas que se prenden de noche: mismas casillas que winTex (4 × 4), unas sí y otras no; tres versiones con su propia semilla
+const WIN_GLOW = [0, 1, 2].map((k) => { const R = mulberry(3170 + k); return canvasTex(256, 256, (g) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);
+  for (let cx = 0; cx < 4; cx++) for (let cy = 0; cy < 4; cy++) {
+    if (R() < 0.42) continue;
+    const x = cx * 64 + 13, y = cy * 64 + 9, gr = g.createLinearGradient(0, y, 0, y + 44), w = R() < 0.25 ? '#ffe7b0' : '#ffd27a';
+    gr.addColorStop(0, w); gr.addColorStop(1, '#e99a4c'); g.fillStyle = gr; g.fillRect(x, y, 38, 44);
+    g.fillStyle = '#000'; g.fillRect(x + 17.5, y, 3, 44);
+  }
+}); });
 const occluders = [];
 function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla propia (Valle Alegre); sin ella, la de casa
   R = R || rnd; const RR = (a, b) => a + (b - a) * R();
@@ -152,8 +162,8 @@ function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla p
   const g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv;
   const tx = Math.max(1, Math.round(w / 2.7)) / 4, tz = Math.max(1, Math.round(d / 2.7)) / 4, ty = Math.max(1, Math.round(h / 3)) / 4;
   for (let i = 0; i < 24; i++) { const f = i >> 2; if (f === 2 || f === 3) continue; uv.setXY(i, uv.getX(i) * (f < 2 ? tz : tx), uv.getY(i) * ty); }
-  const side = new THREE.MeshLambertMaterial({ map: winTex[si] }), roof = new THREE.MeshLambertMaterial({ color: new THREE.Color(WALLS[si]).multiplyScalar(0.66) });
-  const m = new THREE.Mesh(g, [side, side, roof, roof, side, side]); m.position.set(cx, h / 2, cz); m.castShadow = m.receiveShadow = true; scene.add(m);
+  const side = new THREE.MeshLambertMaterial({ map: winTex[si], emissiveMap: WIN_GLOW[si % 3], emissive: 0x000000 }), roof = new THREE.MeshLambertMaterial({ color: new THREE.Color(WALLS[si]).multiplyScalar(0.66) });
+  const m = new THREE.Mesh(g, [side, side, roof, roof, side, side]); m.position.set(cx, h / 2, cz); m.castShadow = m.receiveShadow = true; scene.add(m); LIT_WALLS.push(side);
   const b = new Batch(), trim = new THREE.Color(WALLS[si]).multiplyScalar(0.8).getHex();
   b.box(trim, cx, h + 0.2, z0 + 0.15, w + 0.3, 0.5, 0.3).box(trim, cx, h + 0.2, z1 - 0.15, w + 0.3, 0.5, 0.3);
   b.box(trim, x0 + 0.15, h + 0.2, cz, 0.3, 0.5, d - 0.3).box(trim, x1 - 0.15, h + 0.2, cz, 0.3, 0.5, d - 0.3);
@@ -202,7 +212,7 @@ function sidewalkProps(i, j) {
       if (i === 1 && j === 1 && s.ax === 'z' && Math.abs(z + 2.6) < 2.6) continue;
       if (n % 2 === 0) addTree(1, x, z, rr(0.62, 0.78));
       else {
-        cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18);
+        cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18); lampAt(x, z, s.ry);
         const q = rnd(), ox = s.ax === 'x' ? 1.6 : 0, oz = s.ax === 'x' ? 0 : 1.6;
         // se sube saltando; como son delgados y Tamachin es redondo, lo sostienen aunque quede un poco fuera de la orilla (`rim`)
         if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.22, 0.8).rim = 0.25; }
@@ -268,7 +278,7 @@ function hedge(x0, z0, x1, z1) {
 }
 hedge(-64, -63.2, -5, -63.2); hedge(5, -63.2, 64, -63.2); hedge(-64, 63.2, 64, 63.2); hedge(-63.2, -64, -63.2, 64); hedge(63.2, -64, 63.2, 64);
 solidBox(-64, -4.9, -64.2, -62.4); solidBox(4.9, 64, -64.2, -62.4);
-for (const sx of [-1, 1]) { cityB.rbox(STONE, sx * 5.1, 1.4, -63.2, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', sx * 5.1, 3.15, -63.2, 0.42); }
+for (const sx of [-1, 1]) { cityB.rbox(STONE, sx * 5.1, 1.4, -63.2, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', sx * 5.1, 3.15, -63.2, 0.42); LAMPS.push({ x: sx * 5.1, y: 3.15, z: -63.2, r: 0.45, pool: false }); }
 
 // ───────────────────────── la casa de Tamachin ─────────────────────────
 const house = (() => {
@@ -321,6 +331,16 @@ const house = (() => {
   furnB.cyl('#c8553d', 5.1, 0.3, -4.95, 0.36, 0.26, 0.6, 12).ico('#57c06a', 5.1, 1.0, -4.95, 0.5, 0.6, 0.5).ico('#62cc76', 4.9, 1.45, -4.9, 0.36).ico('#4db460', 5.25, 1.3, -5.1, 0.34); solidCircle(5.1, -4.95, 0.4);
   furnB.cyl('#3b4252', -5.3, 0.9, -4.75, 0.04, 0.04, 1.8, 6).cyl('#3b4252', -5.3, 0.03, -4.75, 0.22, 0.24, 0.06, 12).cone('#ffe9a8', -5.3, 1.9, -4.75, 0.34, 0.44, 14);
   furnB.sph('#ff6b9d', -1.0, 0.3, -10.6, 0.26); shelfB.cyl('#fff', 4.0, 2.7, H.z0 + WT + 0.04, 0.36, 0.36, 0.06, 20, Math.PI / 2).cyl('#3b4252', 4.0, 2.7, H.z0 + WT + 0.08, 0.04, 0.04, 0.02, 8, Math.PI / 2);
+  // de noche: las ventanas de afuera, el foco del porche y las dos lámparas de adentro se prenden (nightMat, 01-core.js)
+  // se cortan con la casa (su plano, abajo) y las de la fachada se esconden con ella cuando Tamachin entra (glowFront, updateScenery)
+  const glowWin = nightMat(0xffd88a, 0.92), glowFront = [];
+  { const win = glowWin, gw = new THREE.PlaneGeometry(1.62, 1.32);
+    for (const sx of [-1, 1]) { const m = new THREE.Mesh(gw, win); m.position.set(sx * 3.6, 1.95, fz + WT / 2 + 0.05); scene.add(m); glowFront.push(m); }
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(1.72, 1.02), win); back.rotation.y = Math.PI; back.position.set(2.9, 2.3, H.z0 - 0.05); scene.add(back);
+    LAMPS.push({ x: 1.6, y: 2.5, z: H.z1 + 0.12, r: 0.19, pool: false, porch: true });   // el del porche se esconde con la fachada
+    const shade = nightMat(0xffe2a0, 0.85);
+    for (const [x, y, z, r, h] of [[-5.3, 1.9, -4.75, 0.37, 0.47], [-2.8, 1.25, -12.3, 0.31, 0.39]]) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.01, r, h, 14, 1, true), shade); m.position.set(x, y, z); scene.add(m); }   // sobre las pantallas cónicas
+  }
   const mWalls = mk(), mFront = mk(), mRoof = mk(), mShelf = mk();
   const walls = wallsB.mesh(mWalls), front = frontB.mesh(mFront), roof = roofB.mesh(mRoof); scene.add(walls, front, roof, furnB.mesh(), shelfB.mesh(mShelf));
   solidBox(H.x0 - 0.1, H.x1 + 0.1, H.z0 - 0.1, H.z0 + WT + 0.05); solidBox(H.x0 - 0.1, H.x0 + WT + 0.05, H.z0, H.z1); solidBox(H.x1 - WT - 0.05, H.x1 + 0.1, H.z0, H.z1);
@@ -366,7 +386,8 @@ const house = (() => {
     return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
   })();
   const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);   // corte a media altura cuando estorba (06-main.js)
-  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, plane, cutMats: [mWalls, mShelf, mFront, mRoof, doorMat], cutWalls: [mWalls, mFront], doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
+  glowWin.clippingPlanes = [plane];
+  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, plane, cutMats: [mWalls, mShelf, mFront, mRoof, doorMat], cutWalls: [mWalls, mFront], doorPivot, doorMat, glowFront, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín
@@ -398,7 +419,7 @@ const parkB = new Batch();
   solidCircle(0, PZ, 2.9);
   for (const q of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5]]) { parkB.merge(PF_BENCH, q[0], 0, PZ + q[1], Math.atan2(-q[0], -q[1])); solidCircle(q[0], PZ + q[1], 0.75); }
   for (const q of [[-14, -34], [-9, -56], [-15.5, -51], [13.5, -34.5], [9, -57], [15.5, -52], [-6.5, -33], [6.5, -33], [-16, -40], [16, -41]]) addTree(rnd() < 0.25 ? 0 : 1, q[0], q[1], rr(0.85, 1.1));
-  for (const q of [[-3.2, -37], [3.2, -37], [-3.2, -54], [3.2, -54]]) { parkB.merge(PF_LAMP, q[0], 0, q[1], q[0] < 0 ? 0 : Math.PI); solidCircle(q[0], q[1], 0.18); }
+  for (const q of [[-3.2, -37], [3.2, -37], [-3.2, -54], [3.2, -54]]) { parkB.merge(PF_LAMP, q[0], 0, q[1], q[0] < 0 ? 0 : Math.PI); solidCircle(q[0], q[1], 0.18); lampAt(q[0], q[1], q[0] < 0 ? 0 : Math.PI); }
   for (let q = 0; q < 70; q++) { const x = rr(-18, 18), z = rr(-60, -31); if (Math.abs(x) < 2.2 || Math.abs(z - PZ) < 2.2 || Math.hypot(x, z - PZ) < 7) continue; addFlower(x, z); }
   for (const q of [[-18, -31], [18, -31], [-18.5, -59], [18.5, -59], [-10, -47.8], [10, -42.2]]) bushes.push({ x: q[0], z: q[1], s: rr(0.9, 1.3) });
   // columpio

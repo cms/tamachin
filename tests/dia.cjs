@@ -1,7 +1,7 @@
 // El día y la noche: un día de 24 minutos, el reloj analógico, la luz y el cielo a cada hora, y que la hora se guarde.
 const { openGame, sleep, PHONE } = require('./lib.cjs');
 
-const EXPOSE = 'day, setHour, DAY, hemi, sun, SUN_OFF, skyMesh, skyStars, skyMoon, skySun, renderer, scene, camera, pScreen';
+const EXPOSE = 'day, setHour, DAY, hemi, sun, SUN_OFF, skyMesh, skyStars, skyMoon, skySun, renderer, scene, camera, pScreen, lampMeshes, lantern, lanternLight, LIT_WALLS, LAMPS, butterflies, fireflies, house, needs, player';
 // brillo medio de la imagen y de Tamachin (luma de 0 a 255), leyendo lo que se acaba de dibujar
 const LUMA = () => {
   const D = window.__dbg; D.renderer.render(D.scene, D.camera);
@@ -14,7 +14,7 @@ const LUMA = () => {
 };
 
 module.exports = {
-  titulo: 'día de 24 minutos, reloj, luz y cielo a cada hora; la hora se guarda',
+  titulo: 'día de 24 minutos, reloj, luz y cielo a cada hora, luces de noche, dormir hasta mañana; la hora se guarda',
   async run(T) {
     // una partida nueva, sin ?hora
     const { ctx, page, errors, E } = await openGame(T, { expose: EXPOSE, hora: false });
@@ -76,6 +76,35 @@ module.exports = {
     T.check('tocar el reloj dice la hora y cuándo amanece', (await page.textContent('#toast')) === 'Son las 11:00 de la noche. Amanece a las 5 de la mañana.', await page.textContent('#toast'));
     await E(() => window.__dbg.setHour(13.05)); await sleep(200); await page.click('#clock'); await sleep(300);
     T.check('de día, cuándo oscurece', (await page.textContent('#toast')) === 'Es la 1:03 de la tarde. Oscurece a las 8 de la noche.', await page.textContent('#toast'));
+
+    // de noche se prenden las luces: ventanas, faroles y el farolito de Tamachin; sin agregar ni quitar luces (eso recompilaría todo)
+    const lights = () => E(() => { let n = 0; window.__dbg.scene.traverseVisible((o) => { if (o.isLight) n++; }); return n; });
+    const lit = (h) => E((h) => { const D = window.__dbg; D.setHour(h); return { lamps: +D.day.lamps.toFixed(2), bulbs: D.lampMeshes.bulbs.material.visible, n: D.LAMPS.length,
+      win: +D.LIT_WALLS[0].emissive.r.toFixed(2), walls: D.LIT_WALLS.length, lantern: +D.lanternLight.intensity.toFixed(2) }; }, h);
+    await E(() => window.__tamachin.go(24, 8)); await sleep(1500);
+    const l12 = await lit(12), n12 = await lights(); await sleep(400);
+    let l23 = await lit(23); await sleep(600); const n23 = await lights(), lv = await E(() => window.__dbg.lantern.g.visible);
+    l23.lantern = await E(() => +window.__dbg.lanternLight.intensity.toFixed(2));   // el farolito se mueve en el cuadro, no en setHour
+    T.check('de día todo apagado', l12.lamps === 0 && !l12.bulbs && l12.win === 0 && l12.lantern === 0, JSON.stringify(l12));
+    T.check('de noche: faroles, ventanas de los edificios y el farolito', l23.lamps === 1 && l23.bulbs && l23.n > 40 && l23.win > 0.5 && l23.walls > 20 && l23.lantern > 0.9 && lv, JSON.stringify(l23));
+    T.check('las mismas luces de día y de noche (no se recompila nada)', n12 === n23 && n12 === 3, n12 + ' y ' + n23);
+    const bf = await E(() => { const D = window.__dbg; return [D.butterflies.filter((b) => b.g.visible).length, D.butterflies.length]; });
+    T.check('de noche las mariposas se esconden', bf[0] === 0 && bf[1] > 10, JSON.stringify(bf));
+    await E(() => window.__tamachin.go(8, -182)); await sleep(2500);
+    T.check('de noche en el bosque hay luciérnagas', await E(() => window.__dbg.fireflies.pts.visible && window.__dbg.fireflies.k > 0.5));
+    await E(() => window.__dbg.setHour(12)); await sleep(4500);
+    T.check('y de día no', await E(() => !window.__dbg.fireflies.pts.visible && window.__dbg.butterflies.some((b) => b.g.visible)));
+    // en casa de noche: las ventanas de la fachada se esconden con ella (no flotan) y la luz es cálida
+    await E(() => { window.__dbg.setHour(22); window.__tamachin.go(0, -8); }); await sleep(2000);
+    const inHouse = await E(() => { const D = window.__dbg; return { front: D.house.glowFront.map((m) => m.visible), hemi: D.hemi.color.getHexString() }; });
+    T.check('adentro de noche: sin ventanas flotando y con luz cálida', inHouse.front.every((v) => !v) && parseInt(inHouse.hemi.slice(0, 2), 16) > parseInt(inHouse.hemi.slice(4), 16), JSON.stringify(inHouse));
+    // de noche se duerme hasta las 7 de la mañana y se despierta solo, con la energía llena
+    await E(() => { window.__dbg.needs.energia = 0.2; window.__tamachin.go(-2.8, -10.5); }); await sleep(800); await page.keyboard.press('KeyE'); await sleep(300);
+    const s0 = await E(() => [window.__dbg.player.state, window.__dbg.player.nightSleep]), t0 = Date.now();
+    await page.waitForFunction(() => window.__dbg.player.state === 'normal', null, { timeout: 30000 }).catch(() => {});
+    const s1 = await E(() => ({ state: window.__dbg.player.state, h: +window.__dbg.day.h.toFixed(2), energia: window.__dbg.needs.energia }));
+    T.check('dormido a las 10 de la noche, despierta solo a las 7 con la energía llena', s0[0] === 'sleep' && s0[1] && s1.state === 'normal' && s1.h >= 7 && s1.h < 7.1 && s1.energia > 0.99,
+      JSON.stringify(s1) + ', en ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s');
 
     // se guarda
     await E(() => window.__dbg.setHour(14.25)); await E(() => window.dispatchEvent(new Event('pagehide')));

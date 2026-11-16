@@ -71,7 +71,7 @@ const SUN_OFF = new THREE.Vector3(38, 58, 42);              // de Tamachin hacia
 // La luna alumbra con la misma luz que el sol: se cambian cuando las dos pasan por cero, en el crepúsculo. Nunca se agrega ni se quita
 // una luz con sombra (en r128 eso recompila todos los materiales y el juego se traba).
 const DAY = { rise: 5, set: 20, start: 8, rate: 1 / 60 };   // rate: horas de juego por segundo
-const day = { h: DAY.start, light: 1, warm: 0, stars: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer
+const day = { h: DAY.start, light: 1, warm: 0, stars: 0, lamps: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
 // hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
 const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
 const SKY_DAY = [0x3f9ef5, 0x9bd6ff, 0xd6f0ff, 0xf2f9ff, 0xb6c296, 0.58, 0xffffff, 1, 0];
@@ -89,6 +89,14 @@ const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t
 // Lo que no recibe luz (MeshBasicMaterial: nubes, mariposas) brillaría de noche: se tiñe con la hora.
 const UNLIT = [];
 function dimmable(mat) { UNLIT.push({ mat, base: mat.color.clone() }); return mat; }
+// Lo que se enciende al oscurecer (`day.lamps`, de 0 a 1): sin luces de verdad (cada una recompilaría todo y costaría en el teléfono).
+// nightMat: un material sin luz que aparece con la noche (ventanas de la casa, focos, el charco de luz bajo los faroles); con opacidad 0
+// no se dibuja. LIT_WALLS: las paredes de los edificios, cuyas ventanas brillan con `emissiveMap`. LAMPS: dónde va cada foco
+// ({ x, y, z, r, pool }); los ponen la ciudad, el parque y Valle Alegre, y 06-main.js los dibuja todos juntos.
+const NIGHT_LIT = [], LIT_WALLS = [], LAMPS = [], WARM_WIN = new THREE.Color(0xffcf7a);
+function nightMat(color, max, extra) { const m = new THREE.MeshBasicMaterial(Object.assign({ color, transparent: true, opacity: 0, depthWrite: false }, extra)); m.visible = false; NIGHT_LIT.push({ mat: m, max }); return m; }
+// el foco de un farol (PF_LAMP, 03-world.js) puesto en x, z con giro ry
+function lampAt(x, z, ry) { LAMPS.push({ x: x + Math.cos(ry || 0), y: 4.36, z: z - Math.sin(ry || 0), r: 0.24, pool: true }); }
 // Estrellas, luna y sol van en el cielo y se dibujan justo después de él, antes que todo lo demás: sin transparencia (así entran en
 // la lista de lo opaco, que respeta renderOrder) pero con mezcla aditiva, y sin profundidad. Así un cerro lejano siempre las tapa.
 const SKY_ADD = { transparent: false, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false };
@@ -163,6 +171,9 @@ function applyDay(force) {
   hemi.color.copy(_dc[3]); hemi.groundColor.copy(_dc[4]); hemi.intensity = lerp(A.c[5], B.c[5], t);
   scene.fog.color.copy(_dc[2]); scene.background.copy(_dc[2]);
   for (const u of UNLIT) u.mat.color.copy(u.base).multiply(_tint);
+  day.lamps = smooth(0.62, 0.22, day.light);
+  for (const n of NIGHT_LIT) { n.mat.opacity = n.max * day.lamps; n.mat.visible = day.lamps > 0.01; }
+  for (const m of LIT_WALLS) m.emissive.copy(WARM_WIN).multiplyScalar(0.85 * day.lamps);
   // en el cielo
   for (const s of skyStars) s.material.opacity = day.stars;
   skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light); skyMoon.visible = skyMoon.material.opacity > 0.01;
@@ -659,10 +670,31 @@ const MUSIC_ZONES = {
   sinfin: { piece: 'sinfin', mix: {}, amb: { birds: 1, wind: 0.12 } },
   cuna: { piece: 'cuna', mix: {}, amb: {} },   // dormido (en la cama o en la hamaca); lo de fondo sigue al lugar
 };
-// lo de fondo de un lugar: `near` es qué tan cerca está el río (0 a 1) y `alt` la altura en las montañas (0 a 1): arriba, más viento y menos pájaros
-function ambFor(key, near, alt) {
-  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0;
-  return { birds: (a.birds || 0) * Math.max(0, 1 - up * 1.6), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75) };
+// lo de fondo de un lugar: `near` es qué tan cerca está el río (0 a 1) y `alt` la altura en las montañas (0 a 1): arriba, más viento y menos pájaros.
+// `night` (0 a 1, de 01-core.js: 1 − day.light): de noche los pájaros duermen y cantan los grillos (donde hay pájaros, y algo en la ciudad);
+// en el camino y los bosques ulula un búho.
+const OWL_ZONES = { camino: 0.6, bosque: 1, sinfin: 1 };
+function ambFor(key, near, alt, night) {
+  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0, n = night || 0, low = Math.max(0, 1 - up * 1.6);
+  return { birds: (a.birds || 0) * low * (1 - n), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75),
+    crickets: a.birds ? n * Math.min(1, a.birds + 0.4) * low : 0, owls: n * (OWL_ZONES[key] || 0) };
+}
+// grillo: tres o cuatro pulsos agudos muy cortos; cada uno de un lado y a su tono
+function cricket(E, d, t) {
+  const c = E.ctx, g = c.createGain(), f = rand(4100, 5200), n = 2 + Math.floor(Math.random() * 3);
+  g.gain.value = rand(0.4, 1);
+  if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = rand(-0.9, 0.9); g.connect(p); p.connect(d); } else g.connect(d);
+  for (let k = 0; k < n; k++) { const t0 = t + k * 0.045, o = osc(c, 'sine', f, t0, t0 + 0.03), e = c.createGain(); env(e, t0, 1, 0.004, 0.026); o.connect(e); e.connect(g); }
+}
+// búho: «uu… uu-uu», grave y suave
+function owl(E, d, t) {
+  const c = E.ctx, g = c.createGain(), f = rand(360, 420);
+  g.gain.value = rand(0.6, 1);
+  if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = rand(-0.7, 0.7); g.connect(p); p.connect(d); } else g.connect(d);
+  for (const [at, len, k] of [[0, 0.42, 1], [0.62, 0.18, 0.96], [0.84, 0.5, 0.92]]) {
+    const t0 = t + at, o = osc(c, 'sine', f * k, t0, t0 + len + 0.05), e = c.createGain();
+    o.frequency.setValueAtTime(f * k * 1.04, t0); o.frequency.exponentialRampToValueAtTime(f * k * 0.97, t0 + len); env(e, t0, 0.9, 0.06, len); o.connect(e); e.connect(g);
+  }
 }
 // pájaros: pío-pío, silbido de dos notas o trino; cada uno de un lado y a su distancia
 function bird(E, d, t) {
@@ -674,15 +706,16 @@ function bird(E, d, t) {
   else if (kind === 1) { chirp(t, 2500 * f, 2700 * f, 0.16, 0.9); chirp(t + 0.22, 2000 * f, 1950 * f, 0.28, 0.8); }
   else { const o = osc(c, 'sine', 3300 * f, t, t + 0.45), lfo = osc(c, 'sine', 28, t, t + 0.45), lg = c.createGain(), e = c.createGain(); lg.gain.value = 420 * f; lfo.connect(lg); lg.connect(o.frequency); env(e, t, 0.7, 0.02, 0.45); o.connect(e); e.connect(g); }
 }
-const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
+const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03, crickets: 0.012, owls: 0.035 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
 function makeMusic(ctx, dest) {
-  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1, run: false }, low: false, mixNow: {}, runLv: 0, runHits: 0, fanfares: 0 };
+  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1, run: false }, low: false, night: false, nightLv: 0, mixNow: {}, runLv: 0, runHits: 0, fanfares: 0 };
   E.noise = ctx.createBuffer(1, sr, sr); const nz = E.noise.getChannelData(0); for (let i = 0; i < sr; i++) nz[i] = Math.random() * 2 - 1;
   const n = Math.floor(sr * 2), ir = ctx.createBuffer(2, n, sr);   // reverberación: ruido que se apaga en 2 s
   for (let ch = 0; ch < 2; ch++) { const a = ir.getChannelData(ch); for (let i = 0; i < n; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); }
   E.verb = ctx.createConvolver(); E.verb.buffer = ir;
   E.out = ctx.createGain(); E.out.gain.value = 0;
-  E.verb.connect(E.out); E.out.connect(dest);   // sin compresor: agrega ganancia propia (≈5 dB en Chrome) y los picos no pasan de 0.1
+  E.lpMax = Math.min(20000, sr / 2); E.lp = ctx.createBiquadFilter(); E.lp.type = 'lowpass'; E.lp.frequency.value = E.lpMax; E.lp.Q.value = 0.5;   // de noche se cierra: suena más suave (setNight)
+  E.verb.connect(E.out); E.out.connect(E.lp); E.lp.connect(dest);   // sin compresor: agrega ganancia propia (≈5 dB en Chrome) y los picos no pasan de 0.1
   E.runBus = ctx.createGain(); E.runBus.gain.value = RUN_VOL; E.runBus.connect(E.out);   // la percusión de correr, igual en todas las piezas
   E.fx = ctx.createGain(); E.fx.gain.value = FX_VOL; E.fx.connect(dest);                 // la fanfarria es un efecto: suena aunque la música esté apagada
   for (const k in MUSIC) {
@@ -698,8 +731,10 @@ function makeMusic(ctx, dest) {
   const glide = (prm, v, t, tc) => { prm.cancelScheduledValues(t); prm.setTargetAtTime(v, t, tc); };
   // Lo de fondo va aparte de la música (sigue con «Solo efectos»): río y viento son ruido filtrado que se mueve solo, siempre corriendo
   // con volumen 0 donde no hay; los pájaros se agendan al azar.
-  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), g: {}, lv: { river: 0, wind: 0 }, birds: 0, next: 0, calls: 0 };
+  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), cric: ctx.createGain(), owl: ctx.createGain(), g: {}, lv: { river: 0, wind: 0 }, birds: 0, next: 0, calls: 0,
+    crickets: 0, cnext: 0, chirps: 0, owls: 0, onext: 0, hoots: 0 };
   A.out.connect(dest); A.bird.gain.value = AMB_VOL.birds; A.bird.connect(A.out);
+  A.cric.gain.value = AMB_VOL.crickets; A.cric.connect(A.out); A.owl.gain.value = AMB_VOL.owls; A.owl.connect(A.out);
   const long = ctx.createBuffer(1, sr * 4, sr), ld = long.getChannelData(0); for (let i = 0; i < ld.length; i++) ld[i] = Math.random() * 2 - 1;
   const src = (off) => { const s = ctx.createBufferSource(); s.buffer = long; s.loop = true; s.start(0, off); return s; };
   const biq = (type, f, q) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
@@ -713,14 +748,18 @@ function makeMusic(ctx, dest) {
     s.connect(bp); bp.connect(gust); gust.connect(A.g.wind); }
   E.ambient = (a, t) => {
     for (const k of ['river', 'wind']) { const v = a[k] || 0; if (Math.abs(v - A.lv[k]) > 0.01 || (v === 0 && A.lv[k] !== 0)) { A.lv[k] = v; glide(A.g[k].gain, v * AMB_VOL[k], t, 0.8); } }
-    A.birds = a.birds || 0;
+    A.birds = a.birds || 0; A.crickets = a.crickets || 0; A.owls = a.owls || 0;
   };
   E.pumpAmb = (now, until) => {
     if (A.next < now) A.next = now + rand(0.2, 1.5);
     while (A.next < until) { if (Math.random() < A.birds) { bird(E, A.bird, A.next); A.calls++; } A.next += rand(1.1, 3.4); }
+    if (A.cnext < now) A.cnext = now + rand(0.1, 0.5);
+    while (A.cnext < until) { if (Math.random() < A.crickets) { cricket(E, A.cric, A.cnext); A.chirps++; } A.cnext += rand(0.18, 0.6); }
+    if (A.onext < now) A.onext = now + rand(2, 6);
+    while (A.onext < until) { if (Math.random() < A.owls * 0.55) { owl(E, A.owl, A.onext); A.hoots++; } A.onext += rand(6, 12); }
   };
   // volumen de una capa: el de la pieza, por la mezcla del lugar, por lo que queda con una necesidad baja
-  const layerVol = (pl, l) => pl.P.layers[l].vol * (l in E.mixNow ? E.mixNow[l] : 1) * (E.low && l in pl.P.low ? pl.P.low[l] : 1);
+  const layerVol = (pl, l) => pl.P.layers[l].vol * (l in E.mixNow ? E.mixNow[l] : 1) * ((E.low || E.night) && l in pl.P.low ? pl.P.low[l] : 1);
   // otro lugar: si es la misma pieza solo cambian las capas; si no, la de antes se apaga y la nueva empieza desde el principio
   E.zone = (key, t) => {
     const Z = MUSIC_ZONES[key]; if (!Z) return;
@@ -736,6 +775,11 @@ function makeMusic(ctx, dest) {
   };
   // con una necesidad baja, una parte alegre de la pieza se calla (despacio)
   E.setLow = (on, t) => { if (!!on === E.low) return; E.low = !!on; if (E.cur) for (const l in E.cur.L) glide(E.cur.L[l].gain, layerVol(E.cur, l), t, 1.2); };
+  // de noche (n de 0 a 1) la música se oye más suave: se cierra un filtro y, ya oscuro, la parte alegre se calla como con una necesidad baja
+  E.setNight = (n, t) => {
+    if (Math.abs(n - E.nightLv) > 0.02 || (n === 0 && E.nightLv !== 0)) { E.nightLv = n; glide(E.lp.frequency, Math.min(E.lpMax, 20000 * Math.pow(2600 / 20000, n)), t, 1.5); }
+    const on = n > 0.6; if (on === E.night) return; E.night = on; if (E.cur) for (const l in E.cur.L) glide(E.cur.L[l].gain, layerVol(E.cur, l), t, 2);
+  };
   // la música se agacha mientras suena un premio y luego vuelve
   E.duck = (t, dur) => { if (!E.cur) return; glide(E.out.gain, E.vol * 0.35, t, 0.04); E.out.gain.setTargetAtTime(E.vol, t + dur, 0.35); };
   E.tune = () => (E.cur ? Math.pow(2, ((((E.cur.P.key % 12) + 18) % 12) - 6) / 12) : 1);   // a la tonalidad más cercana: de −6 a +5 semitonos

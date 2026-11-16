@@ -160,13 +160,16 @@ function updateNPCs(dt) {
     T.update(dt, facing ? { speed: 0, near: d < 45, lookX: 0, lookY: 0.15 } : { speed, near: d < 45 });
   }
 }
+const NIGHT_LINES = ['¡Qué noche tan bonita!', '¿Ya viste la luna? Está bajita, hacia el norte.', 'Me gusta tu farolito.', 'Shhh… los pájaros ya se durmieron.',
+  'Desde la cima se ven muchas estrellas.', 'Ya es tarde… mañana jugamos más.', '¿Oyes los grillos?'];
 function talkTo(n) {
   const T = n.T; n.talkT = 3.4; let line = n.onTalk ? n.onTalk(n) : null;    // los encargos hablan primero
   if (line) { /* ya está */ }
   else if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
     n.count = 0; T.setMood('contento'); n.cheer = 25; line = '¡Gracias por escucharme! Ya me siento mejor.';
     burst('heart', n.pos.x, 1.8, n.pos.z, 5); SFX.nice();
-  } else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
+  } else if (day.light < 0.3 && Math.random() < 0.5) line = choose(NIGHT_LINES);   // de noche, a veces hablan de la noche
+  else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
   say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle'])); gain('diversion', 0.06, 'charla' + n.name, 12);
   player.T.doTrick('wave'); player.heading = Math.atan2(n.pos.x - player.pos.x, n.pos.z - player.pos.z);
 }
@@ -311,7 +314,9 @@ function makeButterfly(x, z, col) {
 function updateButterflies(dt) {
   const P = player, calm = P.idleT > 2.2 && P.state === 'normal';
   let attracted = 0;
+  const awake = day.light > 0.35;                                  // de noche las mariposas se esconden
   for (const b of butterflies) {
+    b.g.visible = awake; if (!awake) continue;
     const dh = Math.hypot(P.pos.x - b.home.x, P.pos.z - b.home.z);
     if (dh > 60) continue;
     const att = calm && dh < 9 && attracted < 5; if (att) attracted++;

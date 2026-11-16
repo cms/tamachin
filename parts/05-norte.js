@@ -268,7 +268,7 @@ const townB = new Batch();
   // árboles en las banquetas y faroles
   for (const r of [-24, 24]) for (let v = -56; v <= 56; v += 9.5) {
     if (Math.abs(v - r) < 9 || Math.abs(v + r) < 9 || Math.abs(v) < 6) continue;
-    for (const sd of [-1, 1]) { const x = r + sd * 4.9, z = TOWN_Z + v, k = Math.round(v / 9.5) % 2; if (k) { addStatic('oak', x, 0, z, r2(0.6, 0.75)); northCircle(x, z, 0.24); } else { townB.merge(PF_LAMP, x, 0, z, sd > 0 ? Math.PI : 0); solidCircle(x, z, 0.18); } }
+    for (const sd of [-1, 1]) { const x = r + sd * 4.9, z = TOWN_Z + v, k = Math.round(v / 9.5) % 2; if (k) { addStatic('oak', x, 0, z, r2(0.6, 0.75)); northCircle(x, z, 0.24); } else { townB.merge(PF_LAMP, x, 0, z, sd > 0 ? Math.PI : 0); solidCircle(x, z, 0.18); lampAt(x, z, sd > 0 ? Math.PI : 0); } }
   }
   // plaza: kiosco al centro, cuatro árboles y bancas mirando al kiosco
   const KZ = TOWN_Z;

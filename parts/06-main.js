@@ -23,7 +23,7 @@ function clearTemp() { player.tempMood = null; player.tempT = 0; player.onTempEn
 const NEEDS = {
   panza: { label: 'Panza', drain: 1 / 900, mood: 'enojado', fill: 'el refri de casa, las bayas del bosque y la fruta del norte',
     lines: ['¡Mi panza hace ruidos!', 'Tengo hambre…', 'Se me antoja algo rico…'], tip: 'Tamachin tiene hambre: abre el refri de casa o come bayas en el bosque.' },
-  energia: { label: 'Energía', drain: 1 / 1200, mood: 'dormido', fill: 'una siesta en su cama o en la hamaca de Valle Alegre, y la fogata del bosque',
+  energia: { label: 'Energía', drain: 1 / 1080, mood: 'dormido', fill: 'una siesta en su cama o en la hamaca de Valle Alegre, y la fogata del bosque',
     lines: ['¡Aaah… qué sueño!', 'Se me cierran los ojitos…', 'Una siesta me caería bien…'], tip: 'Tamachin tiene sueño: llévalo a dormir una siesta en su cama.' },
   diversion: { label: 'Diversión', drain: 1 / 600, mood: 'triste', fill: 'trucos, la tele, la fuente, platicar con los vecinos y acariciar animales',
     lines: ['Me aburro…', '¿Jugamos a algo?', 'Hazme un mimo…'], tip: 'Tamachin se aburre: hazle trucos, platica con los vecinos o mira la tele.' },
@@ -158,14 +158,24 @@ const BEDS = {
   cama: { x: -4.4, y: 1.46, z: -9.85, exit: { x: -2.7, z: -10.4 }, line: '¡Qué buena siesta!' },
   hamaca: { x: TOWN.hammock.x, y: 1.12, z: TOWN.hammock.z, exit: { x: TOWN.hammock.x, z: TOWN.hammock.z + 2.3 }, line: '¡Qué rico se mece la hamaca!' },
 };
+// De noche (de 8 de la noche a 5 de la mañana) se duerme hasta el día siguiente: el reloj corre `rate` horas por segundo hasta las 7
+// y se despierta solo, con la energía llena. De día es una siesta de 9 s. Despertarlo antes deja el reloj donde iba.
+const NIGHT_SLEEP = { wake: 7, rate: 2 };
+const isNight = (h) => h >= DAY.set || h < DAY.rise;
 function goSleep(where) {
   const P = player, b = BEDS[where] || BEDS.cama; P.sleepSpot = BEDS[where] ? where : 'cama';
-  P.state = 'sleep'; P.sleepT = 0; P.vx = P.vz = P.vy = 0; P.pos.set(b.x, b.y, b.z); P.heading = 0; P.T.lie = 1;
-  setTemp('dormido', 999); say(P, 'Zzz…', 2);
+  P.state = 'sleep'; P.sleepT = 0; P.vx = P.vz = P.vy = 0; P.pos.set(b.x, b.y, b.z); P.heading = 0; P.T.lie = 1; P.nightSleep = isNight(day.h);
+  setTemp('dormido', 999); say(P, P.nightSleep ? 'Zzz… ¡Hasta mañana!' : 'Zzz…', 2);
 }
-function wake() {
+function wake(morning) {
   const P = player; if (P.state !== 'sleep' || P.sleepT < 0.8) return; const b = BEDS[P.sleepSpot] || BEDS.cama;
-  P.state = 'normal'; P.T.lie = 0; P.pos.set(b.exit.x, groundY(b.exit.x, b.exit.z), b.exit.z); P.sleepSpot = null; clearTemp(); P.T.doTrick('hop'); say(P, b.line, 2); SFX.nice();
+  P.state = 'normal'; P.T.lie = 0; P.pos.set(b.exit.x, groundY(b.exit.x, b.exit.z), b.exit.z); P.sleepSpot = null; P.nightSleep = false; clearTemp(); P.T.doTrick('hop');
+  say(P, morning === true ? '¡Buenos días!' : b.line, 2.4); SFX.nice();
+}
+function sleepThroughNight(dt) {
+  const left = (NIGHT_SLEEP.wake - day.h + 24) % 24, step = NIGHT_SLEEP.rate * dt;
+  if (left > step && left < 12) { setHour(day.h + step); return; }
+  setHour(NIGHT_SLEEP.wake); needs.energia = 1; wake(true);
 }
 
 // ───────────────────────── comer ─────────────────────────
@@ -614,10 +624,11 @@ function updateMusic(dt) {
   if (!mus) mus = makeMusic(c, c.destination);
   const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
   if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
-  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar
+  const night = 1 - day.light;
+  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now);
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(night, now);
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -683,7 +694,7 @@ function updatePlayer(dt) {
   else { P.vx = P.vz = 0; }
   if (P.state === 'busy') { const b = P.busy; b.t += dt; b.update(dt, b.t); if (b.t >= b.dur) { P.busy = null; P.state = 'normal'; if (b.end) b.end(); } }
 
-  if (P.state === 'sleep') { P.sleepT += dt; if (P.sleepT > 9) wake(); }
+  if (P.state === 'sleep') { P.sleepT += dt; if (P.nightSleep) sleepThroughNight(dt); else if (P.sleepT > 9) wake(); }
   else {
     pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
     const gy = groundY(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
@@ -856,6 +867,8 @@ function updateScenery(dt) {
   cutMats(house.cutMats, house.cutWalls, house.plane, house.oWalls < 0.999);
   fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
   house.front.visible = house.oFront > 0.03; house.roof.visible = house.oRoof > 0.03; house.doorPivot.visible = house.oFront > 0.03;
+  for (const m of house.glowFront) m.visible = house.front.visible;   // las ventanas prendidas de la fachada y el foco del porche
+  if (lampMeshes.porchOn !== house.front.visible) { lampMeshes.porchOn = house.front.visible; lampMeshes.setLamp(lampMeshes.porch, house.front.visible); }
   house.roof.castShadow = house.oRoof > 0.5; house.front.castShadow = house.oFront > 0.5;
   house.doorA = damp(house.doorA, Math.hypot(x, z + 4.1) < 3.3 ? 1.8 : 0, 7, dt); house.doorPivot.rotation.y = house.doorA;
   if (house.tvOn) house.tvMat.color.setHSL((clock * 0.23) % 1, 0.7, 0.55 + Math.sin(clock * 9) * 0.08);
@@ -917,6 +930,73 @@ function updateHud(dt) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
+}
+
+// ───────────────────────── luces de noche (el día y la noche están en 01-core.js) ─────────────────────────
+// Los focos de los faroles (LAMPS) y su charco de luz en el suelo: dos InstancedMesh para todos, que solo se dibujan de noche.
+// El farolito de Tamachin sí es una luz de verdad: está en la escena desde el principio, siempre visible, con intensidad 0 de día.
+// Quitarla o esconderla (también dentro de un grupo escondido) cambiaría el número de luces y recompilaría todos los materiales.
+const lampMeshes = (() => {
+  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), nightMat(0xfff2c0, 1), LAMPS.length);
+  const poolTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+  const pools = LAMPS.filter((l) => l.pool);
+  const poolMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), nightMat(0xffc878, 0.42, { map: poolTex, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), pools.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const setLamp = (i, on) => { const l = LAMPS[i], r = on ? l.r : 0; bulbs.setMatrixAt(i, m4.compose(v.set(l.x, l.y, l.z), q, sc.set(r, r * 0.8, r))); bulbs.instanceMatrix.needsUpdate = true; };
+  LAMPS.forEach((l, i) => setLamp(i, true));
+  pools.forEach((l, i) => poolMesh.setMatrixAt(i, m4.compose(v.set(l.x, groundY(l.x, l.z) + 0.06, l.z), q, sc.set(7, 1, 7))));
+  for (const m of [bulbs, poolMesh]) { m.frustumCulled = false; scene.add(m); }
+  return { bulbs, pools: poolMesh, setLamp, porch: LAMPS.findIndex((l) => l.porch), porchOn: true };
+})();
+const IN_WARM = { sky: new THREE.Color(0xffe2b8), gnd: new THREE.Color(0x9a7a5c) }; let houseWarm = 0;
+const lanternLight = new THREE.PointLight(0xffc27a, 0, 9, 1.4); scene.add(lanternLight);
+const lantern = (() => {
+  const g = new THREE.Group(), ink = new THREE.MeshStandardMaterial({ color: 0x3b2a4a, roughness: 0.6 });
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd98a })); glass.scale.set(1, 1.2, 1);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.07, 12), ink); top.position.y = 0.2;
+  const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.05, 12), ink); bot.position.y = -0.2;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 14), ink); ring.position.y = 0.27;
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: skyDot, color: 0xffb35c, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.55 })); halo.scale.setScalar(1.3);
+  g.add(glass, top, bot, ring, halo); g.visible = false; scene.add(g);
+  return { g, x: 0, y: 0, z: 0, t: 0, init: false };
+})();
+// luciérnagas: de noche, en el jardín, el parque, el camino y los bosques. Viven en el mundo (no se mueven con Tamachin): las que quedan
+// lejos vuelven a aparecer cerca. Un solo Points; cada una parpadea a su ritmo (el color de su vértice).
+const FIREFLY_ZONES = { jardin: 0.5, parque: 0.8, camino: 1, bosque: 1, sinfin: 1, montes: 0.4 };
+const fireflies = (() => {
+  const N = 36, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.75, map: skyDot, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  pts.frustumCulled = false; pts.visible = false; scene.add(pts);
+  const flies = Array.from({ length: N }, () => ({ x: 0, y: 0, z: 0, vx: 0, vz: 0, ph: rand(0, TAU), sp: rand(0.6, 1.4), born: false }));
+  return { pts, pos, col, flies, k: 0 };
+})();
+function updateFireflies(dt) {
+  const P = player, F = fireflies, want = smooth(0.4, 0.1, day.light) * (FIREFLY_ZONES[musicZone()] || 0) * (P.pos.y < 120 ? 1 : 0);
+  F.k = damp(F.k, want, 1.5, dt); F.pts.visible = F.k > 0.02; if (!F.pts.visible) { for (const f of F.flies) f.born = false; return; }
+  const n = Math.round(F.flies.length * Math.min(1, F.k * 1.2));
+  F.flies.forEach((f, i) => {
+    if (!f.born || Math.hypot(f.x - P.pos.x, f.z - P.pos.z) > 17) {      // aparece cerca (a 3-14 m), a la altura de la hierba o un poco más
+      const a = rand(0, TAU), r = rand(3, 14); f.x = P.pos.x + Math.cos(a) * r; f.z = P.pos.z + Math.sin(a) * r; f.y = groundY(f.x, f.z) + rand(0.4, 2.2); f.born = true;
+    }
+    f.vx = damp(f.vx, Math.sin(clock * 0.7 * f.sp + f.ph) * 0.6, 1, dt); f.vz = damp(f.vz, Math.cos(clock * 0.53 * f.sp + f.ph * 1.3) * 0.6, 1, dt);
+    f.x += f.vx * dt; f.z += f.vz * dt; f.y += Math.sin(clock * 1.1 * f.sp + f.ph) * 0.25 * dt;
+    const blink = i < n ? Math.min(1, 1.4 * Math.pow(Math.max(0, Math.sin(clock * 1.6 * f.sp + f.ph)), 2)) * F.k : 0;
+    F.pos[i * 3] = f.x; F.pos[i * 3 + 1] = f.y; F.pos[i * 3 + 2] = f.z;
+    F.col[i * 3] = 0.9 * blink; F.col[i * 3 + 1] = 1 * blink; F.col[i * 3 + 2] = 0.45 * blink;
+  });
+  F.pts.geometry.attributes.position.needsUpdate = true; F.pts.geometry.attributes.color.needsUpdate = true;
+}
+// el farolito flota a la derecha de Tamachin (en la pantalla), un poco hacia la cámara, para no taparle la cara
+function updateLantern(dt) {
+  const P = player, L = lantern, k = smooth(0.55, 0.2, day.light), sc = P.T.scale;
+  lanternLight.intensity = 0.95 * k; L.g.visible = k > 0.02;
+  if (!L.g.visible) { L.init = false; return; }
+  const c = camView.c, s = camView.s; L.t += dt;
+  const tx = P.pos.x + (c * 0.85 + s * 0.2) * sc, tz = P.pos.z + (-s * 0.85 + c * 0.2) * sc, ty = P.pos.y + 1.45 * sc + Math.sin(L.t * 2.2) * 0.07;
+  if (!L.init) { L.x = tx; L.y = ty; L.z = tz; L.init = true; } else { L.x = damp(L.x, tx, 5, dt); L.y = damp(L.y, ty, 5, dt); L.z = damp(L.z, tz, 5, dt); }
+  L.g.position.set(L.x, L.y, L.z); L.g.scale.setScalar(0.4 + 0.6 * k); L.g.rotation.z = Math.sin(L.t * 1.7) * 0.12;
+  lanternLight.position.set(L.x, L.y, L.z);
 }
 
 // ───────────────────────── reloj (el día y la noche están en 01-core.js) ─────────────────────────
@@ -984,11 +1064,13 @@ function frame(now) {
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
   resize(); clock += dt; updateDay(dt);
-  const glow = 0.3 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco: que se vea
+  const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
+  houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
+  if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
-  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);

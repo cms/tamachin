@@ -97,7 +97,10 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 Un día dura 24 minutos: una hora del juego es un minuto. Amanece a las 5 y oscurece a las 8 de la noche; una partida nueva empieza a las 8 de la mañana. Con la página cerrada o la pestaña oculta, el tiempo no corre.
 
 - El sol cruza el cielo y las sombras se mueven; al amanecer y al atardecer el cielo se pone durazno y rosa.
-- De noche todo se ve azul, más oscuro pero no negro (a medianoche la imagen tiene entre 44 % y 57 % del brillo de mediodía), y Tamachin brilla un poco para que se distinga. Hay estrellas y una luna creciente bajita hacia el norte: se ven mejor con la cámara baja.
+- De noche todo se ve azul, más oscuro pero no negro (a medianoche la imagen tiene entre 46 % del brillo de mediodía, en la cima nevada, y 77 %, dentro de la casa). Hay estrellas y una luna creciente bajita hacia el norte: se ven mejor con la cámara baja.
+- Al oscurecer se prenden las ventanas de los edificios y de la casa, los faroles (con su círculo de luz en el suelo) y las lámparas de adentro, y Tamachin lleva un farolito que flota a su lado.
+- Dormir de noche (de 8 de la noche a 5 de la mañana, en su cama o en la hamaca) lo lleva hasta las 7 de la mañana en unos segundos y se despierta solo, con la energía llena. De día es una siesta.
+- De noche las mariposas se esconden, salen luciérnagas en el jardín, el parque, el camino y los bosques, y los vecinos a veces hablan de la noche.
 - El reloj es analógico: la manecilla larga da una vuelta por minuto. De noche la carátula se pone azul y sale la luna.
 - Para probar una hora: `?hora=21` o `?hora=21:30` en la dirección (por ejemplo `https://tamachin.matteo.games/?hora=21`). Desde ahí sigue corriendo y se guarda.
 
@@ -114,7 +117,7 @@ Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toq
 
 La música también sigue a Tamachin: dormido (en su cama o en la hamaca) suena una canción de cuna; corriendo entra percusión; si tiene hambre, sueño o aburrimiento, una parte alegre se calla hasta que se recupera; los efectos con tono (saltar, trucos, premios) suenan en la tonalidad de la música, que se agacha un momento bajo los premios, y en cada cima suena una fanfarria.
 
-De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
+De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». De noche cantan grillos en vez de pájaros, ulula un búho en el camino y los bosques, y la música se oye más suave. Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 
 ## Mapa (unidades en metros)
 

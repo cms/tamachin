@@ -71,7 +71,7 @@ const SUN_OFF = new THREE.Vector3(38, 58, 42);              // de Tamachin hacia
 // La luna alumbra con la misma luz que el sol: se cambian cuando las dos pasan por cero, en el crepúsculo. Nunca se agrega ni se quita
 // una luz con sombra (en r128 eso recompila todos los materiales y el juego se traba).
 const DAY = { rise: 5, set: 20, start: 8, rate: 1 / 60 };   // rate: horas de juego por segundo
-const day = { h: DAY.start, light: 1, warm: 0, stars: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer
+const day = { h: DAY.start, light: 1, warm: 0, stars: 0, lamps: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
 // hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
 const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
 const SKY_DAY = [0x3f9ef5, 0x9bd6ff, 0xd6f0ff, 0xf2f9ff, 0xb6c296, 0.58, 0xffffff, 1, 0];
@@ -89,6 +89,14 @@ const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t
 // Lo que no recibe luz (MeshBasicMaterial: nubes, mariposas) brillaría de noche: se tiñe con la hora.
 const UNLIT = [];
 function dimmable(mat) { UNLIT.push({ mat, base: mat.color.clone() }); return mat; }
+// Lo que se enciende al oscurecer (`day.lamps`, de 0 a 1): sin luces de verdad (cada una recompilaría todo y costaría en el teléfono).
+// nightMat: un material sin luz que aparece con la noche (ventanas de la casa, focos, el charco de luz bajo los faroles); con opacidad 0
+// no se dibuja. LIT_WALLS: las paredes de los edificios, cuyas ventanas brillan con `emissiveMap`. LAMPS: dónde va cada foco
+// ({ x, y, z, r, pool }); los ponen la ciudad, el parque y Valle Alegre, y 06-main.js los dibuja todos juntos.
+const NIGHT_LIT = [], LIT_WALLS = [], LAMPS = [], WARM_WIN = new THREE.Color(0xffcf7a);
+function nightMat(color, max, extra) { const m = new THREE.MeshBasicMaterial(Object.assign({ color, transparent: true, opacity: 0, depthWrite: false }, extra)); m.visible = false; NIGHT_LIT.push({ mat: m, max }); return m; }
+// el foco de un farol (PF_LAMP, 03-world.js) puesto en x, z con giro ry
+function lampAt(x, z, ry) { LAMPS.push({ x: x + Math.cos(ry || 0), y: 4.36, z: z - Math.sin(ry || 0), r: 0.24, pool: true }); }
 // Estrellas, luna y sol van en el cielo y se dibujan justo después de él, antes que todo lo demás: sin transparencia (así entran en
 // la lista de lo opaco, que respeta renderOrder) pero con mezcla aditiva, y sin profundidad. Así un cerro lejano siempre las tapa.
 const SKY_ADD = { transparent: false, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false };
@@ -163,6 +171,9 @@ function applyDay(force) {
   hemi.color.copy(_dc[3]); hemi.groundColor.copy(_dc[4]); hemi.intensity = lerp(A.c[5], B.c[5], t);
   scene.fog.color.copy(_dc[2]); scene.background.copy(_dc[2]);
   for (const u of UNLIT) u.mat.color.copy(u.base).multiply(_tint);
+  day.lamps = smooth(0.62, 0.22, day.light);
+  for (const n of NIGHT_LIT) { n.mat.opacity = n.max * day.lamps; n.mat.visible = day.lamps > 0.01; }
+  for (const m of LIT_WALLS) m.emissive.copy(WARM_WIN).multiplyScalar(0.85 * day.lamps);
   // en el cielo
   for (const s of skyStars) s.material.opacity = day.stars;
   skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light); skyMoon.visible = skyMoon.material.opacity > 0.01;
@@ -659,10 +670,31 @@ const MUSIC_ZONES = {
   sinfin: { piece: 'sinfin', mix: {}, amb: { birds: 1, wind: 0.12 } },
   cuna: { piece: 'cuna', mix: {}, amb: {} },   // dormido (en la cama o en la hamaca); lo de fondo sigue al lugar
 };
-// lo de fondo de un lugar: `near` es qué tan cerca está el río (0 a 1) y `alt` la altura en las montañas (0 a 1): arriba, más viento y menos pájaros
-function ambFor(key, near, alt) {
-  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0;
-  return { birds: (a.birds || 0) * Math.max(0, 1 - up * 1.6), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75) };
+// lo de fondo de un lugar: `near` es qué tan cerca está el río (0 a 1) y `alt` la altura en las montañas (0 a 1): arriba, más viento y menos pájaros.
+// `night` (0 a 1, de 01-core.js: 1 − day.light): de noche los pájaros duermen y cantan los grillos (donde hay pájaros, y algo en la ciudad);
+// en el camino y los bosques ulula un búho.
+const OWL_ZONES = { camino: 0.6, bosque: 1, sinfin: 1 };
+function ambFor(key, near, alt, night) {
+  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0, n = night || 0, low = Math.max(0, 1 - up * 1.6);
+  return { birds: (a.birds || 0) * low * (1 - n), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75),
+    crickets: a.birds ? n * Math.min(1, a.birds + 0.4) * low : 0, owls: n * (OWL_ZONES[key] || 0) };
+}
+// grillo: tres o cuatro pulsos agudos muy cortos; cada uno de un lado y a su tono
+function cricket(E, d, t) {
+  const c = E.ctx, g = c.createGain(), f = rand(4100, 5200), n = 2 + Math.floor(Math.random() * 3);
+  g.gain.value = rand(0.4, 1);
+  if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = rand(-0.9, 0.9); g.connect(p); p.connect(d); } else g.connect(d);
+  for (let k = 0; k < n; k++) { const t0 = t + k * 0.045, o = osc(c, 'sine', f, t0, t0 + 0.03), e = c.createGain(); env(e, t0, 1, 0.004, 0.026); o.connect(e); e.connect(g); }
+}
+// búho: «uu… uu-uu», grave y suave
+function owl(E, d, t) {
+  const c = E.ctx, g = c.createGain(), f = rand(360, 420);
+  g.gain.value = rand(0.6, 1);
+  if (c.createStereoPanner) { const p = c.createStereoPanner(); p.pan.value = rand(-0.7, 0.7); g.connect(p); p.connect(d); } else g.connect(d);
+  for (const [at, len, k] of [[0, 0.42, 1], [0.62, 0.18, 0.96], [0.84, 0.5, 0.92]]) {
+    const t0 = t + at, o = osc(c, 'sine', f * k, t0, t0 + len + 0.05), e = c.createGain();
+    o.frequency.setValueAtTime(f * k * 1.04, t0); o.frequency.exponentialRampToValueAtTime(f * k * 0.97, t0 + len); env(e, t0, 0.9, 0.06, len); o.connect(e); e.connect(g);
+  }
 }
 // pájaros: pío-pío, silbido de dos notas o trino; cada uno de un lado y a su distancia
 function bird(E, d, t) {
@@ -674,15 +706,16 @@ function bird(E, d, t) {
   else if (kind === 1) { chirp(t, 2500 * f, 2700 * f, 0.16, 0.9); chirp(t + 0.22, 2000 * f, 1950 * f, 0.28, 0.8); }
   else { const o = osc(c, 'sine', 3300 * f, t, t + 0.45), lfo = osc(c, 'sine', 28, t, t + 0.45), lg = c.createGain(), e = c.createGain(); lg.gain.value = 420 * f; lfo.connect(lg); lg.connect(o.frequency); env(e, t, 0.7, 0.02, 0.45); o.connect(e); e.connect(g); }
 }
-const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
+const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03, crickets: 0.012, owls: 0.035 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
 function makeMusic(ctx, dest) {
-  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1, run: false }, low: false, mixNow: {}, runLv: 0, runHits: 0, fanfares: 0 };
+  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1, run: false }, low: false, night: false, nightLv: 0, mixNow: {}, runLv: 0, runHits: 0, fanfares: 0 };
   E.noise = ctx.createBuffer(1, sr, sr); const nz = E.noise.getChannelData(0); for (let i = 0; i < sr; i++) nz[i] = Math.random() * 2 - 1;
   const n = Math.floor(sr * 2), ir = ctx.createBuffer(2, n, sr);   // reverberación: ruido que se apaga en 2 s
   for (let ch = 0; ch < 2; ch++) { const a = ir.getChannelData(ch); for (let i = 0; i < n; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); }
   E.verb = ctx.createConvolver(); E.verb.buffer = ir;
   E.out = ctx.createGain(); E.out.gain.value = 0;
-  E.verb.connect(E.out); E.out.connect(dest);   // sin compresor: agrega ganancia propia (≈5 dB en Chrome) y los picos no pasan de 0.1
+  E.lpMax = Math.min(20000, sr / 2); E.lp = ctx.createBiquadFilter(); E.lp.type = 'lowpass'; E.lp.frequency.value = E.lpMax; E.lp.Q.value = 0.5;   // de noche se cierra: suena más suave (setNight)
+  E.verb.connect(E.out); E.out.connect(E.lp); E.lp.connect(dest);   // sin compresor: agrega ganancia propia (≈5 dB en Chrome) y los picos no pasan de 0.1
   E.runBus = ctx.createGain(); E.runBus.gain.value = RUN_VOL; E.runBus.connect(E.out);   // la percusión de correr, igual en todas las piezas
   E.fx = ctx.createGain(); E.fx.gain.value = FX_VOL; E.fx.connect(dest);                 // la fanfarria es un efecto: suena aunque la música esté apagada
   for (const k in MUSIC) {
@@ -698,8 +731,10 @@ function makeMusic(ctx, dest) {
   const glide = (prm, v, t, tc) => { prm.cancelScheduledValues(t); prm.setTargetAtTime(v, t, tc); };
   // Lo de fondo va aparte de la música (sigue con «Solo efectos»): río y viento son ruido filtrado que se mueve solo, siempre corriendo
   // con volumen 0 donde no hay; los pájaros se agendan al azar.
-  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), g: {}, lv: { river: 0, wind: 0 }, birds: 0, next: 0, calls: 0 };
+  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), cric: ctx.createGain(), owl: ctx.createGain(), g: {}, lv: { river: 0, wind: 0 }, birds: 0, next: 0, calls: 0,
+    crickets: 0, cnext: 0, chirps: 0, owls: 0, onext: 0, hoots: 0 };
   A.out.connect(dest); A.bird.gain.value = AMB_VOL.birds; A.bird.connect(A.out);
+  A.cric.gain.value = AMB_VOL.crickets; A.cric.connect(A.out); A.owl.gain.value = AMB_VOL.owls; A.owl.connect(A.out);
   const long = ctx.createBuffer(1, sr * 4, sr), ld = long.getChannelData(0); for (let i = 0; i < ld.length; i++) ld[i] = Math.random() * 2 - 1;
   const src = (off) => { const s = ctx.createBufferSource(); s.buffer = long; s.loop = true; s.start(0, off); return s; };
   const biq = (type, f, q) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
@@ -713,14 +748,18 @@ function makeMusic(ctx, dest) {
     s.connect(bp); bp.connect(gust); gust.connect(A.g.wind); }
   E.ambient = (a, t) => {
     for (const k of ['river', 'wind']) { const v = a[k] || 0; if (Math.abs(v - A.lv[k]) > 0.01 || (v === 0 && A.lv[k] !== 0)) { A.lv[k] = v; glide(A.g[k].gain, v * AMB_VOL[k], t, 0.8); } }
-    A.birds = a.birds || 0;
+    A.birds = a.birds || 0; A.crickets = a.crickets || 0; A.owls = a.owls || 0;
   };
   E.pumpAmb = (now, until) => {
     if (A.next < now) A.next = now + rand(0.2, 1.5);
     while (A.next < until) { if (Math.random() < A.birds) { bird(E, A.bird, A.next); A.calls++; } A.next += rand(1.1, 3.4); }
+    if (A.cnext < now) A.cnext = now + rand(0.1, 0.5);
+    while (A.cnext < until) { if (Math.random() < A.crickets) { cricket(E, A.cric, A.cnext); A.chirps++; } A.cnext += rand(0.18, 0.6); }
+    if (A.onext < now) A.onext = now + rand(2, 6);
+    while (A.onext < until) { if (Math.random() < A.owls * 0.55) { owl(E, A.owl, A.onext); A.hoots++; } A.onext += rand(6, 12); }
   };
   // volumen de una capa: el de la pieza, por la mezcla del lugar, por lo que queda con una necesidad baja
-  const layerVol = (pl, l) => pl.P.layers[l].vol * (l in E.mixNow ? E.mixNow[l] : 1) * (E.low && l in pl.P.low ? pl.P.low[l] : 1);
+  const layerVol = (pl, l) => pl.P.layers[l].vol * (l in E.mixNow ? E.mixNow[l] : 1) * ((E.low || E.night) && l in pl.P.low ? pl.P.low[l] : 1);
   // otro lugar: si es la misma pieza solo cambian las capas; si no, la de antes se apaga y la nueva empieza desde el principio
   E.zone = (key, t) => {
     const Z = MUSIC_ZONES[key]; if (!Z) return;
@@ -736,6 +775,11 @@ function makeMusic(ctx, dest) {
   };
   // con una necesidad baja, una parte alegre de la pieza se calla (despacio)
   E.setLow = (on, t) => { if (!!on === E.low) return; E.low = !!on; if (E.cur) for (const l in E.cur.L) glide(E.cur.L[l].gain, layerVol(E.cur, l), t, 1.2); };
+  // de noche (n de 0 a 1) la música se oye más suave: se cierra un filtro y, ya oscuro, la parte alegre se calla como con una necesidad baja
+  E.setNight = (n, t) => {
+    if (Math.abs(n - E.nightLv) > 0.02 || (n === 0 && E.nightLv !== 0)) { E.nightLv = n; glide(E.lp.frequency, Math.min(E.lpMax, 20000 * Math.pow(2600 / 20000, n)), t, 1.5); }
+    const on = n > 0.6; if (on === E.night) return; E.night = on; if (E.cur) for (const l in E.cur.L) glide(E.cur.L[l].gain, layerVol(E.cur, l), t, 2);
+  };
   // la música se agacha mientras suena un premio y luego vuelve
   E.duck = (t, dur) => { if (!E.cur) return; glide(E.out.gain, E.vol * 0.35, t, 0.04); E.out.gain.setTargetAtTime(E.vol, t + dur, 0.35); };
   E.tune = () => (E.cur ? Math.pow(2, ((((E.cur.P.key % 12) + 18) % 12) - 6) / 12) : 1);   // a la tonalidad más cercana: de −6 a +5 semitonos
@@ -1177,6 +1221,16 @@ function shopfront(w, R) {
   b.box(hue, 0, 3.85, 0.1, aw * 0.5, 0.62, 0.16).box('#ffffff', 0, 3.85, 0.19, aw * 0.5 - 0.3, 0.3, 0.03);
   return b;
 }
+// las ventanas que se prenden de noche: mismas casillas que winTex (4 × 4), unas sí y otras no; tres versiones con su propia semilla
+const WIN_GLOW = [0, 1, 2].map((k) => { const R = mulberry(3170 + k); return canvasTex(256, 256, (g) => {
+  g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256);
+  for (let cx = 0; cx < 4; cx++) for (let cy = 0; cy < 4; cy++) {
+    if (R() < 0.42) continue;
+    const x = cx * 64 + 13, y = cy * 64 + 9, gr = g.createLinearGradient(0, y, 0, y + 44), w = R() < 0.25 ? '#ffe7b0' : '#ffd27a';
+    gr.addColorStop(0, w); gr.addColorStop(1, '#e99a4c'); g.fillStyle = gr; g.fillRect(x, y, 38, 44);
+    g.fillStyle = '#000'; g.fillRect(x + 17.5, y, 3, 44);
+  }
+}); });
 const occluders = [];
 function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla propia (Valle Alegre); sin ella, la de casa
   R = R || rnd; const RR = (a, b) => a + (b - a) * R();
@@ -1184,8 +1238,8 @@ function building(x0, x1, z0, z1, h, fronts, R) {                // R: semilla p
   const g = new THREE.BoxGeometry(w, h, d), uv = g.attributes.uv;
   const tx = Math.max(1, Math.round(w / 2.7)) / 4, tz = Math.max(1, Math.round(d / 2.7)) / 4, ty = Math.max(1, Math.round(h / 3)) / 4;
   for (let i = 0; i < 24; i++) { const f = i >> 2; if (f === 2 || f === 3) continue; uv.setXY(i, uv.getX(i) * (f < 2 ? tz : tx), uv.getY(i) * ty); }
-  const side = new THREE.MeshLambertMaterial({ map: winTex[si] }), roof = new THREE.MeshLambertMaterial({ color: new THREE.Color(WALLS[si]).multiplyScalar(0.66) });
-  const m = new THREE.Mesh(g, [side, side, roof, roof, side, side]); m.position.set(cx, h / 2, cz); m.castShadow = m.receiveShadow = true; scene.add(m);
+  const side = new THREE.MeshLambertMaterial({ map: winTex[si], emissiveMap: WIN_GLOW[si % 3], emissive: 0x000000 }), roof = new THREE.MeshLambertMaterial({ color: new THREE.Color(WALLS[si]).multiplyScalar(0.66) });
+  const m = new THREE.Mesh(g, [side, side, roof, roof, side, side]); m.position.set(cx, h / 2, cz); m.castShadow = m.receiveShadow = true; scene.add(m); LIT_WALLS.push(side);
   const b = new Batch(), trim = new THREE.Color(WALLS[si]).multiplyScalar(0.8).getHex();
   b.box(trim, cx, h + 0.2, z0 + 0.15, w + 0.3, 0.5, 0.3).box(trim, cx, h + 0.2, z1 - 0.15, w + 0.3, 0.5, 0.3);
   b.box(trim, x0 + 0.15, h + 0.2, cz, 0.3, 0.5, d - 0.3).box(trim, x1 - 0.15, h + 0.2, cz, 0.3, 0.5, d - 0.3);
@@ -1234,7 +1288,7 @@ function sidewalkProps(i, j) {
       if (i === 1 && j === 1 && s.ax === 'z' && Math.abs(z + 2.6) < 2.6) continue;
       if (n % 2 === 0) addTree(1, x, z, rr(0.62, 0.78));
       else {
-        cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18);
+        cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18); lampAt(x, z, s.ry);
         const q = rnd(), ox = s.ax === 'x' ? 1.6 : 0, oz = s.ax === 'x' ? 0 : 1.6;
         // se sube saltando; como son delgados y Tamachin es redondo, lo sostienen aunque quede un poco fuera de la orilla (`rim`)
         if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.22, 0.8).rim = 0.25; }
@@ -1300,7 +1354,7 @@ function hedge(x0, z0, x1, z1) {
 }
 hedge(-64, -63.2, -5, -63.2); hedge(5, -63.2, 64, -63.2); hedge(-64, 63.2, 64, 63.2); hedge(-63.2, -64, -63.2, 64); hedge(63.2, -64, 63.2, 64);
 solidBox(-64, -4.9, -64.2, -62.4); solidBox(4.9, 64, -64.2, -62.4);
-for (const sx of [-1, 1]) { cityB.rbox(STONE, sx * 5.1, 1.4, -63.2, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', sx * 5.1, 3.15, -63.2, 0.42); }
+for (const sx of [-1, 1]) { cityB.rbox(STONE, sx * 5.1, 1.4, -63.2, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', sx * 5.1, 3.15, -63.2, 0.42); LAMPS.push({ x: sx * 5.1, y: 3.15, z: -63.2, r: 0.45, pool: false }); }
 
 // ───────────────────────── la casa de Tamachin ─────────────────────────
 const house = (() => {
@@ -1353,6 +1407,16 @@ const house = (() => {
   furnB.cyl('#c8553d', 5.1, 0.3, -4.95, 0.36, 0.26, 0.6, 12).ico('#57c06a', 5.1, 1.0, -4.95, 0.5, 0.6, 0.5).ico('#62cc76', 4.9, 1.45, -4.9, 0.36).ico('#4db460', 5.25, 1.3, -5.1, 0.34); solidCircle(5.1, -4.95, 0.4);
   furnB.cyl('#3b4252', -5.3, 0.9, -4.75, 0.04, 0.04, 1.8, 6).cyl('#3b4252', -5.3, 0.03, -4.75, 0.22, 0.24, 0.06, 12).cone('#ffe9a8', -5.3, 1.9, -4.75, 0.34, 0.44, 14);
   furnB.sph('#ff6b9d', -1.0, 0.3, -10.6, 0.26); shelfB.cyl('#fff', 4.0, 2.7, H.z0 + WT + 0.04, 0.36, 0.36, 0.06, 20, Math.PI / 2).cyl('#3b4252', 4.0, 2.7, H.z0 + WT + 0.08, 0.04, 0.04, 0.02, 8, Math.PI / 2);
+  // de noche: las ventanas de afuera, el foco del porche y las dos lámparas de adentro se prenden (nightMat, 01-core.js)
+  // se cortan con la casa (su plano, abajo) y las de la fachada se esconden con ella cuando Tamachin entra (glowFront, updateScenery)
+  const glowWin = nightMat(0xffd88a, 0.92), glowFront = [];
+  { const win = glowWin, gw = new THREE.PlaneGeometry(1.62, 1.32);
+    for (const sx of [-1, 1]) { const m = new THREE.Mesh(gw, win); m.position.set(sx * 3.6, 1.95, fz + WT / 2 + 0.05); scene.add(m); glowFront.push(m); }
+    const back = new THREE.Mesh(new THREE.PlaneGeometry(1.72, 1.02), win); back.rotation.y = Math.PI; back.position.set(2.9, 2.3, H.z0 - 0.05); scene.add(back);
+    LAMPS.push({ x: 1.6, y: 2.5, z: H.z1 + 0.12, r: 0.19, pool: false, porch: true });   // el del porche se esconde con la fachada
+    const shade = nightMat(0xffe2a0, 0.85);
+    for (const [x, y, z, r, h] of [[-5.3, 1.9, -4.75, 0.37, 0.47], [-2.8, 1.25, -12.3, 0.31, 0.39]]) { const m = new THREE.Mesh(new THREE.CylinderGeometry(0.01, r, h, 14, 1, true), shade); m.position.set(x, y, z); scene.add(m); }   // sobre las pantallas cónicas
+  }
   const mWalls = mk(), mFront = mk(), mRoof = mk(), mShelf = mk();
   const walls = wallsB.mesh(mWalls), front = frontB.mesh(mFront), roof = roofB.mesh(mRoof); scene.add(walls, front, roof, furnB.mesh(), shelfB.mesh(mShelf));
   solidBox(H.x0 - 0.1, H.x1 + 0.1, H.z0 - 0.1, H.z0 + WT + 0.05); solidBox(H.x0 - 0.1, H.x0 + WT + 0.05, H.z0, H.z1); solidBox(H.x1 - WT - 0.05, H.x1 + 0.1, H.z0, H.z1);
@@ -1398,7 +1462,8 @@ const house = (() => {
     return { pivot, door, panelMat, poolMat, pool, beamMat, beam, open: 0, v: 0, target: 0 };
   })();
   const plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);   // corte a media altura cuando estorba (06-main.js)
-  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, plane, cutMats: [mWalls, mShelf, mFront, mRoof, doorMat], cutWalls: [mWalls, mFront], doorPivot, doorMat, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
+  glowWin.clippingPlanes = [plane];
+  return { walls, front, roof, mWalls, mFront, mRoof, mShelf, plane, cutMats: [mWalls, mShelf, mFront, mRoof, doorMat], cutWalls: [mWalls, mFront], doorPivot, doorMat, glowFront, tvMat, tvOn: false, oWalls: 1, oFront: 1, oRoof: 1, doorA: 0, fridge };
 })();
 
 // jardín
@@ -1430,7 +1495,7 @@ const parkB = new Batch();
   solidCircle(0, PZ, 2.9);
   for (const q of [[-4.5, -4.5], [4.5, -4.5], [-4.5, 4.5], [4.5, 4.5]]) { parkB.merge(PF_BENCH, q[0], 0, PZ + q[1], Math.atan2(-q[0], -q[1])); solidCircle(q[0], PZ + q[1], 0.75); }
   for (const q of [[-14, -34], [-9, -56], [-15.5, -51], [13.5, -34.5], [9, -57], [15.5, -52], [-6.5, -33], [6.5, -33], [-16, -40], [16, -41]]) addTree(rnd() < 0.25 ? 0 : 1, q[0], q[1], rr(0.85, 1.1));
-  for (const q of [[-3.2, -37], [3.2, -37], [-3.2, -54], [3.2, -54]]) { parkB.merge(PF_LAMP, q[0], 0, q[1], q[0] < 0 ? 0 : Math.PI); solidCircle(q[0], q[1], 0.18); }
+  for (const q of [[-3.2, -37], [3.2, -37], [-3.2, -54], [3.2, -54]]) { parkB.merge(PF_LAMP, q[0], 0, q[1], q[0] < 0 ? 0 : Math.PI); solidCircle(q[0], q[1], 0.18); lampAt(q[0], q[1], q[0] < 0 ? 0 : Math.PI); }
   for (let q = 0; q < 70; q++) { const x = rr(-18, 18), z = rr(-60, -31); if (Math.abs(x) < 2.2 || Math.abs(z - PZ) < 2.2 || Math.hypot(x, z - PZ) < 7) continue; addFlower(x, z); }
   for (const q of [[-18, -31], [18, -31], [-18.5, -59], [18.5, -59], [-10, -47.8], [10, -42.2]]) bushes.push({ x: q[0], z: q[1], s: rr(0.9, 1.3) });
   // columpio
@@ -1786,13 +1851,16 @@ function updateNPCs(dt) {
     T.update(dt, facing ? { speed: 0, near: d < 45, lookX: 0, lookY: 0.15 } : { speed, near: d < 45 });
   }
 }
+const NIGHT_LINES = ['¡Qué noche tan bonita!', '¿Ya viste la luna? Está bajita, hacia el norte.', 'Me gusta tu farolito.', 'Shhh… los pájaros ya se durmieron.',
+  'Desde la cima se ven muchas estrellas.', 'Ya es tarde… mañana jugamos más.', '¿Oyes los grillos?'];
 function talkTo(n) {
   const T = n.T; n.talkT = 3.4; let line = n.onTalk ? n.onTalk(n) : null;    // los encargos hablan primero
   if (line) { /* ya está */ }
   else if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
     n.count = 0; T.setMood('contento'); n.cheer = 25; line = '¡Gracias por escucharme! Ya me siento mejor.';
     burst('heart', n.pos.x, 1.8, n.pos.z, 5); SFX.nice();
-  } else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
+  } else if (day.light < 0.3 && Math.random() < 0.5) line = choose(NIGHT_LINES);   // de noche, a veces hablan de la noche
+  else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
   say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle'])); gain('diversion', 0.06, 'charla' + n.name, 12);
   player.T.doTrick('wave'); player.heading = Math.atan2(n.pos.x - player.pos.x, n.pos.z - player.pos.z);
 }
@@ -1937,7 +2005,9 @@ function makeButterfly(x, z, col) {
 function updateButterflies(dt) {
   const P = player, calm = P.idleT > 2.2 && P.state === 'normal';
   let attracted = 0;
+  const awake = day.light > 0.35;                                  // de noche las mariposas se esconden
   for (const b of butterflies) {
+    b.g.visible = awake; if (!awake) continue;
     const dh = Math.hypot(P.pos.x - b.home.x, P.pos.z - b.home.z);
     if (dh > 60) continue;
     const att = calm && dh < 9 && attracted < 5; if (att) attracted++;
@@ -2248,7 +2318,7 @@ const townB = new Batch();
   // árboles en las banquetas y faroles
   for (const r of [-24, 24]) for (let v = -56; v <= 56; v += 9.5) {
     if (Math.abs(v - r) < 9 || Math.abs(v + r) < 9 || Math.abs(v) < 6) continue;
-    for (const sd of [-1, 1]) { const x = r + sd * 4.9, z = TOWN_Z + v, k = Math.round(v / 9.5) % 2; if (k) { addStatic('oak', x, 0, z, r2(0.6, 0.75)); northCircle(x, z, 0.24); } else { townB.merge(PF_LAMP, x, 0, z, sd > 0 ? Math.PI : 0); solidCircle(x, z, 0.18); } }
+    for (const sd of [-1, 1]) { const x = r + sd * 4.9, z = TOWN_Z + v, k = Math.round(v / 9.5) % 2; if (k) { addStatic('oak', x, 0, z, r2(0.6, 0.75)); northCircle(x, z, 0.24); } else { townB.merge(PF_LAMP, x, 0, z, sd > 0 ? Math.PI : 0); solidCircle(x, z, 0.18); lampAt(x, z, sd > 0 ? Math.PI : 0); } }
   }
   // plaza: kiosco al centro, cuatro árboles y bancas mirando al kiosco
   const KZ = TOWN_Z;
@@ -2515,7 +2585,7 @@ function clearTemp() { player.tempMood = null; player.tempT = 0; player.onTempEn
 const NEEDS = {
   panza: { label: 'Panza', drain: 1 / 900, mood: 'enojado', fill: 'el refri de casa, las bayas del bosque y la fruta del norte',
     lines: ['¡Mi panza hace ruidos!', 'Tengo hambre…', 'Se me antoja algo rico…'], tip: 'Tamachin tiene hambre: abre el refri de casa o come bayas en el bosque.' },
-  energia: { label: 'Energía', drain: 1 / 1200, mood: 'dormido', fill: 'una siesta en su cama o en la hamaca de Valle Alegre, y la fogata del bosque',
+  energia: { label: 'Energía', drain: 1 / 1080, mood: 'dormido', fill: 'una siesta en su cama o en la hamaca de Valle Alegre, y la fogata del bosque',
     lines: ['¡Aaah… qué sueño!', 'Se me cierran los ojitos…', 'Una siesta me caería bien…'], tip: 'Tamachin tiene sueño: llévalo a dormir una siesta en su cama.' },
   diversion: { label: 'Diversión', drain: 1 / 600, mood: 'triste', fill: 'trucos, la tele, la fuente, platicar con los vecinos y acariciar animales',
     lines: ['Me aburro…', '¿Jugamos a algo?', 'Hazme un mimo…'], tip: 'Tamachin se aburre: hazle trucos, platica con los vecinos o mira la tele.' },
@@ -2650,14 +2720,24 @@ const BEDS = {
   cama: { x: -4.4, y: 1.46, z: -9.85, exit: { x: -2.7, z: -10.4 }, line: '¡Qué buena siesta!' },
   hamaca: { x: TOWN.hammock.x, y: 1.12, z: TOWN.hammock.z, exit: { x: TOWN.hammock.x, z: TOWN.hammock.z + 2.3 }, line: '¡Qué rico se mece la hamaca!' },
 };
+// De noche (de 8 de la noche a 5 de la mañana) se duerme hasta el día siguiente: el reloj corre `rate` horas por segundo hasta las 7
+// y se despierta solo, con la energía llena. De día es una siesta de 9 s. Despertarlo antes deja el reloj donde iba.
+const NIGHT_SLEEP = { wake: 7, rate: 2 };
+const isNight = (h) => h >= DAY.set || h < DAY.rise;
 function goSleep(where) {
   const P = player, b = BEDS[where] || BEDS.cama; P.sleepSpot = BEDS[where] ? where : 'cama';
-  P.state = 'sleep'; P.sleepT = 0; P.vx = P.vz = P.vy = 0; P.pos.set(b.x, b.y, b.z); P.heading = 0; P.T.lie = 1;
-  setTemp('dormido', 999); say(P, 'Zzz…', 2);
+  P.state = 'sleep'; P.sleepT = 0; P.vx = P.vz = P.vy = 0; P.pos.set(b.x, b.y, b.z); P.heading = 0; P.T.lie = 1; P.nightSleep = isNight(day.h);
+  setTemp('dormido', 999); say(P, P.nightSleep ? 'Zzz… ¡Hasta mañana!' : 'Zzz…', 2);
 }
-function wake() {
+function wake(morning) {
   const P = player; if (P.state !== 'sleep' || P.sleepT < 0.8) return; const b = BEDS[P.sleepSpot] || BEDS.cama;
-  P.state = 'normal'; P.T.lie = 0; P.pos.set(b.exit.x, groundY(b.exit.x, b.exit.z), b.exit.z); P.sleepSpot = null; clearTemp(); P.T.doTrick('hop'); say(P, b.line, 2); SFX.nice();
+  P.state = 'normal'; P.T.lie = 0; P.pos.set(b.exit.x, groundY(b.exit.x, b.exit.z), b.exit.z); P.sleepSpot = null; P.nightSleep = false; clearTemp(); P.T.doTrick('hop');
+  say(P, morning === true ? '¡Buenos días!' : b.line, 2.4); SFX.nice();
+}
+function sleepThroughNight(dt) {
+  const left = (NIGHT_SLEEP.wake - day.h + 24) % 24, step = NIGHT_SLEEP.rate * dt;
+  if (left > step && left < 12) { setHour(day.h + step); return; }
+  setHour(NIGHT_SLEEP.wake); needs.energia = 1; wake(true);
 }
 
 // ───────────────────────── comer ─────────────────────────
@@ -3106,10 +3186,11 @@ function updateMusic(dt) {
   if (!mus) mus = makeMusic(c, c.destination);
   const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
   if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
-  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar
+  const night = 1 - day.light;
+  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now);
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(night, now);
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -3175,7 +3256,7 @@ function updatePlayer(dt) {
   else { P.vx = P.vz = 0; }
   if (P.state === 'busy') { const b = P.busy; b.t += dt; b.update(dt, b.t); if (b.t >= b.dur) { P.busy = null; P.state = 'normal'; if (b.end) b.end(); } }
 
-  if (P.state === 'sleep') { P.sleepT += dt; if (P.sleepT > 9) wake(); }
+  if (P.state === 'sleep') { P.sleepT += dt; if (P.nightSleep) sleepThroughNight(dt); else if (P.sleepT > 9) wake(); }
   else {
     pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
     const gy = groundY(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
@@ -3348,6 +3429,8 @@ function updateScenery(dt) {
   cutMats(house.cutMats, house.cutWalls, house.plane, house.oWalls < 0.999);
   fadeMat(house.mFront, house.oFront); fadeMat(house.mRoof, house.oRoof); fadeMat(house.doorMat, house.oFront);
   house.front.visible = house.oFront > 0.03; house.roof.visible = house.oRoof > 0.03; house.doorPivot.visible = house.oFront > 0.03;
+  for (const m of house.glowFront) m.visible = house.front.visible;   // las ventanas prendidas de la fachada y el foco del porche
+  if (lampMeshes.porchOn !== house.front.visible) { lampMeshes.porchOn = house.front.visible; lampMeshes.setLamp(lampMeshes.porch, house.front.visible); }
   house.roof.castShadow = house.oRoof > 0.5; house.front.castShadow = house.oFront > 0.5;
   house.doorA = damp(house.doorA, Math.hypot(x, z + 4.1) < 3.3 ? 1.8 : 0, 7, dt); house.doorPivot.rotation.y = house.doorA;
   if (house.tvOn) house.tvMat.color.setHSL((clock * 0.23) % 1, 0.7, 0.55 + Math.sin(clock * 9) * 0.08);
@@ -3409,6 +3492,73 @@ function updateHud(dt) {
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
+}
+
+// ───────────────────────── luces de noche (el día y la noche están en 01-core.js) ─────────────────────────
+// Los focos de los faroles (LAMPS) y su charco de luz en el suelo: dos InstancedMesh para todos, que solo se dibujan de noche.
+// El farolito de Tamachin sí es una luz de verdad: está en la escena desde el principio, siempre visible, con intensidad 0 de día.
+// Quitarla o esconderla (también dentro de un grupo escondido) cambiaría el número de luces y recompilaría todos los materiales.
+const lampMeshes = (() => {
+  const bulbs = new THREE.InstancedMesh(new THREE.SphereGeometry(1, 12, 8), nightMat(0xfff2c0, 1), LAMPS.length);
+  const poolTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+  const pools = LAMPS.filter((l) => l.pool);
+  const poolMesh = new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), nightMat(0xffc878, 0.42, { map: poolTex, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), pools.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  const setLamp = (i, on) => { const l = LAMPS[i], r = on ? l.r : 0; bulbs.setMatrixAt(i, m4.compose(v.set(l.x, l.y, l.z), q, sc.set(r, r * 0.8, r))); bulbs.instanceMatrix.needsUpdate = true; };
+  LAMPS.forEach((l, i) => setLamp(i, true));
+  pools.forEach((l, i) => poolMesh.setMatrixAt(i, m4.compose(v.set(l.x, groundY(l.x, l.z) + 0.06, l.z), q, sc.set(7, 1, 7))));
+  for (const m of [bulbs, poolMesh]) { m.frustumCulled = false; scene.add(m); }
+  return { bulbs, pools: poolMesh, setLamp, porch: LAMPS.findIndex((l) => l.porch), porchOn: true };
+})();
+const IN_WARM = { sky: new THREE.Color(0xffe2b8), gnd: new THREE.Color(0x9a7a5c) }; let houseWarm = 0;
+const lanternLight = new THREE.PointLight(0xffc27a, 0, 9, 1.4); scene.add(lanternLight);
+const lantern = (() => {
+  const g = new THREE.Group(), ink = new THREE.MeshStandardMaterial({ color: 0x3b2a4a, roughness: 0.6 });
+  const glass = new THREE.Mesh(new THREE.SphereGeometry(0.16, 14, 10), new THREE.MeshBasicMaterial({ color: 0xffd98a })); glass.scale.set(1, 1.2, 1);
+  const top = new THREE.Mesh(new THREE.CylinderGeometry(0.07, 0.12, 0.07, 12), ink); top.position.y = 0.2;
+  const bot = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.07, 0.05, 12), ink); bot.position.y = -0.2;
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(0.05, 0.014, 6, 14), ink); ring.position.y = 0.27;
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: skyDot, color: 0xffb35c, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.55 })); halo.scale.setScalar(1.3);
+  g.add(glass, top, bot, ring, halo); g.visible = false; scene.add(g);
+  return { g, x: 0, y: 0, z: 0, t: 0, init: false };
+})();
+// luciérnagas: de noche, en el jardín, el parque, el camino y los bosques. Viven en el mundo (no se mueven con Tamachin): las que quedan
+// lejos vuelven a aparecer cerca. Un solo Points; cada una parpadea a su ritmo (el color de su vértice).
+const FIREFLY_ZONES = { jardin: 0.5, parque: 0.8, camino: 1, bosque: 1, sinfin: 1, montes: 0.4 };
+const fireflies = (() => {
+  const N = 36, pos = new Float32Array(N * 3), col = new Float32Array(N * 3), g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const pts = new THREE.Points(g, new THREE.PointsMaterial({ size: 0.75, map: skyDot, vertexColors: true, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));
+  pts.frustumCulled = false; pts.visible = false; scene.add(pts);
+  const flies = Array.from({ length: N }, () => ({ x: 0, y: 0, z: 0, vx: 0, vz: 0, ph: rand(0, TAU), sp: rand(0.6, 1.4), born: false }));
+  return { pts, pos, col, flies, k: 0 };
+})();
+function updateFireflies(dt) {
+  const P = player, F = fireflies, want = smooth(0.4, 0.1, day.light) * (FIREFLY_ZONES[musicZone()] || 0) * (P.pos.y < 120 ? 1 : 0);
+  F.k = damp(F.k, want, 1.5, dt); F.pts.visible = F.k > 0.02; if (!F.pts.visible) { for (const f of F.flies) f.born = false; return; }
+  const n = Math.round(F.flies.length * Math.min(1, F.k * 1.2));
+  F.flies.forEach((f, i) => {
+    if (!f.born || Math.hypot(f.x - P.pos.x, f.z - P.pos.z) > 17) {      // aparece cerca (a 3-14 m), a la altura de la hierba o un poco más
+      const a = rand(0, TAU), r = rand(3, 14); f.x = P.pos.x + Math.cos(a) * r; f.z = P.pos.z + Math.sin(a) * r; f.y = groundY(f.x, f.z) + rand(0.4, 2.2); f.born = true;
+    }
+    f.vx = damp(f.vx, Math.sin(clock * 0.7 * f.sp + f.ph) * 0.6, 1, dt); f.vz = damp(f.vz, Math.cos(clock * 0.53 * f.sp + f.ph * 1.3) * 0.6, 1, dt);
+    f.x += f.vx * dt; f.z += f.vz * dt; f.y += Math.sin(clock * 1.1 * f.sp + f.ph) * 0.25 * dt;
+    const blink = i < n ? Math.min(1, 1.4 * Math.pow(Math.max(0, Math.sin(clock * 1.6 * f.sp + f.ph)), 2)) * F.k : 0;
+    F.pos[i * 3] = f.x; F.pos[i * 3 + 1] = f.y; F.pos[i * 3 + 2] = f.z;
+    F.col[i * 3] = 0.9 * blink; F.col[i * 3 + 1] = 1 * blink; F.col[i * 3 + 2] = 0.45 * blink;
+  });
+  F.pts.geometry.attributes.position.needsUpdate = true; F.pts.geometry.attributes.color.needsUpdate = true;
+}
+// el farolito flota a la derecha de Tamachin (en la pantalla), un poco hacia la cámara, para no taparle la cara
+function updateLantern(dt) {
+  const P = player, L = lantern, k = smooth(0.55, 0.2, day.light), sc = P.T.scale;
+  lanternLight.intensity = 0.95 * k; L.g.visible = k > 0.02;
+  if (!L.g.visible) { L.init = false; return; }
+  const c = camView.c, s = camView.s; L.t += dt;
+  const tx = P.pos.x + (c * 0.85 + s * 0.2) * sc, tz = P.pos.z + (-s * 0.85 + c * 0.2) * sc, ty = P.pos.y + 1.45 * sc + Math.sin(L.t * 2.2) * 0.07;
+  if (!L.init) { L.x = tx; L.y = ty; L.z = tz; L.init = true; } else { L.x = damp(L.x, tx, 5, dt); L.y = damp(L.y, ty, 5, dt); L.z = damp(L.z, tz, 5, dt); }
+  L.g.position.set(L.x, L.y, L.z); L.g.scale.setScalar(0.4 + 0.6 * k); L.g.rotation.z = Math.sin(L.t * 1.7) * 0.12;
+  lanternLight.position.set(L.x, L.y, L.z);
 }
 
 // ───────────────────────── reloj (el día y la noche están en 01-core.js) ─────────────────────────
@@ -3476,11 +3626,13 @@ function frame(now) {
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
   resize(); clock += dt; updateDay(dt);
-  const glow = 0.3 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco: que se vea
+  const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
+  houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
+  if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
-  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
