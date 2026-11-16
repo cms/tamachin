@@ -61,7 +61,14 @@ module.exports = {
     const rab = await E(() => { const r = window.__dbg.creatures.find((c) => c.kind === 'conejo'), p = window.__dbg.player.pos; return Math.hypot(r.pos.x - p.x, r.pos.z - p.z); });
     T.check('el conejo lo sigue hasta el portón del parque', w1 && rab < 6, rab.toFixed(1) + ' m');
     await E(() => window.__walk([[0.5, -58], [-6.5, -52], [-6.8, -45], [-6.5, -38.5], [-1.2, -31], [0.5, -26], [8, -26], [24, -26], [24, 0], [24, 24], [10, 25.5], [3, 27.5]]));
-    if (await E(() => window.__dbg.quests.conejo) !== 2) { const tp = await npc('Tofu'); await E((w) => window.__walk([w]), [tp[0], tp[1] + 3]); await sleep(1500); }
+    // Tofu sigue caminando su manzana: si no llegamos a tiempo, se le persigue (como haría un jugador) hasta que el conejo quede con él.
+    // Caminar a donde estaba fallaba cuando la máquina iba lenta: al llegar, Tofu ya iba media cuadra adelante.
+    if (await E(() => window.__dbg.quests.conejo) !== 2) await E(() => new Promise((res) => {
+      const D = window.__dbg, n = D.npcs.find((q) => q.name === 'Tofu'), t0 = performance.now();
+      const id = setInterval(() => { const p = D.player.pos, dx = n.pos.x - p.x, dz = n.pos.z - p.z, d = Math.hypot(dx, dz);
+        if (D.quests.conejo === 2 || performance.now() - t0 > 40000) { D.joy.x = D.joy.y = 0; clearInterval(id); res(); return; }
+        if (d < 1.8) D.joy.x = D.joy.y = 0; else { D.joy.x = dx / d * 0.85; D.joy.y = dz / d * 0.85; } }, 30); }));
+    await sleep(600);
     let done = await E(() => window.__dbg.quests.conejo === 2 && !!window.__dbg.creatures.find((c) => c.kind === 'conejo').buddy);
     T.check('al llegar con Tofu, encargo cumplido', done, done ? undefined : await why('conejo'));
 
