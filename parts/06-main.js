@@ -895,8 +895,52 @@ function updateScenery(dt) {
   ground.position.set(Math.round(x / GRASS_P) * GRASS_P, 0, -100 + Math.round((z + 100) / GRASS_P) * GRASS_P);   // el pasto sigue a Tamachin sin que se mueva el dibujo
   windmill.rotation.z -= dt * 0.9;
   waterTex.offset.y -= dt * 0.16;
-  flames.forEach((f, i) => { const k = 1 + Math.sin(clock * (9 + i * 3) + i) * 0.16; f.scale.y = (1.1 - i * 0.2) * k; f.rotation.y += dt * 2; });
+  updateCampfire(dt);
   for (const c of clouds) { c.position.x += dt * 1.2; if (c.position.x > 300) c.position.x = -300; }
+}
+
+// La fogata (03-world.js): llamas que suben, se encogen y pasan de amarillo a rojo; chispas sueltas; humo gris que crece, se lo lleva
+// el viento y se desvanece (de noche más oscuro y, abajo, teñido por el fuego). Solo se mueve con Tamachin cerca.
+const SMOKE_DAY = new THREE.Color(0.66, 0.66, 0.68), SMOKE_NIGHT = new THREE.Color(0.42, 0.44, 0.53), SMOKE_FIRE = new THREE.Color(0.85, 0.5, 0.3), _sm = new THREE.Color();
+const WIND = { x: 0.32, z: -0.12 };
+function updateCampfire(dt) {
+  const F = campfire, near = Math.hypot(player.pos.x - CAMP.x, player.pos.z - CAMP.z) < 110;
+  if (near !== F.on) { F.on = near; for (const o of [F.flames.pts, F.core.pts, F.sparks.pts, F.smoke.pts, F.glow]) o.visible = near; }
+  if (!near) return;
+  const night = 1 - day.light, flick = 0.85 + 0.1 * Math.sin(clock * 13) + 0.06 * Math.sin(clock * 29 + 1);
+  F.embers.material.color.setScalar(0.75 + 0.25 * Math.sin(clock * 3.1)); F.glow.material.opacity = (0.16 + 0.6 * night) * flick;
+  const put = (S, i, p, size, alpha, r, g, b) => { const a = S.a; a.position.setXYZ(i, p.x, p.y, p.z); a.size.setX(i, size); a.alpha.setX(i, alpha); a.tint.setXYZ(i, r, g, b); a.spin.setX(i, p.sp); };
+  // llamas: lenguas naranjas que suben, se encogen y se vuelven rojas; encima, un centro amarillo que brilla
+  const flame = (S, base, spread, lifeA, lifeB, vyA, vyB, sA, sB) => S.list.forEach((p, i) => {
+    if (S === F.core && i === 0) { p.x = CAMP.x; p.y = 0.75; p.z = CAMP.z; p.sp = 0; put(S, 0, p, 2.6, (0.16 + 0.3 * night) * flick, 1, 0.5, 0.18); return; }   // el halo
+    p.t += dt;
+    if (p.t >= p.life) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * spread; Object.assign(p, { t: 0, life: rand(lifeA, lifeB), x: CAMP.x + Math.cos(a) * r, y: base, z: CAMP.z + Math.sin(a) * r,
+      vx: -Math.cos(a) * r * 0.6, vz: -Math.sin(a) * r * 0.6, vy: rand(vyA, vyB), s0: rand(sA, sB), sp: rand(-0.3, 0.3) }); }
+    const k = p.t / p.life; p.x += (p.vx + WIND.x * 0.3 * k) * dt; p.z += (p.vz + WIND.z * 0.3 * k) * dt; p.y += p.vy * dt * (1 - 0.25 * k);
+    const size = p.s0 * (1 - 0.65 * k) * Math.min(1, k / 0.1 + 0.4), alpha = Math.min(1, k / 0.07) * Math.pow(1 - k, 1.1) * flick;
+    if (S === F.flames) put(S, i, p, size, alpha * 0.92, 1, lerp(0.62, 0.22, k), lerp(0.16, 0.04, k));
+    else put(S, i, p, size, alpha * 0.85, 1, lerp(0.95, 0.6, k), lerp(0.7, 0.2, k));
+  });
+  flame(F.flames, 0.28, 0.3, 0.5, 1.0, 1.0, 1.6, 0.7, 1.1);
+  flame(F.core, 0.28, 0.18, 0.35, 0.7, 0.9, 1.4, 0.45, 0.7);
+  // chispas: de vez en cuando una, que sube rápido y culebrea
+  F.sparkT -= dt;
+  F.sparks.list.forEach((p, i) => {
+    if (p.t >= p.life && F.sparkT <= 0) { F.sparkT = rand(0.08, 0.35); Object.assign(p, { t: 0, life: rand(0.8, 1.7), x: CAMP.x + rand(-0.2, 0.2), y: 0.5, z: CAMP.z + rand(-0.2, 0.2), vy: rand(1.6, 3), sp: 0 }); }
+    p.t += dt; const k = Math.min(1, p.t / p.life);
+    p.x += (Math.sin(p.t * 9 + p.ph) * 0.5 + WIND.x * 0.5) * dt; p.z += (Math.cos(p.t * 7 + p.ph) * 0.5 + WIND.z * 0.5) * dt; p.y += p.vy * dt * (1 - 0.5 * k);
+    put(F.sparks, i, p, 0.09, k >= 1 ? 0 : (1 - k) * (0.6 + 0.4 * Math.sin(p.t * 25)), 1, 0.72, 0.3);
+  });
+  // humo
+  F.smoke.list.forEach((p, i) => {
+    p.t += dt;
+    if (p.t >= p.life) Object.assign(p, { t: 0, life: rand(5, 7.5), x: CAMP.x + rand(-0.15, 0.15), y: 0.95, z: CAMP.z + rand(-0.15, 0.15), vy: rand(0.5, 0.75), s0: rand(0.45, 0.65), sp: rand(0, TAU), vx: rand(-0.12, 0.12) });
+    const k = p.t / p.life, sway = Math.sin(p.t * 0.9 + p.ph) * 0.18;
+    p.x += (WIND.x * k * 1.3 + p.vx + sway) * dt; p.z += (WIND.z * k * 1.3) * dt; p.y += p.vy * dt * (1 - 0.35 * k); p.sp += dt * 0.25;
+    _sm.copy(SMOKE_DAY).lerp(SMOKE_NIGHT, night).lerp(SMOKE_FIRE, night * 0.6 * Math.max(0, 1 - k * 4));
+    put(F.smoke, i, p, p.s0 + 2.3 * k, Math.min(1, k / 0.15) * Math.pow(1 - k, 1.4) * 0.38, _sm.r, _sm.g, _sm.b);
+  });
+  for (const S of [F.flames, F.core, F.sparks, F.smoke]) for (const k in S.a) S.a[k].needsUpdate = true;
 }
 
 function zoneName() {
@@ -1041,7 +1085,7 @@ function hourParam() {
 function resize() {
   const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
   if (w === VW && h === VH) return; VW = w; VH = h;
-  renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 48; camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false); FIRE_H.value = h * renderer.getPixelRatio() / 2; camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 48; camera.updateProjectionMatrix();
   updMore(panelEl); updMore(diaryEl);
   document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px');   // en teléfono la barra de arriba ocupa varias filas
 }

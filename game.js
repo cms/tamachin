@@ -1599,13 +1599,67 @@ for (const sx of [-1, 1]) solidBox(BR.x + sx * 1.63, BR.x + sx * 1.93, BR.z - 7,
 // claro con fogata
 const CAMP = CLEAR[0];
 for (let a = 0; a < TAU; a += 0.62) forestB.rock('#aaa397', CAMP.x + Math.cos(a) * 0.95, 0.14, CAMP.z + Math.sin(a) * 0.95, 0.24, 0.2, 0.22, a);
-forestB.cyl(TRUNK, CAMP.x, 0.2, CAMP.z, 0.11, 0.11, 1.3, 7, Math.PI / 2, 0.5).cyl(TRUNK, CAMP.x, 0.26, CAMP.z, 0.11, 0.11, 1.3, 7, Math.PI / 2, -0.7).cyl('#5f3d22', CAMP.x, 0.32, CAMP.z, 0.1, 0.1, 1.2, 7, 0.2, Math.PI / 2);
+// fogata: seis troncos en tipi (con la punta quemada) sobre ceniza y carbón; dos leños de repuesto al lado. Llamas, chispas y humo
+// son partículas (campfire, abajo; se mueven en updateCampfire, 06-main.js).
+{ const lean = -Math.atan2(0.5, 0.78), LOG = new Batch().cyl('#5d3a22', 0, 0.39, 0.25, 0.06, 0.085, 1.05, 7, lean).cyl('#231a16', 0, 0.706, 0.048, 0.058, 0.068, 0.3, 7, lean);
+  for (let k = 0; k < 6; k++) forestB.merge(LOG, CAMP.x, 0, CAMP.z, k * TAU / 6 + 0.3);
+  forestB.cyl('#4b4541', CAMP.x, 0.035, CAMP.z, 0.78, 0.82, 0.07, 18).cyl('#2e2a28', CAMP.x, 0.075, CAMP.z, 0.5, 0.56, 0.03, 16);
+  forestB.cyl('#6b4a35', CAMP.x - 0.2, 0.1, CAMP.z + 1.45, 0.09, 0.1, 0.95, 8, Math.PI / 2, 1.35).cyl('#5d3a22', CAMP.x + 0.1, 0.1, CAMP.z + 1.68, 0.08, 0.09, 0.85, 8, Math.PI / 2, 1.75); }
 solidCircle(CAMP.x, CAMP.z, 1.1);
 for (const q of [[-3.6, 0.6, 0.3], [3.2, 1.6, -0.5], [0.4, 3.9, 1.5]]) { forestB.cyl(TRUNK, CAMP.x + q[0], 0.36, CAMP.z + q[1], 0.36, 0.36, 2.2, 10, Math.PI / 2, q[2]); solidCircle(CAMP.x + q[0], CAMP.z + q[1], 0.75); }
 const STUMP = { x: CAMP.x + 4.2, z: CAMP.z - 3.2 };
 forestB.cyl(TRUNK, STUMP.x, 0.55, STUMP.z, 0.5, 0.62, 1.1, 12).cyl('#d9b98a', STUMP.x, 1.11, STUMP.z, 0.46, 0.46, 0.03, 12); solidCircle(STUMP.x, STUMP.z, 0.66);   // encima vive el búho
-const flames = [];
-for (let i = 0; i < 3; i++) { const m = new THREE.Mesh(gCone(8), new THREE.MeshBasicMaterial({ color: [0xff7a1a, 0xffb81f, 0xffe46b][i] })); m.position.set(CAMP.x + [0, 0.18, -0.12][i], 0.7, CAMP.z + [0, 0.1, -0.1][i]); m.scale.set(0.42 - i * 0.1, 1.1 - i * 0.2, 0.42 - i * 0.1); scene.add(m); flames.push(m); }
+// Partículas de la fogata: tres Points con un shader propio (tamaño en metros, color, opacidad y giro por partícula), una llamada de dibujo
+// cada uno: las llamas tapan (normal: de día, sumar luz sobre el suelo claro las borraba), su centro y las chispas suman luz (aditivo), el
+// humo tapa. No se pueden tocar con el rayo de las pruebas (raycast vacío).
+const FIRE_VS = `attribute float size; attribute float alpha; attribute vec3 tint; attribute float spin;
+varying float vA; varying vec3 vT; varying float vS; uniform float uH;
+#include <fog_pars_vertex>
+void main() { vA = alpha; vT = tint; vS = spin; vec4 mvPosition = modelViewMatrix * vec4(position, 1.0);
+  gl_PointSize = size * projectionMatrix[1][1] * uH / -mvPosition.z; gl_Position = projectionMatrix * mvPosition;
+  #include <fog_vertex>
+}`;
+const FIRE_FS = `uniform sampler2D map; varying float vA; varying vec3 vT; varying float vS;
+#include <fog_pars_fragment>
+void main() { vec2 p = gl_PointCoord - 0.5; float c = cos(vS), s = sin(vS); p = vec2(c * p.x - s * p.y, s * p.x + c * p.y) + 0.5;
+  vec4 t = texture2D(map, vec2(p.x, 1.0 - p.y)); gl_FragColor = vec4(t.rgb * vT, t.a * vA); if (gl_FragColor.a < 0.003) discard;
+  #include <fog_fragment>
+}`;
+const FIRE_H = { value: 400 };                                   // la mitad del alto de la imagen en pixeles (06-main.js, resize)
+function fireParts(n, tex, blending) {
+  const g = new THREE.BufferGeometry(), A = { position: 3, size: 1, alpha: 1, tint: 3, spin: 1 };
+  for (const k in A) g.setAttribute(k, new THREE.BufferAttribute(new Float32Array(n * A[k]), A[k]));
+  const m = new THREE.ShaderMaterial({ vertexShader: FIRE_VS, fragmentShader: FIRE_FS, transparent: true, depthWrite: false, blending, fog: true,
+    uniforms: THREE.UniformsUtils.merge([THREE.UniformsLib.fog, { map: { value: null }, uH: { value: 400 } }]) });
+  m.uniforms.map.value = tex; m.uniforms.uH = FIRE_H;
+  const pts = new THREE.Points(g, m); pts.frustumCulled = false; pts.raycast = () => {}; scene.add(pts);
+  return { pts, a: g.attributes, list: Array.from({ length: n }, () => ({ t: 1, life: 0, x: 0, y: 0, z: 0, vx: 0, vy: 0, vz: 0, s0: 0, sp: 0, ph: rand(0, TAU) })) };
+}
+const campfire = (() => {
+  const blob = canvasTex(64, 64, (g) => {                                 // llama: una gota suave, blanca (el color lo da tint)
+    for (const [y, sy, r, a] of [[38, 1.3, 24, 0.7], [30, 1.6, 15, 0.9]]) {
+      g.save(); g.translate(32, y); g.scale(1, sy); const gr = g.createRadialGradient(0, 0, 0, 0, 0, r);
+      gr.addColorStop(0, 'rgba(255,255,255,' + a + ')'); gr.addColorStop(0.5, 'rgba(255,255,255,' + a * 0.55 + ')'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(-32, -32, 64, 64); g.restore();
+    }
+  });
+  const puff = canvasTex(64, 64, (g) => {                                 // humo: bolitas encimadas, más densas al centro
+    const R = mulberry(5309);
+    for (let i = 0; i < 9; i++) { const x = 32 + (R() - 0.5) * 22, y = 32 + (R() - 0.5) * 22, r = 12 + R() * 12, gr = g.createRadialGradient(x, y, 0, x, y, r);
+      gr.addColorStop(0, 'rgba(255,255,255,.42)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); }
+  });
+  const flames = fireParts(34, blob, THREE.NormalBlending), core = fireParts(15, blob, THREE.AdditiveBlending), sparks = fireParts(14, skyDot, THREE.AdditiveBlending), smoke = fireParts(16, puff, THREE.NormalBlending);
+  core.pts.renderOrder = 1; smoke.pts.renderOrder = 2;                     // el centro brilla encima de las llamas; el humo, al final
+  for (const p of smoke.list) p.t = rand(0, 6);                           // que no salga todo junto al llegar
+  // brasas que laten en el carbón y un resplandor en el suelo (más fuerte de noche)
+  const R = mulberry(4711), eb = new Batch();
+  for (let i = 0; i < 16; i++) { const a = R() * TAU, r = Math.sqrt(R()) * 0.42; eb.ico(R() < 0.5 ? '#ff7a2a' : '#ffb347', CAMP.x + Math.cos(a) * r, 0.09, CAMP.z + Math.sin(a) * r, 0.05 + R() * 0.05, 0.03, 0.05 + R() * 0.05, 0); }
+  const embers = new THREE.Mesh(eb.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true })); embers.raycast = () => {}; scene.add(embers);
+  const glowTex = canvasTex(128, 128, (g) => { const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.35, 'rgba(255,255,255,.5)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 128, 128); });
+  const glow = new THREE.Mesh(new THREE.PlaneGeometry(8, 8).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: glowTex, color: 0xff9a3c, transparent: true, opacity: 0.2,
+    blending: THREE.AdditiveBlending, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  glow.position.set(CAMP.x, 0.06, CAMP.z); glow.raycast = () => {}; scene.add(glow);
+  return { flames, core, sparks, smoke, embers, glow, on: true, sparkT: 0 };
+})();
 forestB.cyl(TRUNK, -22, 0.4, -176, 0.4, 0.45, 5, 10, Math.PI / 2, 0.4); solidBox(-24.4, -19.6, -177, -175);
 forestB.cyl(TRUNK, 24, 0.4, -250, 0.4, 0.45, 4.4, 10, Math.PI / 2, -0.9); solidBox(22.2, 25.8, -251.6, -248.4);
 // arbustos de bayas: se comen y vuelven a crecer. Tienen su propia semilla para no mover nada de lo que se generó antes.
@@ -3457,8 +3511,52 @@ function updateScenery(dt) {
   ground.position.set(Math.round(x / GRASS_P) * GRASS_P, 0, -100 + Math.round((z + 100) / GRASS_P) * GRASS_P);   // el pasto sigue a Tamachin sin que se mueva el dibujo
   windmill.rotation.z -= dt * 0.9;
   waterTex.offset.y -= dt * 0.16;
-  flames.forEach((f, i) => { const k = 1 + Math.sin(clock * (9 + i * 3) + i) * 0.16; f.scale.y = (1.1 - i * 0.2) * k; f.rotation.y += dt * 2; });
+  updateCampfire(dt);
   for (const c of clouds) { c.position.x += dt * 1.2; if (c.position.x > 300) c.position.x = -300; }
+}
+
+// La fogata (03-world.js): llamas que suben, se encogen y pasan de amarillo a rojo; chispas sueltas; humo gris que crece, se lo lleva
+// el viento y se desvanece (de noche más oscuro y, abajo, teñido por el fuego). Solo se mueve con Tamachin cerca.
+const SMOKE_DAY = new THREE.Color(0.66, 0.66, 0.68), SMOKE_NIGHT = new THREE.Color(0.42, 0.44, 0.53), SMOKE_FIRE = new THREE.Color(0.85, 0.5, 0.3), _sm = new THREE.Color();
+const WIND = { x: 0.32, z: -0.12 };
+function updateCampfire(dt) {
+  const F = campfire, near = Math.hypot(player.pos.x - CAMP.x, player.pos.z - CAMP.z) < 110;
+  if (near !== F.on) { F.on = near; for (const o of [F.flames.pts, F.core.pts, F.sparks.pts, F.smoke.pts, F.glow]) o.visible = near; }
+  if (!near) return;
+  const night = 1 - day.light, flick = 0.85 + 0.1 * Math.sin(clock * 13) + 0.06 * Math.sin(clock * 29 + 1);
+  F.embers.material.color.setScalar(0.75 + 0.25 * Math.sin(clock * 3.1)); F.glow.material.opacity = (0.16 + 0.6 * night) * flick;
+  const put = (S, i, p, size, alpha, r, g, b) => { const a = S.a; a.position.setXYZ(i, p.x, p.y, p.z); a.size.setX(i, size); a.alpha.setX(i, alpha); a.tint.setXYZ(i, r, g, b); a.spin.setX(i, p.sp); };
+  // llamas: lenguas naranjas que suben, se encogen y se vuelven rojas; encima, un centro amarillo que brilla
+  const flame = (S, base, spread, lifeA, lifeB, vyA, vyB, sA, sB) => S.list.forEach((p, i) => {
+    if (S === F.core && i === 0) { p.x = CAMP.x; p.y = 0.75; p.z = CAMP.z; p.sp = 0; put(S, 0, p, 2.6, (0.16 + 0.3 * night) * flick, 1, 0.5, 0.18); return; }   // el halo
+    p.t += dt;
+    if (p.t >= p.life) { const a = rand(0, TAU), r = Math.sqrt(Math.random()) * spread; Object.assign(p, { t: 0, life: rand(lifeA, lifeB), x: CAMP.x + Math.cos(a) * r, y: base, z: CAMP.z + Math.sin(a) * r,
+      vx: -Math.cos(a) * r * 0.6, vz: -Math.sin(a) * r * 0.6, vy: rand(vyA, vyB), s0: rand(sA, sB), sp: rand(-0.3, 0.3) }); }
+    const k = p.t / p.life; p.x += (p.vx + WIND.x * 0.3 * k) * dt; p.z += (p.vz + WIND.z * 0.3 * k) * dt; p.y += p.vy * dt * (1 - 0.25 * k);
+    const size = p.s0 * (1 - 0.65 * k) * Math.min(1, k / 0.1 + 0.4), alpha = Math.min(1, k / 0.07) * Math.pow(1 - k, 1.1) * flick;
+    if (S === F.flames) put(S, i, p, size, alpha * 0.92, 1, lerp(0.62, 0.22, k), lerp(0.16, 0.04, k));
+    else put(S, i, p, size, alpha * 0.85, 1, lerp(0.95, 0.6, k), lerp(0.7, 0.2, k));
+  });
+  flame(F.flames, 0.28, 0.3, 0.5, 1.0, 1.0, 1.6, 0.7, 1.1);
+  flame(F.core, 0.28, 0.18, 0.35, 0.7, 0.9, 1.4, 0.45, 0.7);
+  // chispas: de vez en cuando una, que sube rápido y culebrea
+  F.sparkT -= dt;
+  F.sparks.list.forEach((p, i) => {
+    if (p.t >= p.life && F.sparkT <= 0) { F.sparkT = rand(0.08, 0.35); Object.assign(p, { t: 0, life: rand(0.8, 1.7), x: CAMP.x + rand(-0.2, 0.2), y: 0.5, z: CAMP.z + rand(-0.2, 0.2), vy: rand(1.6, 3), sp: 0 }); }
+    p.t += dt; const k = Math.min(1, p.t / p.life);
+    p.x += (Math.sin(p.t * 9 + p.ph) * 0.5 + WIND.x * 0.5) * dt; p.z += (Math.cos(p.t * 7 + p.ph) * 0.5 + WIND.z * 0.5) * dt; p.y += p.vy * dt * (1 - 0.5 * k);
+    put(F.sparks, i, p, 0.09, k >= 1 ? 0 : (1 - k) * (0.6 + 0.4 * Math.sin(p.t * 25)), 1, 0.72, 0.3);
+  });
+  // humo
+  F.smoke.list.forEach((p, i) => {
+    p.t += dt;
+    if (p.t >= p.life) Object.assign(p, { t: 0, life: rand(5, 7.5), x: CAMP.x + rand(-0.15, 0.15), y: 0.95, z: CAMP.z + rand(-0.15, 0.15), vy: rand(0.5, 0.75), s0: rand(0.45, 0.65), sp: rand(0, TAU), vx: rand(-0.12, 0.12) });
+    const k = p.t / p.life, sway = Math.sin(p.t * 0.9 + p.ph) * 0.18;
+    p.x += (WIND.x * k * 1.3 + p.vx + sway) * dt; p.z += (WIND.z * k * 1.3) * dt; p.y += p.vy * dt * (1 - 0.35 * k); p.sp += dt * 0.25;
+    _sm.copy(SMOKE_DAY).lerp(SMOKE_NIGHT, night).lerp(SMOKE_FIRE, night * 0.6 * Math.max(0, 1 - k * 4));
+    put(F.smoke, i, p, p.s0 + 2.3 * k, Math.min(1, k / 0.15) * Math.pow(1 - k, 1.4) * 0.38, _sm.r, _sm.g, _sm.b);
+  });
+  for (const S of [F.flames, F.core, F.sparks, F.smoke]) for (const k in S.a) S.a[k].needsUpdate = true;
 }
 
 function zoneName() {
@@ -3603,7 +3701,7 @@ function hourParam() {
 function resize() {
   const w = canvas.clientWidth || window.innerWidth, h = canvas.clientHeight || window.innerHeight;
   if (w === VW && h === VH) return; VW = w; VH = h;
-  renderer.setSize(w, h, false); camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 48; camera.updateProjectionMatrix();
+  renderer.setSize(w, h, false); FIRE_H.value = h * renderer.getPixelRatio() / 2; camera.aspect = w / h; camera.fov = w / h < 0.8 ? 60 : 48; camera.updateProjectionMatrix();
   updMore(panelEl); updMore(diaryEl);
   document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px');   // en teléfono la barra de arriba ocupa varias filas
 }
