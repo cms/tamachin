@@ -71,7 +71,7 @@ const SUN_OFF = new THREE.Vector3(38, 58, 42);              // de Tamachin hacia
 // La luna alumbra con la misma luz que el sol: se cambian cuando las dos pasan por cero, en el crepúsculo. Nunca se agrega ni se quita
 // una luz con sombra (en r128 eso recompila todos los materiales y el juego se traba).
 const DAY = { rise: 5, set: 20, start: 8, rate: 1 / 60 };   // rate: horas de juego por segundo
-const day = { h: DAY.start, light: 1, warm: 0, stars: 0, lamps: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
+const day = { h: DAY.start, n: 1, light: 1, warm: 0, stars: 0, lamps: 0 };   // n: qué día es (sube cada mañana, a las 5; 06-main.js)   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
 // hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
 const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
 const SKY_DAY = [0x3f9ef5, 0x9bd6ff, 0xd6f0ff, 0xf2f9ff, 0xb6c296, 0.58, 0xffffff, 1, 0];
@@ -517,6 +517,11 @@ const INST = {
   },
   shaker(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'highpass', 6500, 0.7, 0.05); },
   snap(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'bandpass', 1900, 1.3, 0.1); },
+  drum(E, d, t, m, dur, v) {   // bombo: un tono que cae rápido y un golpecito de ruido
+    const c = E.ctx, o = osc(c, 'sine', 120, t, t + 0.3), g = c.createGain(); o.frequency.setValueAtTime(120, t); o.frequency.exponentialRampToValueAtTime(48, t + 0.16);
+    env(g, t, v, 0.003, 0.28); o.connect(g); g.connect(d); noiseHit(E, d, t, v * 0.25, 'lowpass', 900, 0.7, 0.03);
+  },
+  snare(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'bandpass', 2400, 0.8, 0.11); const o = osc(E.ctx, 'triangle', 190, t, t + 0.08), g = E.ctx.createGain(); env(g, t, v * 0.5, 0.002, 0.07); o.connect(g); g.connect(d); },   // redoblante, suavecito
 };
 // Armonía: acordes por nombre ('C', 'Am', 'D7'), cada nota en la octava que empieza en `lo` (así no saltan de un acorde a otro).
 const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, CHORD_Q = { '': [0, 4, 7], m: [0, 3, 7], 7: [0, 4, 7, 10], add9: [0, 4, 7, 14] }, SCALE = [0, 2, 4, 5, 7, 9, 11];
@@ -608,13 +613,16 @@ const MUSIC = {
       else if (s % 2 === 0 && Math.random() < 0.3 * (1 - few)) INST.bell(E, L.bell, t, choose(voicing(ch, 72)) + K, 0, rand(0.5, 0.9));
     } },
   pueblo: { bpm: 150, swing: 0, wet: 0.3, vol: 0.155, key: 9, meter: 6, low: { chords: 0.3, shk: 0 },   // vals en la: acordeón con el tema en 3/4, bajo en el uno, acordes en el dos y el tres; suena más cerca del kiosco
-    layers: { mel: { vol: 0.12, pan: 0.1 }, chords: { vol: 0.05, pan: -0.25 }, bass: { vol: 0.25 }, bell: { vol: 0.3, pan: 0.3 }, shk: { vol: 0.6, pan: 0.2 } },
+    layers: { mel: { vol: 0.12, pan: 0.1 }, chords: { vol: 0.05, pan: -0.25 }, bass: { vol: 0.25 }, bell: { vol: 0.3, pan: 0.3 }, shk: { vol: 0.6, pan: 0.2 }, drum: { vol: 0.4, pan: 0.25 } },
     step(E, L, i, t, sd) {
       const K = -3, s = i % 6, bar = Math.floor(i / 6) % 16, pass = Math.floor(i / 96) % 3, ch = PROG_W[bar], n = MEL_W[i % 96], v0 = 0.5 + 0.5 * (E.param.near == null ? 1 : E.param.near);
+      if (s === 0) { E.beat0 = t; E.beatLen = 6 * sd; }   // dónde cae el uno: los músicos del kiosco se mueven con esto (06-main.js)
+      if (E.param.band && (s === 0 || s === 2 || s === 4)) { (s ? INST.snare : INST.drum)(E, L.drum, t, 0, 0, v0 * E.param.band * (s ? 0.35 : 1)); E.drumHits = (E.drumHits || 0) + 1; }   // la banda: bum, cha, cha
       if (n) {
         const [m, d] = n; INST.accordion(E, L.mel, t, m + K, d * sd, v0 * (s ? 0.85 : 1));
         const h = pass === 1 ? harmonyBelow(m, ch) : null; if (h !== null) INST.accordion(E, L.mel, t, h + K, d * sd, v0 * 0.45);   // segunda vuelta: a dos voces
         if (pass === 2) INST.bell(E, L.bell, t, m + K + 12, 0, v0 * 0.6);   // tercera: con campanita
+        if (E.param.band) INST.horn(E, L.mel, t, m + K, d * sd * 0.9, v0 * 0.42 * E.param.band);   // de 7 a 10 de la noche toca la banda: trompeta con el acordeón
       }
       if (s === 0) INST.bass(E, L.bass, t, rootIn(ch, 45) + K + (bar % 2 ? 7 : 0), sd * 1.6, v0);   // raíz y quinta, compás por compás
       else if (s === 2 || s === 4) for (const m of voicing(ch, 57)) INST.accordion(E, L.chords, t, m + K, sd * 0.7, v0 * (s === 2 ? 1 : 0.8));

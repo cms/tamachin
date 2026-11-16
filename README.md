@@ -89,8 +89,8 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 ## Cuidados y encargos
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
-- Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada), la hora del día y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+- Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. De noche, el búho pide ver el amanecer desde una cima (entre las 5 y las 6:30) y Musgo, junto a la fogata, atrapar diez luciérnagas (tocándolas o pasando junto a ellas): quedan brillando en un frasco sobre la mesa de la casa. El diario los lista.
+- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada), la hora y el día, las luciérnagas atrapadas y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
 
 ## Día y noche
 
@@ -101,6 +101,9 @@ Un día dura 24 minutos: una hora del juego es un minuto. Amanece a las 5 y oscu
 - Al oscurecer se prenden las ventanas de los edificios y de la casa, los faroles (con su círculo de luz en el suelo) y las lámparas de adentro, y Tamachin lleva un farolito que flota a su lado.
 - Dormir de noche (de 8 de la noche a 5 de la mañana, en su cama o en la hamaca) lo lleva hasta las 7 de la mañana en unos segundos y se despierta solo, con la energía llena. De día es una siesta.
 - De noche las mariposas se esconden, salen luciérnagas en el jardín, el parque, el camino y los bosques, y los vecinos a veces hablan de la noche.
+- A ciertas horas: el mercado de Valle Alegre abre de 8 de la mañana a 7 de la noche (cerrado, la fruta se tapa y Lila se duerme en su puesto); de 7 a 10 de la noche toca la banda en el kiosco (tres músicos con acordeón, trompeta y tambor, cinco vecinos bailan alrededor y el vals lleva trompeta); el búho del claro duerme de día y platica de noche.
+- De noche, de vez en cuando, cruza una estrella fugaz por arriba de la pantalla: tocarla pide un deseo (diversión y un ánimo alegre).
+- El diario dice qué día es («Día 3»): sube cada mañana, a las 5.
 - El reloj es analógico: la manecilla larga da una vuelta por minuto. De noche la carátula se pone azul y sale la luna.
 - Para probar una hora: `?hora=21` o `?hora=21:30` en la dirección (por ejemplo `https://tamachin.matteo.games/?hora=21`). Desde ahí sigue corriendo y se guarda.
 

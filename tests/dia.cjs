@@ -1,7 +1,8 @@
 // El día y la noche: un día de 24 minutos, el reloj analógico, la luz y el cielo a cada hora, y que la hora se guarde.
 const { openGame, sleep, PHONE } = require('./lib.cjs');
 
-const EXPOSE = 'day, setHour, DAY, hemi, sun, SUN_OFF, skyMesh, skyStars, skyMoon, skySun, renderer, scene, camera, pScreen, lampMeshes, lantern, lanternLight, LIT_WALLS, LAMPS, butterflies, fireflies, house, needs, player';
+const EXPOSE = 'day, setHour, DAY, hemi, sun, SUN_OFF, skyMesh, skyStars, skyMoon, skySun, renderer, scene, camera, pScreen, lampMeshes, lantern, lanternLight, LIT_WALLS, LAMPS, butterflies, fireflies, house, needs, player,'
+  + ' quests, npcs, interacts, talkTo, TOWN, TOWN_Z, PEAKS, STUMP, creatures, jar, shoot, spawnShootingStar, boxes, getMus: () => mus';
 // brillo medio de la imagen y de Tamachin (luma de 0 a 255), leyendo lo que se acaba de dibujar
 const LUMA = () => {
   const D = window.__dbg; D.renderer.render(D.scene, D.camera);
@@ -99,6 +100,7 @@ module.exports = {
     const inHouse = await E(() => { const D = window.__dbg; return { front: D.house.glowFront.map((m) => m.visible), hemi: D.hemi.color.getHexString() }; });
     T.check('adentro de noche: sin ventanas flotando y con luz cálida', inHouse.front.every((v) => !v) && parseInt(inHouse.hemi.slice(0, 2), 16) > parseInt(inHouse.hemi.slice(4), 16), JSON.stringify(inHouse));
     // de noche se duerme hasta las 7 de la mañana y se despierta solo, con la energía llena
+    const n0 = await E(() => window.__dbg.day.n);   // las pruebas saltan de hora en hora: el día ya pudo haber subido
     await E(() => { window.__dbg.needs.energia = 0.2; window.__tamachin.go(-2.8, -10.5); }); await sleep(800); await page.keyboard.press('KeyE'); await sleep(300);
     const s0 = await E(() => [window.__dbg.player.state, window.__dbg.player.nightSleep]), t0 = Date.now();
     await page.waitForFunction(() => window.__dbg.player.state === 'normal', null, { timeout: 30000 }).catch(() => {});
@@ -106,11 +108,54 @@ module.exports = {
     T.check('dormido a las 10 de la noche, despierta solo a las 7 con la energía llena', s0[0] === 'sleep' && s0[1] && s1.state === 'normal' && s1.h >= 7 && s1.h < 7.1 && s1.energia > 0.99,
       JSON.stringify(s1) + ', en ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s');
 
+    const n1 = await E(() => window.__dbg.day.n); await page.keyboard.press('KeyJ'); await sleep(300); const dd = await page.textContent('#dDay');
+    T.check('al despertar ya es otro día, y el diario lo dice', n1 === n0 + 1 && new RegExp('^Día ' + n1 + ' · son las 7:0\\d de la mañana$').test(dd), n0 + ' → ' + n1 + ': ' + dd);
+    await page.keyboard.press('Escape');
+
+    // a ciertas horas: el mercado de Valle Alegre, el búho, la banda del kiosco
+    const label = (x, z) => E(([x, z]) => { const it = window.__dbg.interacts.find((i) => Math.hypot(i.pos.x - x, i.pos.z - z) < 0.5); return it && (typeof it.label === 'function' ? it.label() : it.label); }, [x, z]);
+    const TW = await E(() => ({ tz: window.__dbg.TOWN_Z, mz: window.__dbg.TOWN.market.z, sx: window.__dbg.TOWN.stalls[0], stump: window.__dbg.STUMP }));
+    await E(() => window.__dbg.setHour(12)); await sleep(200);
+    const mk12 = { label: await label(TW.sx, TW.mz + 2), closed: await E(() => window.__dbg.TOWN.closed.visible), owl: await label(TW.stump.x, TW.stump.z) };
+    await E(() => window.__dbg.setHour(23)); await sleep(200);
+    const mk23 = { label: await label(TW.sx, TW.mz + 2), closed: await E(() => window.__dbg.TOWN.closed.visible), lila: await E(() => window.__dbg.npcs.find((n) => n.name === 'Lila').T.mood), owl: await label(TW.stump.x, TW.stump.z) };
+    T.check('el mercado abre de día y de noche se tapa, con Lila dormida', mk12.label === 'Probar fruta del mercado' && !mk12.closed && mk23.label === 'Mercado cerrado' && mk23.closed && mk23.lila === 'dormido', JSON.stringify([mk12, mk23]));
+    T.check('de día no hay músicos en el kiosco', await E(() => { window.__dbg.setHour(12); return window.__dbg.creatures.filter((c) => c.kind === 'músico').every((c) => { c.update(0.016); return !c.T.group.visible; }); }));
+    await E(() => window.__dbg.setHour(23)); await sleep(200);
+    T.check('el búho duerme de día y platica de noche', mk12.owl === 'Búho dormido' && mk23.owl === 'Escuchar al búho', JSON.stringify([mk12.owl, mk23.owl]));
+    await E((s) => window.__tamachin.go(s.x, s.z + 2.5), TW.stump); await sleep(1200); await page.keyboard.press('KeyE'); await sleep(400);
+    T.check('de noche el búho da el encargo del amanecer', await E(() => window.__dbg.quests.amanecer) === 1);
+    await E(() => { const p = window.__dbg.PEAKS[0]; window.__dbg.setHour(5.15); window.__tamachin.go(p.x + 2, p.z); }); await sleep(2500);
+    T.check('en una cima al amanecer, encargo cumplido', await E(() => window.__dbg.quests.amanecer) === 2);
+    // Musgo y las luciérnagas: diez, pasando junto a ellas; el frasco aparece en la mesa
+    await E(() => { const D = window.__dbg, m = D.npcs.find((n) => n.name === 'Musgo'); D.setHour(22); window.__tamachin.go(m.pos.x + 1.5, m.pos.z + 1.5); }); await sleep(1500);
+    await E(() => window.__dbg.talkTo(window.__dbg.npcs.find((n) => n.name === 'Musgo'))); await sleep(2500);
+    T.check('de noche Musgo da el encargo de las luciérnagas', await E(() => window.__dbg.quests.luciernagas) === 1);
+    for (let i = 0; i < 14 && await E(() => window.__dbg.quests.luciernagas) === 1; i++) {
+      await E(() => { const D = window.__dbg, f = D.fireflies.flies.find((f) => f.born); if (f) D.player.pos.set(f.x, Math.max(0, f.y - 0.8 * D.player.T.scale), f.z); }); await sleep(250);
+    }
+    T.check('diez luciérnagas: encargo cumplido y el frasco en la mesa', await E(() => window.__dbg.quests.luciernagas === 2 && window.__dbg.jar.visible));
+    // una estrella fugaz: tocarla pide un deseo
+    await E(() => window.__tamachin.go(0, -1430)); await sleep(1200); await E(() => window.__dbg.spawnShootingStar()); await sleep(400);
+    const at = await E(() => { const v = window.__dbg.shoot.head.clone().project(window.__dbg.camera); return [(v.x * 0.5 + 0.5) * innerWidth, (-v.y * 0.5 + 0.5) * innerHeight]; });
+    const fun0 = await E(() => window.__dbg.needs.diversion); await page.mouse.click(at[0], at[1]); await sleep(300);
+    T.check('tocar la estrella fugaz pide un deseo', await E(() => window.__dbg.shoot.wished) === 1 && await E(() => window.__dbg.needs.diversion) > fun0, at.map(Math.round).join(','));
+    // la banda: de 7 a 10 de la noche cinco vecinos caminan al kiosco (sin atravesar edificios) y bailan; la música lleva trompeta
+    await page.keyboard.press('KeyZ');
+    await E((tz) => { window.__dbg.setHour(18.97); window.__tamachin.go(0, tz + 12); }, TW.tz);
+    let inside = 0;
+    for (let i = 0; i < 32; i++) { await sleep(1000); inside += await E(() => { const D = window.__dbg; return ['Tomate', 'Miel', 'Chabacano', 'Nopal', 'Brote'].filter((n) => { const q = D.npcs.find((v) => v.name === n); return D.boxes.some((b) => q.pos.x > b.x0 && q.pos.x < b.x1 && q.pos.z > b.z0 && q.pos.z < b.z1); }).length; }); }
+    const bd = await E((tz) => { const D = window.__dbg, M = D.getMus(); return { near: ['Tomate', 'Miel', 'Chabacano', 'Nopal', 'Brote'].filter((n) => { const q = D.npcs.find((v) => v.name === n); return Math.hypot(q.pos.x, q.pos.z - tz) < 9; }).length, band: M ? M.param.band : null }; }, TW.tz);
+    const mus3 = await E(() => window.__dbg.creatures.filter((c) => c.kind === 'músico' && c.T.group.visible).length);
+    T.check('en el kiosco tocan tres músicos', mus3 === 3, mus3 + ' visibles');
+    T.check('la banda: los vecinos llegan al kiosco sin atravesar edificios y la música lleva trompeta', bd.near >= 3 && inside === 0 && bd.band > 0.9, JSON.stringify(bd) + ', dentro de edificios: ' + inside);
+
     // se guarda
-    await E(() => window.__dbg.setHour(14.25)); await E(() => window.dispatchEvent(new Event('pagehide')));
+    await E(() => window.__dbg.setHour(14.25)); const nSave = await E(() => window.__dbg.day.n); await E(() => window.dispatchEvent(new Event('pagehide')));
     await page.reload(); await page.waitForFunction(() => !!window.__dbg); await sleep(800);
     const back = await E(() => window.__dbg.day.h);
     T.check('al recargar sigue a la misma hora', back >= 14.25 && back < 14.3, back.toFixed(3));
+    T.check('y el mismo día, con el frasco de luciérnagas', await E((n) => window.__dbg.day.n === n && window.__dbg.jar.visible && window.__dbg.quests.luciernagas === 2, nSave));
     T.check('sin errores', !errors.length, errors.join(' | ') || undefined);
     await ctx.close();
 

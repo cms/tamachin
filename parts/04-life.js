@@ -286,6 +286,7 @@ function makeDeer(home) {
   o.interact = () => { o.greet = 2.6; o.scare = 0; o.tx = o.pos.x; o.tz = o.pos.z; burst('heart', o.pos.x, 2.3, o.pos.z, 4); say(o, choose(['El venado te hace una reverencia.', '(te olfatea con cariño)', 'El venado agacha la cabeza para que lo acaricies.']), 2.8); SFX.nice(); };
   creatures.push(o); interacts.push({ pos: o.pos, range: 3.6, label: 'Acariciar al venado', act: o.interact, who: o });
 }
+const owlAwake = () => day.h >= 19.5 || day.h < 5.5;
 function makeOwl() {
   const b = new Batch(), C = '#9a6b45', D = '#7a5232';
   b.sph(C, 0, 0.42, 0, 0.3, 0.4, 0.28).sph('#e8cfa8', 0, 0.36, 0.14, 0.22, 0.3, 0.18).sph('#ffffff', -0.12, 0.6, 0.22, 0.11, 0.11, 0.06).sph('#ffffff', 0.12, 0.6, 0.22, 0.11, 0.11, 0.06)
@@ -293,15 +294,27 @@ function makeOwl() {
     .cone(D, -0.17, 0.84, 0, 0.07, 0.2, 5).cone(D, 0.17, 0.84, 0, 0.07, 0.2, 5).sph(D, -0.29, 0.4, 0, 0.08, 0.28, 0.2).sph(D, 0.29, 0.4, 0, 0.08, 0.28, 0.2)
     .sph('#ffb347', -0.1, 0.04, 0.12, 0.06, 0.04, 0.09).sph('#ffb347', 0.1, 0.04, 0.12, 0.06, 0.04, 0.09);
   const mesh = b.mesh(MAT_SOFT); mesh.scale.setScalar(1.3); mesh.position.set(STUMP.x, 1.12, STUMP.z); scene.add(mesh);
-  const o = { kind: 'búho', mesh, pos: mesh.position, heading: 0, li: 0, hop: 0, clickR: 0.7 };
+  // de día duerme: párpados sobre los ojos (con una rayita), y no voltea
+  const lids = new Batch().sph('#9a6b45', -0.12, 0.6, 0.235, 0.118, 0.118, 0.07).sph('#9a6b45', 0.12, 0.6, 0.235, 0.118, 0.118, 0.07)
+    .box('#5a3a22', -0.12, 0.585, 0.3, 0.15, 0.022, 0.02).box('#5a3a22', 0.12, 0.585, 0.3, 0.15, 0.022, 0.02).mesh(MAT_SOFT, false);
+  mesh.add(lids);
+  const o = { kind: 'búho', mesh, lids, pos: mesh.position, heading: 0, li: 0, hop: 0, clickR: 0.7, zzz: 0 };
   const wisdom = ['Uuh, uuh. Quien cruza con el semáforo en rojo, cruza tranquilo.', 'Uuh. El río nace en las montañas y nunca tiene prisa.', 'Uuh, uuh. Si te mareas, quédate quieto y respira.', 'Uuh. Los conejos confían en quien camina despacio.', 'Uuh, uuh. Tu casa queda al sur, siguiendo el camino.'];
   o.bubblePos = (v) => v.set(o.pos.x, o.pos.y + 1.4, o.pos.z);
   o.update = (dt) => {
-    const d = nearPlayer(o); if (d < 14) o.heading += angDiff(o.heading, Math.atan2(player.pos.x - o.pos.x, player.pos.z - o.pos.z)) * Math.min(1, dt * 3);
+    const d = nearPlayer(o), awake = owlAwake(); lids.visible = !awake;
+    if (!awake) { if (d < 16 && (o.zzz -= dt) < 0) { o.zzz = 2.2; emit('zzz', o.pos.x + 0.25, o.pos.y + 1.2, o.pos.z); } }
+    else if (d < 14) o.heading += angDiff(o.heading, Math.atan2(player.pos.x - o.pos.x, player.pos.z - o.pos.z)) * Math.min(1, dt * 3);
     o.hop = Math.max(0, o.hop - dt * 2.2); mesh.position.y = 1.12 + Math.sin(o.hop * Math.PI) * 0.3; mesh.rotation.y = o.heading; mesh.rotation.z = Math.sin(clock * 1.3) * 0.05;
   };
-  o.interact = () => { say(o, wisdom[o.li++ % wisdom.length], 4.2); o.hop = 1; tone(330, 260, 0.3, 'sine', 0.06); tone(300, 240, 0.35, 'sine', 0.06, 0.35); };
-  creatures.push(o); interacts.push({ pos: o.pos, range: 3.6, label: 'Escuchar al búho', act: o.interact, who: o });
+  // de noche (de 7:30 de la noche a 5:30 de la mañana) habla; la primera vez, del amanecer desde la cima (un encargo, 06-main.js)
+  o.interact = () => {
+    if (!owlAwake()) { say(o, choose(['Zzz… uuh… vuelve de noche…', 'Zzz… (el búho duerme de día)', 'Zzz… los búhos platicamos de noche…']), 3); emit('zzz', o.pos.x + 0.25, o.pos.y + 1.2, o.pos.z); return; }
+    if (!quests.amanecer) { say(o, 'Uuh, uuh. ¿Has visto salir el sol desde una cima? Sube antes de las 5 y espéralo allá arriba.', 5); startQuest('amanecer'); }
+    else say(o, wisdom[o.li++ % wisdom.length], 4.2);
+    o.hop = 1; tone(330, 260, 0.3, 'sine', 0.06); tone(300, 240, 0.35, 'sine', 0.06, 0.35);
+  };
+  creatures.push(o); interacts.push({ pos: o.pos, range: 3.6, label: () => (owlAwake() ? 'Escuchar al búho' : 'Búho dormido'), act: o.interact, who: o });
 }
 const butterflies = [];
 const G_WING_R = new THREE.CircleGeometry(0.17, 8).rotateX(-Math.PI / 2).translate(0.17, 0, 0), G_WING_L = new THREE.CircleGeometry(0.17, 8).rotateX(-Math.PI / 2).translate(-0.17, 0, 0);

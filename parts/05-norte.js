@@ -281,6 +281,7 @@ const townB = new Batch();
   }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; townB.box('#ffffff', Math.cos(a) * 4.45, 1.05, KZ + Math.sin(a) * 4.45, 0.12, 0.7, 3.2, -a); }
   solidCircle(0, KZ, 5.4);
+  townB.cyl('#b98552', 0, 0.8, KZ + 0.6, 2.9, 3.0, 0.32, 16).cyl('#9a6540', 0, 0.97, KZ + 0.6, 2.95, 2.95, 0.03, 16);   // tarima de la banda (06-main.js)
   for (const q of [[-12, -12], [12, -12], [-12, 12], [12, 12]]) { addStatic('oak', q[0], 0, KZ + q[1], r2(1.0, 1.15)); northCircle(q[0], KZ + q[1], 0.38); }
   for (const q of [[0, -9.6], [0, 9.6], [-9.6, 0], [9.6, 0]]) { townB.merge(PF_BENCH, q[0], 0, KZ + q[1], Math.atan2(-q[0], -q[1])); solidCircle(q[0], KZ + q[1], 0.7); }
   for (const q of [[-15, -6], [15, 6], [-6, 15], [6, -15]]) { townB.merge(PF_PLANTER, q[0], 0, KZ + q[1], 0); solidCircle(q[0], KZ + q[1], 0.8); }
@@ -295,6 +296,14 @@ const townB = new Batch();
       for (let f = 0; f < 6; f++) townB.sph(col, cx - 0.3 + (f % 3) * 0.3, 1.42, MZ + 0.2 + Math.floor(f / 3) * 0.3, col === '#3f9a46' ? 0.2 : 0.13, col === '#3f9a46' ? 0.15 : 0.13, col === '#3f9a46' ? 0.15 : 0.13, 8); }
     solidBox(sx - 2.75, sx + 2.75, MZ - 0.95, MZ + 0.95);
   });
+  // de noche (06-main.js, updateTownHours) la fruta se tapa con una lona y cuelga un letrero: abre a las 8
+  { const cb = new Batch(), closed = new THREE.Group();
+    for (const sx of TOWN.stalls) cb.rbox('#5f86b8', sx, 1.38, MZ + 0.35, 5.25, 0.5, 0.95, 0.18).rbox('#4f74a3', sx, 1.12, MZ + 0.86, 5.25, 0.5, 0.08, 0.04);
+    closed.add(cb.mesh());
+    const tex = canvasTex(512, 160, (g, W, Hh) => { g.fillStyle = '#fff8e6'; g.fillRect(0, 0, W, Hh); g.strokeStyle = '#7a5230'; g.lineWidth = 12; g.strokeRect(6, 6, W - 12, Hh - 12);
+      g.fillStyle = '#231d3b'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '900 56px Nunito, "Trebuchet MS", Arial, sans-serif'; g.fillText('Cerrado', W / 2, 58); g.font = '800 34px Nunito, "Trebuchet MS", Arial, sans-serif'; g.fillText('abre a las 8 de la mañana', W / 2, 114); });
+    for (const sx of TOWN.stalls) { const m = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 0.75), new THREE.MeshLambertMaterial({ map: tex })); m.position.set(sx, 0.55, MZ + 0.93); closed.add(m); }
+    closed.visible = false; scene.add(closed); TOWN.closed = closed; }
   // posada: casa con letrero y jardín con hamaca
   building(-16.5, -3.5, TOWN_Z - 58, TOWN_Z - 46, 7, [{ x: -10, z: TOWN_Z - 46, ry: 0, w: 13 }], R);
   { const H = TOWN.hammock;

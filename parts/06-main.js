@@ -66,6 +66,8 @@ const QUESTS = {
   fuente: { title: 'Un paseo con Lulú', hint: 'Lulú camina contigo: llévala hasta la fuente del parque, al norte de tu casa.', done: 'Lulú se quedó admirando la fuente.' },
   gelatina: { title: 'Gelatina para Nube', hint: 'Saca una gelatina del refri y llévasela a Nube, en la manzana al este de tu casa.', done: 'Nube probó su gelatina y ya no tiene sueño.' },
   cumbres: { title: 'Tres cumbres', hint: 'Sube a los picos Malvavisco, Gelatina y Turrón, al norte del bosque. Cada cima tiene una bandera.', done: 'Subiste a las tres cimas.', progress: () => summits.length + ' de 3' },
+  amanecer: { title: 'El amanecer desde la cima', hint: 'Sube a una de las tres cimas y quédate ahí entre las 5 y las 6:30 de la mañana, cuando sale el sol. Dormido no cuenta: se despierta a las 7.', done: 'Viste salir el sol desde la cima.' },
+  luciernagas: { title: 'Diez luciérnagas', hint: 'De noche, toca las luciérnagas o pasa junto a ellas (en el jardín, el parque, el camino y los bosques). Musgo te dará un frasco para que brillen en tu casa.', done: 'Diez luciérnagas brillan en un frasco sobre tu mesa.', progress: () => fliesCaught + ' de 10' },
   frutas: { title: 'Las siete frutas', hint: 'Prueba naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas del bosque sin fin, al norte de Valle Alegre.', done: 'Probaste las siete frutas del bosque sin fin.', progress: () => fruitsTasted.length + ' de 7' },
 };
 function reachSummit(p) {
@@ -88,7 +90,8 @@ function discover(zone) {
     bosque: 'El bosque sin fin: mientras más caminas, más bosque hay. Está lleno de fruta.' };
   toast(T[zone], 5); gain('diversion', 0.12);
 }
-const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0 };
+const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0, amanecer: 0, luciernagas: 0 };
+let fliesCaught = 0;
 const summits = [], fruitsTasted = [];          // nombres de las cimas alcanzadas y frutas probadas (claves de FRUITS)
 function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
 function finishQuest(id, quiet) {   // quiet: ya sonó otra cosa (la fanfarria de la tercera cima)
@@ -101,7 +104,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3) }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -310,7 +313,8 @@ interacts.push({ pos: { x: 2.5, z: 15.4 }, range: 1.7, label: 'Abrir el buzón',
   if (!quests.peces) { say(player, 'Una carta: «Ven al bosque, hay peces saltarines».', 3.2); startQuest('peces'); SFX.pop(); return; }
   say(player, choose(['Una carta: «Ven al bosque, hay peces saltarines».', 'Una postal del búho: «Uuh, uuh».', 'Un volante: «Gelatina a mitad de precio».', 'El buzón está vacío… ¡y huele a flores!']), 3.2); SFX.pop(); } });
 interacts.push({ pos: TOWN.hammock, range: 2.6, label: 'Descansar en la hamaca', act: () => goSleep('hamaca') });
-for (const sx of TOWN.stalls) interacts.push({ pos: { x: sx, z: TOWN.market.z + 2.0 }, range: 3.6, label: 'Probar fruta del mercado', act: () => eatMarket(sx) });
+for (const sx of TOWN.stalls) interacts.push({ pos: { x: sx, z: TOWN.market.z + 2.0 }, range: 3.6, label: () => (marketOpen() ? 'Probar fruta del mercado' : 'Mercado cerrado'),
+  act: () => { if (marketOpen()) eatMarket(sx); else say(player, 'Está cerrado… abre a las 8 de la mañana.', 2.4); } });
 for (const b of berryBushes) interacts.push({ pos: { x: b.x, z: b.z }, range: 2.3, label: 'Comer ' + b.kind.name, act: () => eatBerries(b), ok: () => b.berries.some((q) => q.k >= 0.999) });
 // platicar y acariciar también divierten (una vez cada tanto por cada quien)
 for (const c of creatures) { const f = c.interact; c.interact = () => { f(); gain('diversion', 0.07, 'mimo' + creatures.indexOf(c), 8); }; }
@@ -366,6 +370,102 @@ npcBy('Tomate').onTalk = () => { if (quests.cumbres) return null; startQuest('cu
 npcBy('Miel').onTalk = () => { if (quests.frutas) return null; startQuest('frutas'); return 'El bosque del norte tiene siete frutas. ¿Las pruebas todas?'; };
 rocio.onTalk = () => { if (quests.peces) return null; startQuest('peces'); return 'Si esperas quieto en la orilla, los peces saltan cerquita.'; };
 // peces: con el encargo en curso saltan cerca de quien espera quieto en la orilla, y verlo de cerca lo cumple
+// ───────────────────────── a ciertas horas (el día y la noche están en 01-core.js) ─────────────────────────
+// El mercado de Valle Alegre abre de 8 a 7 de la noche: cerrado, la fruta se tapa (TOWN.closed) y Lila se duerme en su puesto.
+// De 7 a 10 de la noche toca la banda en el kiosco: cinco vecinos dejan su paseo, bailan alrededor y la música suena con trompeta.
+const MARKET = { open: 8, close: 19 }, BAND = { from: 19, to: 22, r: 6.6 };
+const marketOpen = () => day.h >= MARKET.open && day.h < MARKET.close;
+const lila = npcBy('Lila'), musgo = npcBy('Musgo'), DANCERS = ['Tomate', 'Miel', 'Chabacano', 'Nopal', 'Brote'].map(npcBy);
+lila.onTalk = () => (marketOpen() ? null : choose(['Zzz… el mercado abre a las 8…', 'Zzz… mañana hay fruta fresca…']));
+// Musgo, junto a la fogata, de noche: el encargo de las luciérnagas
+musgo.onTalk = () => {
+  if (quests.luciernagas || day.light > 0.5) return null;
+  startQuest('luciernagas'); return '¿Ves las luciérnagas? Atrapa diez y te doy un frasco para que brillen en tu casa.';
+};
+const town = { open: null, band: null };
+function updateTownHours(dt) {
+  const open = marketOpen();
+  if (open !== town.open) { town.open = open; TOWN.closed.visible = !open; lila.T.setMood(open ? lila.mood0 : 'dormido'); }
+  // Cada uno sigue su paseo (alrededor de su manzana) hasta la esquina más cercana al kiosco, cruza la calle hasta su lugar y baila;
+  // al terminar regresa a esa esquina y sigue paseando desde ahí. Así nadie atraviesa los edificios. Con Tamachin lejos (más de 75 m
+  // nadie camina, updateNPCs) se acomodan de golpe: no se ve.
+  const band = day.h >= BAND.from && day.h < BAND.to;
+  if (band !== town.band) {
+    town.band = band;
+    DANCERS.forEach((n, i) => {
+      if (band && !n.band) {
+        const L = n.loop; let t1 = 0, best = Infinity;
+        for (let t = 0; t < L.L; t += 0.5) { loopAt(L, t, _lp); const d = Math.hypot(_lp.x, _lp.z - TOWN_Z); if (d < best) { best = d; t1 = t; } }
+        const a = 0.5 + i * TAU / DANCERS.length, x = Math.sin(a) * BAND.r, z = TOWN_Z + Math.cos(a) * BAND.r;
+        n.band = { loop: L, t1, spot: { x, z, ry: Math.atan2(-x, TOWN_Z - z) }, phase: 'walk' };
+      } else if (!band && n.band) { if (n.band.phase === 'walk') n.band = null; else n.band.phase = 'back'; }   // si no había llegado, sigue paseando
+    });
+  }
+  const far = Math.hypot(player.pos.x, player.pos.z - TOWN_Z) > 75 + 60;
+  for (const n of DANCERS) {
+    const B = n.band; if (!B) continue;
+    if (B.phase === 'walk') {
+      const fw = ((B.t1 - n.t) % B.loop.L + B.loop.L) % B.loop.L, left = Math.min(fw, B.loop.L - fw);
+      n.dir = fw < B.loop.L / 2 ? 1 : -1; n.pause = 0;
+      if (left < 1 || far) { n.loop = null; n.home = B.spot; B.phase = 'dance'; if (far) { n.pos.set(B.spot.x, 0, B.spot.z); n.goto = null; } else n.goto = { x: B.spot.x, z: B.spot.z }; }
+    } else if (B.phase === 'dance') { if (!n.goto && n.talkT <= 0 && Math.random() < dt * 0.45) n.T.doTrick(choose(['dance', 'dance', 'spin', 'hop'])); }
+    else if (B.phase === 'back') {
+      loopAt(B.loop, B.t1, _lp);
+      if (far) { n.pos.set(_lp.x, 0, _lp.z); n.goto = null; }
+      else if (!n.goto && Math.hypot(n.pos.x - _lp.x, n.pos.z - _lp.z) > 0.2) { n.goto = { x: _lp.x, z: _lp.z }; n.home = null; continue; }
+      if (!n.goto) { n.loop = B.loop; n.t = B.t1; n.home = null; n.band = null; }
+    }
+  }
+  if (jar.visible) { const k = 0.6 + 0.4 * Math.sin(clock * 2.3); jar.halo.material.opacity = (0.15 + 0.5 * (1 - day.light)) * k; jar.bugs.material.color.setScalar(0.7 + 0.3 * k); }   // el frasco late, más de noche
+}
+// Los músicos: tres en el kiosco, solo de 7 a 10 de la noche, con acordeón, trompeta y tambor. Se mecen al compás del vals
+// (1.2 s por compás) y tocan: el acordeón se abre y se cierra, la trompeta sube en cada tiempo, la baqueta pega en el uno.
+const BAND_KIT = (() => {
+  const gold = '#f2c14e', mk = (fn) => { const B = new Batch(); fn(B); return B.mesh(MAT_SOFT, false); };
+  return {
+    acordeon: () => mk((B) => { B.rbox('#e84b4b', -0.3, 0, 0, 0.12, 0.44, 0.34, 0.03).rbox('#e84b4b', 0.3, 0, 0, 0.12, 0.44, 0.34, 0.03).box('#fff4d6', -0.3, 0.03, 0.18, 0.08, 0.32, 0.02);
+      for (let i = 0; i < 5; i++) B.box(i % 2 ? '#3b2a4a' : '#fff4d6', -0.2 + i * 0.1, 0, 0, 0.09, 0.42, 0.3); }),
+    trompeta: () => mk((B) => { B.cyl(gold, 0, 0, 0.22, 0.035, 0.035, 0.44, 10, Math.PI / 2).add(gCone(14), gold, 0, 0, 0.5, 0.15, 0.2, 0.15, -Math.PI / 2, 0, 0)
+      .cyl(gold, 0.05, 0.06, 0.2, 0.025, 0.025, 0.12, 6).cyl(gold, 0, 0.06, 0.2, 0.025, 0.025, 0.12, 6).cyl(gold, -0.05, 0.06, 0.2, 0.025, 0.025, 0.12, 6); }),
+    tambor: () => mk((B) => { B.cyl('#4b62d6', 0, 0, 0, 0.34, 0.34, 0.4, 18).cyl('#fff8e6', 0, 0.205, 0, 0.32, 0.32, 0.02, 18).cyl(gold, 0, 0.19, 0, 0.35, 0.35, 0.04, 18).cyl(gold, 0, -0.19, 0, 0.35, 0.35, 0.04, 18); }),
+    baqueta: () => mk((B) => { B.cyl('#c9965b', 0, 0.2, 0, 0.02, 0.025, 0.4, 6).sph('#fff8e6', 0, 0.42, 0, 0.06); }),
+  };
+})();
+const musicians = [['acordeon', 'gota', '#ff8fb1', -2.1, 1.0], ['trompeta', 'bola', '#58b368', 0, 1.7], ['tambor', 'cubito', '#7c9cff', 2.1, 1.0]].map(([kit, shape, color, x, dz], i) => {
+  const T = makeTamachin({ shape, color, mood: i === 0 ? 'enamorado' : 'contento', scale: 1.05 }), d = SHAPES[shape], g = T.group;
+  g.position.set(x, 0.98, TOWN_Z + dz);   // sobre la tarima del kiosco g.rotation.y = Math.atan2(x * 0.15, 1); g.visible = false; scene.add(g);
+  const inst = BAND_KIT[kit](); g.add(inst);
+  if (kit === 'acordeon') inst.position.set(0, d.handY + 0.05, 0.72);
+  else if (kit === 'trompeta') { inst.position.set(0.12, d.mouthY, 0.5); inst.rotation.y = 0.75; }   // de lado: de frente parecía un pico
+  else { inst.position.set(0, 0.32, 0.78); inst.rotation.x = 0.35; }
+  const stick = kit === 'tambor' ? BAND_KIT.baqueta() : null; if (stick) { stick.position.set(0.32, d.handY, 0.62); g.add(stick); }
+  const o = { kind: 'músico', T, pos: g.position, inst, stick, kit, clickR: 0.8, y0: 0.98, ph: i * 0.4, noteT: rand(0.5, 2) };
+  o.bubblePos = (v) => v.set(o.pos.x, o.pos.y + 2.1, o.pos.z);
+  o.interact = () => { say(o, choose(['¡Tocamos hasta las 10!', '¡Baila con nosotros!', '¡Un vals para Tamachin!', '¡Uno, dos, tres! ¡Uno, dos, tres!']), 2.6); T.doTrick('hop'); };
+  o.update = (dt) => {
+    const on = !!town.band; if (g.visible !== on) { g.visible = on; if (nearPlayer(o) < 40) burst('puff', o.pos.x, o.pos.y + 0.8, o.pos.z, 3); }
+    if (!on) return;
+    // el compás de la música que suena (el uno lo marca el vals al programarse); sin música, un reloj al mismo tempo
+    const c = snd.ctx, M = mus && snd.music && mus.cur === mus.players.pueblo && mus.beat0 != null && c ? mus : null;
+    const ph = M ? ((((c.currentTime - M.beat0) / M.beatLen) % 1) + 1) % 1 : (clock / 1.2) % 1, b3 = (ph * 3) % 1, beat = Math.pow(1 - b3, 3);
+    g.position.y = o.y0 + 0.06 * beat; g.rotation.z = Math.sin(TAU * (ph + o.ph) / 2) * 0.07;
+    if (kit === 'acordeon') inst.scale.x = 1 + 0.16 * Math.sin(TAU * ph);
+    else if (kit === 'trompeta') inst.rotation.x = -0.12 - 0.12 * beat;
+    else stick.rotation.x = 0.25 - (ph < 1 / 3 ? 1 : 0.45) * Math.pow(1 - b3, 6) * 1.1;   // golpe fuerte en el uno (bombo), suave en el dos y el tres
+    if ((o.noteT -= dt) < 0 && nearPlayer(o) < 30) { o.noteT = rand(1.2, 2.6); emit('note', o.pos.x, o.pos.y + 1.9, o.pos.z); }
+    T.update(dt, { speed: 0, near: nearPlayer(o) < 45 });
+  };
+  creatures.push(o); interacts.push({ pos: o.pos, range: 6.2, label: 'Escuchar a la banda', act: o.interact, who: o, ok: () => !!town.band });
+  return o;
+});
+// el día que es: sube cada mañana, al pasar las 5 (también dormido); los saltos de setHour hacia atrás o de más de 12 horas no cuentan
+let lastHour = DAY.start;
+function updateDayCount() {
+  const fwd = (day.h - lastHour + 24) % 24, toRise = (DAY.rise - lastHour + 24) % 24;
+  if (fwd > 0 && fwd < 12 && toRise > 0 && toRise <= fwd) { day.n++; if (!diaryEl.hidden) renderDiary(); save(); }
+  lastHour = day.h;
+}
+
 function fishBias() { const P = player; return quests.peces === 1 && P.speedN < 0.4 && Math.abs(P.pos.z - riverZ(P.pos.x)) < 11 ? P.pos.x : null; }
 let fishSeenAt = 0;
 function fishJumped(f) { if (quests.peces === 1 && !fishSeenAt && Math.hypot(player.pos.x - f.x, player.pos.z - riverZ(f.x)) < 9) fishSeenAt = clock + 0.45; }
@@ -376,6 +476,9 @@ function updateQuests(dt) {
   }
   if (fishSeenAt && clock >= fishSeenAt) { fishSeenAt = 0; if (quests.peces === 1) { finishQuest('peces'); say(P, '¡Un pez saltarín! ¡Lo vi, lo vi!', 2.6); P.T.doTrick('hop'); } }
   if (lulu.loopSaved && Math.hypot(lulu.pos.x - P.pos.x, lulu.pos.z - P.pos.z) > 80) { lulu.loop = lulu.loopSaved; lulu.loopSaved = null; lulu.home = null; }
+  if (quests.amanecer === 1 && P.state === 'normal' && day.h >= DAY.rise && day.h < 6.5 && PEAKS.some((p) => Math.hypot(P.pos.x - p.x, P.pos.z - p.z) < 34)) {
+    finishQuest('amanecer'); say(P, '¡Qué bonito sale el sol desde aquí!', 3.2); P.T.doTrick('dance');
+  }
   if (P.carry) { const m = P.carry.mesh; m.position.set(P.pos.x, P.pos.y + (P.T.def.H + 0.3 + Math.sin(clock * 3) * 0.06) * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z); m.rotation.y += dt * 1.2; }
 }
 
@@ -469,10 +572,11 @@ function pester() {
   pest.n = 0; makeDizzy(4.5); P.T.poke(5); return true;
 }
 function handleClick(px, py) {
+  if (tapShootingStar(px, py) || tapFly(px, py)) return;
   const P = player; let best = Infinity, what = null;
   let d = hitTest(px, py, P.pos.x, P.pos.y + 0.8 * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z, 0.85 * P.T.scale); if (d < best) { best = d; what = P; }
   for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
-  for (const c of creatures) { d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }
+  for (const c of creatures) { if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
   if (!what) return;
   if (what === P) { if (P.state === 'sleep') wake(); else if (!pester()) playerTrick(); return; }
   const dist = Math.hypot(what.pos.x - P.pos.x, what.pos.z - P.pos.z);
@@ -550,8 +654,10 @@ function toggleDiary(on) {
   diaryEl.hidden = !on; bNeeds.setAttribute('aria-expanded', String(on)); document.body.classList.toggle('diary', on);
   if (on) renderDiary();
 }
+const dayEl = $('#dDay');
 function renderDiary() {
   if (diaryEl.hidden) return;
+  const ht = hourText(day.h); dayEl.textContent = 'Día ' + day.n + ' · ' + ht[0].toLowerCase() + ht.slice(1);
   needListEl.innerHTML = Object.keys(NEEDS).map((k) => '<div class="nrow n-' + k + '">' + needEls[k].el.querySelector('svg').outerHTML + '<strong>' + NEEDS[k].label + '</strong><span class="pct"></span>'
     + '<span class="bar"><b></b></span><p>Se llena con ' + NEEDS[k].fill + '.</p></div>').join('');
   const open = Object.keys(QUESTS).filter((k) => quests[k] === 1), done = Object.keys(QUESTS).filter((k) => quests[k] === 2), left = Object.keys(QUESTS).length - open.length - done.length;
@@ -624,11 +730,11 @@ function updateMusic(dt) {
   if (!mus) mus = makeMusic(c, c.destination);
   const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
   if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
-  const night = 1 - day.light;
+  const night = 1 - day.light, band = town.band && k === 'pueblo' ? clamp(1.4 - Math.hypot(P.pos.x, P.pos.z - TOWN_Z) / 60, 0, 1) : 0;   // la banda del kiosco
   mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(night, now);
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(night * (1 - band), now); mus.param.band = band;
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -1026,10 +1132,73 @@ function updateFireflies(dt) {
     f.vx = damp(f.vx, Math.sin(clock * 0.7 * f.sp + f.ph) * 0.6, 1, dt); f.vz = damp(f.vz, Math.cos(clock * 0.53 * f.sp + f.ph * 1.3) * 0.6, 1, dt);
     f.x += f.vx * dt; f.z += f.vz * dt; f.y += Math.sin(clock * 1.1 * f.sp + f.ph) * 0.25 * dt;
     const blink = i < n ? Math.min(1, 1.4 * Math.pow(Math.max(0, Math.sin(clock * 1.6 * f.sp + f.ph)), 2)) * F.k : 0;
+    if (quests.luciernagas === 1 && i < n && F.k > 0.3 && Math.hypot(f.x - P.pos.x, f.y - P.pos.y - 0.8 * P.T.scale, f.z - P.pos.z) < 0.95 * P.T.scale) catchFly(f);   // al pasar junto a ella
     F.pos[i * 3] = f.x; F.pos[i * 3 + 1] = f.y; F.pos[i * 3 + 2] = f.z;
     F.col[i * 3] = 0.9 * blink; F.col[i * 3 + 1] = 1 * blink; F.col[i * 3 + 2] = 0.45 * blink;
   });
   F.pts.geometry.attributes.position.needsUpdate = true; F.pts.geometry.attributes.color.needsUpdate = true;
+}
+// atrapar una luciérnaga (el encargo de Musgo): se va a otro lado, y al juntar diez el frasco aparece sobre la mesa de la casa
+function catchFly(f) {
+  burst('spark', f.x, f.y, f.z, 4); f.born = false; fliesCaught = Math.min(10, fliesCaught + 1); SFX.pop();
+  if (fliesCaught >= 10) { finishQuest('luciernagas'); jar.visible = true; say(player, '¡Diez luciérnagas! A casa, al frasco.', 3); }
+  else { toast('Luciérnagas: ' + fliesCaught + ' de 10.', 2.4); renderDiary(); save(); }
+}
+function tapFly(px, py) {
+  const F = fireflies; if (quests.luciernagas !== 1 || !F.pts.visible || F.k < 0.3) return false;
+  for (const f of F.flies) if (f.born && hitTest(px, py, f.x, f.y, f.z, 0.5) < Infinity) { catchFly(f); return true; }
+  return false;
+}
+const jar = (() => {
+  const g = new THREE.Group(), glass = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.12, 0.28, 16), new THREE.MeshStandardMaterial({ color: 0xdff3ff, transparent: true, opacity: 0.35, roughness: 0.1 }));
+  const lid = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.13, 0.05, 16), new THREE.MeshStandardMaterial({ color: 0x9a6540, roughness: 0.6 })); lid.position.y = 0.165;
+  const R = mulberry(1010), b = new Batch(); for (let i = 0; i < 10; i++) b.sph('#e6ff8a', (R() - 0.5) * 0.14, (R() - 0.5) * 0.18, (R() - 0.5) * 0.14, 0.022);
+  const bugs = new THREE.Mesh(b.geometry(), new THREE.MeshBasicMaterial({ vertexColors: true }));
+  const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: skyDot, color: 0xd8ff7a, blending: THREE.AdditiveBlending, depthWrite: false, opacity: 0.4 })); halo.scale.setScalar(0.9);
+  g.add(bugs, glass, lid, halo); g.position.set(3.2, 0.99, -7.85); g.visible = false; scene.add(g); g.bugs = bugs; g.halo = halo; return g;
+})();
+// ───────────────────────── estrellas fugaces ─────────────────────────
+// De noche, cada medio minuto más o menos, una cruza la parte de arriba de la pantalla (se pone donde la cámara la ve: casi nunca ve el
+// cielo). Tocarla pide un deseo: diversión y un ánimo alegre. Es una tira que se estira detrás de la cabeza, sin profundidad.
+const WISHES = ['Deseo… ¡que mañana haya muchas fresas!', 'Deseo… ¡volar como el búho!', 'Deseo… ¡un amigo nuevo en el bosque!', 'Deseo… ¡que la fogata nunca se apague!', 'Deseo… ¡subir a las tres cimas otra vez!', 'Deseo… ¡bailar con la banda del kiosco!'];
+const shoot = (() => {
+  const tex = canvasTex(128, 16, (g) => { const gr = g.createLinearGradient(0, 0, 128, 0); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(0.85, 'rgba(255,248,220,.9)'); gr.addColorStop(1, 'rgba(255,255,255,1)'); g.fillStyle = gr;
+    g.beginPath(); g.moveTo(0, 8); g.lineTo(122, 2); g.arc(122, 8, 6, -Math.PI / 2, Math.PI / 2); g.lineTo(0, 8); g.fill(); });
+  const geo = new THREE.BufferGeometry(); geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(12), 3)); geo.setAttribute('uv', new THREE.BufferAttribute(new Float32Array([0, 0, 0, 1, 1, 0, 1, 1]), 2)); geo.setIndex([0, 2, 1, 2, 3, 1]);
+  const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ map: tex, transparent: true, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false, side: THREE.DoubleSide }));
+  m.frustumCulled = false; m.renderOrder = 5; m.visible = false; m.raycast = () => {}; scene.add(m);
+  return { m, head: new THREE.Vector3(), vel: new THREE.Vector3(), t: 0, life: 0, next: 20, hint: false, wished: 0 };
+})();
+const _sh = new THREE.Vector3(), _st = new THREE.Vector3(), _sd = new THREE.Vector3();
+function spawnShootingStar() {
+  const S = shoot, side = Math.random() < 0.5 ? -1 : 1;
+  _sh.set(rand(-0.55, 0.55) - side * 0.25, rand(0.62, 0.82), 0.5).unproject(camera).sub(camera.position).normalize();
+  S.head.copy(camera.position).addScaledVector(_sh, 90);
+  _sd.setFromMatrixColumn(camera.matrixWorld, 0).multiplyScalar(side); _st.setFromMatrixColumn(camera.matrixWorld, 1).multiplyScalar(-0.35);
+  S.vel.copy(_sd).add(_st).normalize().multiplyScalar(48); S.t = 0; S.life = 1.5; S.m.visible = true;
+  if (!S.hint) { S.hint = true; toast('¡Una estrella fugaz! Tócala para pedir un deseo.', 3); }
+}
+function updateShootingStar(dt) {
+  const S = shoot;
+  if (!S.m.visible) { if (day.stars > 0.8 && player.state !== 'sleep' && (S.next -= dt) <= 0) { S.next = rand(25, 45); spawnShootingStar(); } return; }
+  S.t += dt; if (S.t >= S.life || day.stars < 0.5) { S.m.visible = false; return; }
+  S.head.addScaledVector(S.vel, dt);
+  const k = S.t / S.life, len = 14 * Math.min(1, S.t / 0.25), w = 0.7 * (1 - k * 0.6);
+  _st.copy(S.head).addScaledVector(S.vel, -len / S.vel.length());
+  _sd.subVectors(S.head, _st).cross(_sh.subVectors(S.head, camera.position)).normalize().multiplyScalar(w);
+  const p = S.m.geometry.attributes.position;
+  p.setXYZ(0, _st.x - _sd.x * 0.2, _st.y - _sd.y * 0.2, _st.z - _sd.z * 0.2); p.setXYZ(1, _st.x + _sd.x * 0.2, _st.y + _sd.y * 0.2, _st.z + _sd.z * 0.2);
+  p.setXYZ(2, S.head.x - _sd.x, S.head.y - _sd.y, S.head.z - _sd.z); p.setXYZ(3, S.head.x + _sd.x, S.head.y + _sd.y, S.head.z + _sd.z); p.needsUpdate = true;
+  S.m.material.opacity = Math.min(1, (1 - k) * 2.5);
+}
+function tapShootingStar(px, py) {
+  const S = shoot; if (!S.m.visible) return false;
+  _sh.copy(S.head).project(camera); const hx = (_sh.x * 0.5 + 0.5) * VW, hy = (-_sh.y * 0.5 + 0.5) * VH;
+  _st.copy(S.head).addScaledVector(S.vel, -0.3).project(camera); const tx = (_st.x * 0.5 + 0.5) * VW, ty = (-_st.y * 0.5 + 0.5) * VH;
+  const ex = hx - tx, ey = hy - ty, L2 = ex * ex + ey * ey || 1, u = clamp(((px - tx) * ex + (py - ty) * ey) / L2, 0, 1.15);
+  if (Math.hypot(px - (tx + ex * u), py - (ty + ey * u)) > 70) return false;
+  S.m.visible = false; S.wished++; const P = player;
+  gain('diversion', 0.3); setTemp('enamorado', 4); say(P, choose(WISHES), 3.2); P.T.doTrick('spin'); burst('star', P.pos.x, P.pos.y + 1.8, P.pos.z, 8); SFX.yay(); return true;
 }
 // el farolito flota a la derecha de Tamachin (en la pantalla), un poco hacia la cámara, para no taparle la cara
 function updateLantern(dt) {
@@ -1073,7 +1242,7 @@ function updateClock() {
     clockSvg.style.color = '#' + _ck.copy(CLOCK_INK).lerp(CLOCK_INK_NIGHT, smooth(0.35, 0.65, nk)).getHexString();
   }
   const step = Math.floor(h * 6);                                  // el texto, cada 10 minutos de juego
-  if (step !== clockStep) { clockStep = step; const txt = hourText(h); clockEl.setAttribute('aria-label', 'Reloj. ' + txt); clockEl.title = txt; }
+  if (step !== clockStep) { clockStep = step; const txt = hourText(h); clockEl.setAttribute('aria-label', 'Reloj. ' + txt); clockEl.title = txt; if (!diaryEl.hidden) dayEl.textContent = 'Día ' + day.n + ' · ' + txt[0].toLowerCase() + txt.slice(1); }
 }
 // ?hora=21 (o 21.5, o 21:30) en la dirección: empieza a esa hora, para probar la noche
 function hourParam() {
@@ -1107,14 +1276,14 @@ function frame(now) {
   requestAnimationFrame(frame);
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
-  resize(); clock += dt; updateDay(dt);
+  resize(); clock += dt; updateDay(dt); updateDayCount(); updateTownHours(dt);
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
   if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
-  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateShootingStar(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
@@ -1139,6 +1308,8 @@ function boot(data) {
   if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
   const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
+  if (Number.isInteger(s.dia) && s.dia > 0) day.n = s.dia; lastHour = day.h;
+  if (Number.isInteger(s.flies) && s.flies >= 0) fliesCaught = Math.min(10, s.flies); jar.visible = quests.luciernagas === 2;
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);
