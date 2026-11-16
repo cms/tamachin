@@ -64,6 +64,18 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 - En el juego, `updateMusic` (en `frame`, dentro de un try: si falla, la música se apaga y el error queda en `musErr`) usa `musicZone()`, más grueso que el nombre del HUD, y espera 0.8 s antes de cambiar (la puerta de la casa). Si es la misma pieza solo rampan las capas; si es otra, la vieja se apaga y la nueva empieza del principio 0.8 s después.
 - Para agregar un lugar: una entrada en `MUSIC` (o una mezcla nueva de una pieza) y en `MUSIC_ZONES`, y su caso en `musicZone()`. Las pruebas se corren con Chrome mudo (`--mute-audio`); `npm test -- musica --wav` renderiza las mezclas a `tests/out/musica-*.wav` para escucharlas.
 
+## Día y noche (`01-core.js`, reloj en `06-main.js`)
+
+- `day.h` es la hora (0 a 24); corre `DAY.rate` (1/60 de hora por segundo de juego) en `updateDay(dt)`, con el `dt` del cuadro (la pestaña oculta no avanza). `setHour(h)` la pone de golpe (al arrancar, `?hora=`, pruebas). Se guarda como `hora`; las partidas viejas y nuevas empiezan en `DAY.start` (8).
+- `applyDay` interpola `SKY_KEYS` (cielo arriba/medio/horizonte, luz del cielo y del suelo de `hemi`, tinte de lo que no recibe luz, `day.light` 1 de día a 0 de noche, `day.warm`). De 8 a 17:30 es `SKY_DAY`, que son los valores de antes del ciclo; la prueba `dia` lo revisa. La niebla y el fondo toman el color del horizonte.
+- **Una sola luz con sombra.** `sun` es el sol de día y la luna de noche: se cambian cuando las dos pasan por cero en el crepúsculo. Nunca agregues ni quites una luz con sombra, ni cambies `castShadow` en marcha: en r128 eso recompila todos los materiales y el juego se traba. Si una luz nueva hace falta (el farolito), agrégala desde el principio con intensidad 0.
+- `SUN_OFF` (de Tamachin hacia la luz) mide siempre lo mismo y su altura nunca baja de 30° (`LIGHT_MIN_E`): la caja de la sombra es de ±42 m. El sol dibujado sí llega al horizonte. El sol va del este-sureste al sur, al sureste a mediodía como antes: con el sol justo detrás de la cámara las sombras quedan escondidas detrás de cada cosa. La luna cruza bajita por el norte (para que se vea caminando hacia las montañas) y su luz viene del sur.
+- El cielo es `skyMesh` con color por vértice; `paintSky` lo repinta cuando la hora cambia (y agrega el resplandor hacia el sol). Estrellas (`skyStars`, con su propia semilla), luna y sol (`skyMoon`, `skySun`) van dentro de él con `SKY_ADD`: sin transparencia (así van en la lista de lo opaco, que respeta `renderOrder`) pero con mezcla aditiva y sin profundidad. Se dibujan justo después del cielo y antes que todo: cualquier cerro las tapa aunque esté más lejos que la esfera.
+- `MeshBasicMaterial` no recibe luz y de noche brillaría: regístralo con `dimmable(mat)` (nubes, mariposas). Los focos del semáforo, la fogata, la tele y el refri sí deben brillar.
+- De noche la luz es azul y un Tamachin amarillo se vería verde oscuro: `player.T.glow(k)` le pone brillo propio en su color (lo ajusta `frame`).
+- El reloj (`updateClock`, `hourText`, `clockSay`) gira las manecillas con el atributo `transform` del SVG (centrado en 0,0), no con CSS (en iPhone `transform-origin` en SVG falla). La carátula de noche, la del atardecer, el sol y la luna son capas con opacidad.
+- La cámara casi siempre mira hacia abajo y ve poco cielo: lo que dice "es de noche" es el color del suelo. Las estrellas empiezan a 1° del horizonte.
+
 ## Capas del panel
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
@@ -74,7 +86,7 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 
 `npm test` (después de `npm install`) corre los grupos de `tests/run.cjs` en el Chrome instalado; `npm run test:largo` suma la caminata de 4 minutos. Corre `npm test` antes de cada commit que toque el juego.
 
-- `tests/lib.cjs` sirve el repo, abre el juego y, con `expose`, deja variables internas de la IIFE en `window.__dbg` (reemplaza `window.__tamachin = {` en `game.js` al servirlo). `window.__tamachin` ya expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar.
+- `tests/lib.cjs` sirve el repo, abre el juego a mediodía (`?hora=12`; con `hora: false` manda la partida guardada, y al recargar la dirección se queda) y, con `expose`, deja variables internas de la IIFE en `window.__dbg` (reemplaza `window.__tamachin = {` en `game.js` al servirlo). `window.__tamachin` ya expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `day` y `setHour(h)`, `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar.
 - `mundo` compara lo que se genera con `tests/mundo.json`. Si falla sin que quisieras cambiar el mundo, es casi siempre una llamada de más a `rnd()`. Si el cambio es a propósito: `npm test -- mundo --actualizar`.
 - El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
 - Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.
@@ -89,3 +101,4 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
 
 - Cómo suenan la música y los efectos (se sintetizan con WebAudio). Las pruebas miden volumen y tiempo; las notas se revisaron a mano en espectrogramas (`sox archivo.wav -n spectrogram`). La música no se ha medido en un teléfono (la reverberación, el río y el viento corren todo el tiempo).
 - Que en iPhone el interruptor de silencio calle el juego (así suele hacer Safari con WebAudio).
+- Cómo se ve la noche en un teléfono (brillo de pantalla, al aire libre). `dia` mide que a medianoche la imagen conserve al menos 42 % del brillo de mediodía y Tamachin 60 %.

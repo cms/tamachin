@@ -45,16 +45,10 @@ const PITCH = { def: Math.atan2(7.6, 11.2), min: 15 * Math.PI / 180, max: 60 * M
 const camView = { yaw: 0, yawT: 0, pitch: PITCH.def, pitchT: PITCH.def, c: 1, s: 0, vc: 1, vs: 0 };
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 
+// El cielo: una esfera con color por vértice que sigue a la cámara (updateCamera). `paintSky` la pinta según la hora (día y noche, abajo).
 const skyMesh = (() => {
-  const g = new THREE.SphereGeometry(520, 24, 14);
-  const P = g.attributes.position, col = new Float32Array(P.count * 3);
-  const top = new THREE.Color(0x3f9ef5), mid = new THREE.Color(0x9bd6ff), c = new THREE.Color();
-  for (let i = 0; i < P.count; i++) {
-    const h = P.getY(i) / 520;
-    if (h < 0) c.copy(FOG); else if (h < 0.22) c.copy(FOG).lerp(mid, h / 0.22); else c.copy(mid).lerp(top, (h - 0.22) / 0.78);
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const g = new THREE.SphereGeometry(520, 32, 20);
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
   m.renderOrder = -10; m.frustumCulled = false; scene.add(m); return m;
 })();
@@ -69,7 +63,114 @@ sun.shadow.camera.left = -SH; sun.shadow.camera.right = SH; sun.shadow.camera.to
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 160;
 sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.05;
 scene.add(sun); scene.add(sun.target);
-const SUN_OFF = new THREE.Vector3(38, 58, 42);
+const SUN_OFF = new THREE.Vector3(38, 58, 42);              // de Tamachin hacia la luz (el sol o la luna): lo mueve applyDay
+
+// ───────────────────────── día y noche ─────────────────────────
+// Un día dura 24 minutos: una hora de juego es un minuto real (`day.h`, de 0 a 24; se guarda). Amanece a las 5 y anochece a las 8.
+// De 8 a 17:30 los colores e intensidades son los de antes del ciclo. La noche es azul, no negra (se ve en un teléfono).
+// La luna alumbra con la misma luz que el sol: se cambian cuando las dos pasan por cero, en el crepúsculo. Nunca se agrega ni se quita
+// una luz con sombra (en r128 eso recompila todos los materiales y el juego se traba).
+const DAY = { rise: 5, set: 20, start: 8, rate: 1 / 60 };   // rate: horas de juego por segundo
+const day = { h: DAY.start, light: 1, warm: 0, stars: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer
+// hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
+const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
+const SKY_DAY = [0x3f9ef5, 0x9bd6ff, 0xd6f0ff, 0xf2f9ff, 0xb6c296, 0.58, 0xffffff, 1, 0];
+const SKY_KEYS = [[0, SKY_NIGHT], [3.9, SKY_NIGHT],
+  [5, [0x3b4b98, 0xb48bc2, 0xffb18a, 0xd8d4f4, 0x7a8090, 0.62, 0xffc2b2, 0.45, 1]],      // amanecer
+  [6.3, [0x4c9cee, 0xb4dafb, 0xfde2c4, 0xf8f4f0, 0xb6bf98, 0.6, 0xfff0e2, 0.85, 0.35]],   // mañana
+  [8, SKY_DAY], [17.5, SKY_DAY],
+  [19, [0x4a94e4, 0xbcd5ee, 0xffdcae, 0xf0eeff, 0xb0b896, 0.6, 0xfff0d6, 0.85, 0.4]],     // tarde dorada
+  [20, [0x33408c, 0xd88aa6, 0xff9868, 0xe2cfee, 0x76788e, 0.62, 0xffb4a0, 0.45, 1]],      // atardecer
+  [21.1, SKY_NIGHT], [24, SKY_NIGHT]].map(([h, k]) => ({ h, c: k.slice(0, 7).map((v, i) => (i === 5 ? v : new THREE.Color(v))), tint: new THREE.Color(k[6]), light: k[7], warm: k[8] }));
+const SUN_COL = new THREE.Color(0xfff1d6), SUN_LOW = new THREE.Color(0xffbf96), MOON_COL = new THREE.Color(0xdfe6ff), GLOW = new THREE.Color(0xff9a5c);
+const SUN_DISC = new THREE.Color(0xfff4d6), SUN_DISC_LOW = new THREE.Color(0xffa25c);
+const DEG = Math.PI / 180, LIGHT_D = SUN_OFF.length(), LIGHT_MIN_E = 30 * DEG;   // la sombra cubre ±42 m: con el sol más bajo se estiraría de más
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// Lo que no recibe luz (MeshBasicMaterial: nubes, mariposas) brillaría de noche: se tiñe con la hora.
+const UNLIT = [];
+function dimmable(mat) { UNLIT.push({ mat, base: mat.color.clone() }); return mat; }
+// Estrellas, luna y sol van en el cielo y se dibujan justo después de él, antes que todo lo demás: sin transparencia (así entran en
+// la lista de lo opaco, que respeta renderOrder) pero con mezcla aditiva, y sin profundidad. Así un cerro lejano siempre las tapa.
+const SKY_ADD = { transparent: false, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false };
+const skyDot = canvasTex(32, 32, (g) => { const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); });
+const skyStars = [[340, 2.4, 2411], [60, 3.8, 2412]].map(([n, size, seed]) => {
+  const R = mulberry(seed), pos = new Float32Array(n * 3), col = new Float32Array(n * 3), c = new THREE.Color(), tints = [0xffffff, 0xdfe8ff, 0xfff1c9];
+  for (let i = 0; i < n; i++) {
+    const y = 0.02 + 0.98 * Math.pow(R(), 1.7), a = R() * TAU, r = Math.sqrt(1 - y * y);   // más cerca del horizonte, que es lo que ve la cámara
+    pos[i * 3] = Math.cos(a) * r * 480; pos[i * 3 + 1] = y * 480; pos[i * 3 + 2] = Math.sin(a) * r * 480;
+    c.setHex(tints[Math.floor(R() * 3)]).multiplyScalar(0.5 + 0.5 * R()); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial(Object.assign({ size, sizeAttenuation: false, map: skyDot, vertexColors: true, opacity: 0 }, SKY_ADD)));
+  m.renderOrder = -9; m.frustumCulled = false; skyMesh.add(m); return m;
+});
+function skySprite(tex, scale) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial(Object.assign({ map: tex }, SKY_ADD)));
+  s.scale.setScalar(scale); s.renderOrder = -8; s.frustumCulled = false; skyMesh.add(s); return s;
+}
+const skyMoon = skySprite(canvasTex(128, 128, (g) => {
+  const gr = g.createRadialGradient(64, 64, 16, 64, 64, 64); gr.addColorStop(0, 'rgba(200,214,255,.45)'); gr.addColorStop(1, 'rgba(200,214,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  const m = document.createElement('canvas'); m.width = m.height = 128; const q = m.getContext('2d');   // la luna creciente, aparte para recortarla
+  q.fillStyle = '#fff6d6'; q.beginPath(); q.arc(64, 64, 24, 0, TAU); q.fill();
+  q.fillStyle = '#efe2b8'; for (const [x, y, r] of [[52, 58, 5], [60, 76, 4], [47, 72, 3]]) { q.beginPath(); q.arc(x, y, r, 0, TAU); q.fill(); }
+  q.globalCompositeOperation = 'destination-out'; q.beginPath(); q.arc(78, 54, 21, 0, TAU); q.fill();
+  g.drawImage(m, 0, 0);
+}), 84);
+const skySun = skySprite(canvasTex(128, 128, (g) => {
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.26, 'rgba(255,252,236,1)'); gr.addColorStop(0.32, 'rgba(255,236,190,.55)'); gr.addColorStop(1, 'rgba(255,220,150,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+}), 120);
+
+// Un arco por el cielo: sale por el este (f = 0) y se pone por el oeste (f = 1); fuera de 0..1 está bajo el horizonte. az es el rumbo
+// desde el este (+x) hacia el sur (+z). El sol no va de este a oeste: se queda entre el este-sureste y el sur, al sureste a mediodía
+// (como antes del ciclo). La cámara empieza al sur: así la escena queda de frente a la luz y las sombras caen de lado, donde se ven
+// (con el sol justo detrás de la cámara se esconden detrás de cada cosa; con el sol al este la casa queda a contraluz). La luna cruza bajita por el norte (a 6° como mucho: la cámara mira hacia abajo y solo con la cámara baja ve el cielo), para que se vea al caminar
+// hacia las montañas; su luz viene del sur, como la del sol.
+function arcDir(out, f, maxE, az0, az1) { const az = lerp(az0, az1, f) * DEG, e = maxE * DEG * Math.sin(Math.PI * f); return out.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)); }
+const _sunD = new THREE.Vector3(), _moonD = new THREE.Vector3(), _moonL = new THREE.Vector3(), _skc = new THREE.Color();
+const _dc = [0, 1, 2, 3, 4].map(() => new THREE.Color()), _tint = new THREE.Color(), _lc = new THREE.Color();
+let skyAt = -1;
+function paintSky(top, mid, hor, glow) {
+  const P = skyMesh.geometry.attributes.position, C = skyMesh.geometry.attributes.color, a = C.array, c = _skc;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i) / 520, y = P.getY(i) / 520, z = P.getZ(i) / 520;
+    if (y < 0) c.copy(hor); else if (y < 0.22) c.copy(hor).lerp(mid, y / 0.22); else c.copy(mid).lerp(top, (y - 0.22) / 0.78);
+    if (glow > 0) { const d = x * _sunD.x + y * _sunD.y + z * _sunD.z; if (d > 0) c.lerp(GLOW, glow * Math.pow(d, 5) * (1 - clamp(y * 1.4, 0, 1))); }   // resplandor hacia el sol
+    a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b;
+  }
+  C.needsUpdate = true;
+}
+function setHour(h) { day.h = ((h % 24) + 24) % 24; applyDay(true); }
+function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; applyDay(false); }
+function applyDay(force) {
+  const h = day.h; let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++;
+  const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));
+  for (let k = 0; k < 5; k++) _dc[k].copy(A.c[k]).lerp(B.c[k], t);
+  _tint.copy(A.tint).lerp(B.tint, t); day.light = lerp(A.light, B.light, t); day.warm = lerp(A.warm, B.warm, t);
+  day.stars = smooth(0.45, 0.05, day.light);
+  // dónde van el sol y la luna (la luna sale a las 8 de la noche y se pone a las 5)
+  arcDir(_sunD, (h - DAY.rise) / (DAY.set - DAY.rise), 46, 20, 85);
+  // de día g pasa de 1 (se puso) a 24/night (vuelve a salir): a la mitad del día se cuenta hacia atrás desde 0, así siempre queda bajo el horizonte
+  const night = 24 - DAY.set + DAY.rise; let g = ((h - DAY.set + 24) % 24) / night; if (g > (1 + 24 / night) / 2) g -= 24 / night;
+  arcDir(_moonD, g, 6, -15, -165); _moonL.set(_moonD.x, _moonD.y, -_moonD.z);
+  const sunAmt = smooth(-0.03, 0.25, _sunD.y), moonAmt = smooth(-0.02, 0.04, _moonD.y), bySun = sunAmt >= moonAmt, D = bySun ? _sunD : _moonL;
+  if (bySun) { sun.color.copy(SUN_LOW).lerp(SUN_COL, smooth(0, 0.5, _sunD.y)); sun.intensity = 0.62 * sunAmt; }
+  else { sun.color.copy(MOON_COL); sun.intensity = 0.45 * moonAmt; }
+  const az = Math.atan2(D.z, D.x), e = Math.max(LIGHT_MIN_E, Math.asin(clamp(D.y, -1, 1)));
+  SUN_OFF.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)).multiplyScalar(LIGHT_D);
+  hemi.color.copy(_dc[3]); hemi.groundColor.copy(_dc[4]); hemi.intensity = lerp(A.c[5], B.c[5], t);
+  scene.fog.color.copy(_dc[2]); scene.background.copy(_dc[2]);
+  for (const u of UNLIT) u.mat.color.copy(u.base).multiply(_tint);
+  // en el cielo
+  for (const s of skyStars) s.material.opacity = day.stars;
+  skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light); skyMoon.visible = skyMoon.material.opacity > 0.01;
+  skySun.position.copy(_sunD).multiplyScalar(470); skySun.material.opacity = smooth(-0.07, 0.03, _sunD.y); skySun.visible = skySun.material.opacity > 0.01;
+  skySun.material.color.copy(SUN_DISC_LOW).lerp(SUN_DISC, smooth(0, 0.4, _sunD.y));
+  if (force || Math.abs(h - skyAt) > 0.004) { skyAt = h; paintSky(_dc[0], _dc[1], _dc[2], 0.85 * smooth(-0.25, 0, _sunD.y) * (1 - smooth(0.05, 0.35, _sunD.y))); }
+}
+applyDay(true);
 
 // ───────────────────────── geometría compartida ─────────────────────────
 const GC = {};

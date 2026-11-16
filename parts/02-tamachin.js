@@ -167,9 +167,13 @@ function makeTamachin(o) {
     core.position.y = -d.H / 2; halo.position.y = d.H + 0.22;
     lidMat.color.copy(d.face === 'cream' ? CREAM : mats.body.color);
   };
+  // brillo propio (emissive) en su color: de noche la luz es azul y un cuerpo amarillo se vería verde oscuro (06-main.js)
+  T.glowK = 0;
+  T.glow = (k) => { T.glowK = k; for (const m of [mats.body, mats.alt, lidMat]) m.emissive.copy(m.color).multiplyScalar(k); };
   T.setColor = (hex) => {
     T.color = hex; mats.body.color.set(hex); mats.alt.color.set(hex).offsetHSL(0.01, 0.02, -0.13);
     if (T.def) lidMat.color.copy(T.def.face === 'cream' ? CREAM : mats.body.color);
+    if (T.glowK) T.glow(T.glowK);
   };
   T.setMood = (name) => {
     if (!MOODS[name]) name = 'contento';

@@ -62,7 +62,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay nueve grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica` y `caminata`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
+Hay diez grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia` y `caminata`. Todas abren el juego a mediodía (`?hora=12`), salvo las que revisan la hora. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
 
 ## Controles
 
@@ -80,6 +80,8 @@ Hay nueve grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `control
 
 El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no».
 
+El reloj de arriba, junto a los medidores, marca la hora del juego; tocarlo dice la hora y cuándo amanece u oscurece.
+
 Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
 
 Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
@@ -88,7 +90,16 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
 - Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada) y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada), la hora del día y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+
+## Día y noche
+
+Un día dura 24 minutos: una hora del juego es un minuto. Amanece a las 5 y oscurece a las 8 de la noche; una partida nueva empieza a las 8 de la mañana. Con la página cerrada o la pestaña oculta, el tiempo no corre.
+
+- El sol cruza el cielo y las sombras se mueven; al amanecer y al atardecer el cielo se pone durazno y rosa.
+- De noche todo se ve azul, más oscuro pero no negro (a medianoche la imagen tiene entre 44 % y 57 % del brillo de mediodía), y Tamachin brilla un poco para que se distinga. Hay estrellas y una luna creciente bajita hacia el norte: se ven mejor con la cámara baja.
+- El reloj es analógico: la manecilla larga da una vuelta por minuto. De noche la carátula se pone azul y sale la luna.
+- Para probar una hora: `?hora=21` o `?hora=21:30` en la dirección (por ejemplo `https://tamachin.matteo.games/?hora=21`). Desde ahí sigue corriendo y se guarda.
 
 ## Música
 

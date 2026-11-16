@@ -45,16 +45,10 @@ const PITCH = { def: Math.atan2(7.6, 11.2), min: 15 * Math.PI / 180, max: 60 * M
 const camView = { yaw: 0, yawT: 0, pitch: PITCH.def, pitchT: PITCH.def, c: 1, s: 0, vc: 1, vs: 0 };
 const MAX_ANISO = renderer.capabilities.getMaxAnisotropy();
 
+// El cielo: una esfera con color por vértice que sigue a la cámara (updateCamera). `paintSky` la pinta según la hora (día y noche, abajo).
 const skyMesh = (() => {
-  const g = new THREE.SphereGeometry(520, 24, 14);
-  const P = g.attributes.position, col = new Float32Array(P.count * 3);
-  const top = new THREE.Color(0x3f9ef5), mid = new THREE.Color(0x9bd6ff), c = new THREE.Color();
-  for (let i = 0; i < P.count; i++) {
-    const h = P.getY(i) / 520;
-    if (h < 0) c.copy(FOG); else if (h < 0.22) c.copy(FOG).lerp(mid, h / 0.22); else c.copy(mid).lerp(top, (h - 0.22) / 0.78);
-    col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
-  }
-  g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const g = new THREE.SphereGeometry(520, 32, 20);
+  g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(g.attributes.position.count * 3), 3));
   const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.BackSide, fog: false, depthWrite: false }));
   m.renderOrder = -10; m.frustumCulled = false; scene.add(m); return m;
 })();
@@ -69,7 +63,114 @@ sun.shadow.camera.left = -SH; sun.shadow.camera.right = SH; sun.shadow.camera.to
 sun.shadow.camera.near = 1; sun.shadow.camera.far = 160;
 sun.shadow.bias = -0.0005; sun.shadow.normalBias = 0.05;
 scene.add(sun); scene.add(sun.target);
-const SUN_OFF = new THREE.Vector3(38, 58, 42);
+const SUN_OFF = new THREE.Vector3(38, 58, 42);              // de Tamachin hacia la luz (el sol o la luna): lo mueve applyDay
+
+// ───────────────────────── día y noche ─────────────────────────
+// Un día dura 24 minutos: una hora de juego es un minuto real (`day.h`, de 0 a 24; se guarda). Amanece a las 5 y anochece a las 8.
+// De 8 a 17:30 los colores e intensidades son los de antes del ciclo. La noche es azul, no negra (se ve en un teléfono).
+// La luna alumbra con la misma luz que el sol: se cambian cuando las dos pasan por cero, en el crepúsculo. Nunca se agrega ni se quita
+// una luz con sombra (en r128 eso recompila todos los materiales y el juego se traba).
+const DAY = { rise: 5, set: 20, start: 8, rate: 1 / 60 };   // rate: horas de juego por segundo
+const day = { h: DAY.start, light: 1, warm: 0, stars: 0 };   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer
+// hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
+const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
+const SKY_DAY = [0x3f9ef5, 0x9bd6ff, 0xd6f0ff, 0xf2f9ff, 0xb6c296, 0.58, 0xffffff, 1, 0];
+const SKY_KEYS = [[0, SKY_NIGHT], [3.9, SKY_NIGHT],
+  [5, [0x3b4b98, 0xb48bc2, 0xffb18a, 0xd8d4f4, 0x7a8090, 0.62, 0xffc2b2, 0.45, 1]],      // amanecer
+  [6.3, [0x4c9cee, 0xb4dafb, 0xfde2c4, 0xf8f4f0, 0xb6bf98, 0.6, 0xfff0e2, 0.85, 0.35]],   // mañana
+  [8, SKY_DAY], [17.5, SKY_DAY],
+  [19, [0x4a94e4, 0xbcd5ee, 0xffdcae, 0xf0eeff, 0xb0b896, 0.6, 0xfff0d6, 0.85, 0.4]],     // tarde dorada
+  [20, [0x33408c, 0xd88aa6, 0xff9868, 0xe2cfee, 0x76788e, 0.62, 0xffb4a0, 0.45, 1]],      // atardecer
+  [21.1, SKY_NIGHT], [24, SKY_NIGHT]].map(([h, k]) => ({ h, c: k.slice(0, 7).map((v, i) => (i === 5 ? v : new THREE.Color(v))), tint: new THREE.Color(k[6]), light: k[7], warm: k[8] }));
+const SUN_COL = new THREE.Color(0xfff1d6), SUN_LOW = new THREE.Color(0xffbf96), MOON_COL = new THREE.Color(0xdfe6ff), GLOW = new THREE.Color(0xff9a5c);
+const SUN_DISC = new THREE.Color(0xfff4d6), SUN_DISC_LOW = new THREE.Color(0xffa25c);
+const DEG = Math.PI / 180, LIGHT_D = SUN_OFF.length(), LIGHT_MIN_E = 30 * DEG;   // la sombra cubre ±42 m: con el sol más bajo se estiraría de más
+const smooth = (a, b, v) => { const t = clamp((v - a) / (b - a), 0, 1); return t * t * (3 - 2 * t); };
+// Lo que no recibe luz (MeshBasicMaterial: nubes, mariposas) brillaría de noche: se tiñe con la hora.
+const UNLIT = [];
+function dimmable(mat) { UNLIT.push({ mat, base: mat.color.clone() }); return mat; }
+// Estrellas, luna y sol van en el cielo y se dibujan justo después de él, antes que todo lo demás: sin transparencia (así entran en
+// la lista de lo opaco, que respeta renderOrder) pero con mezcla aditiva, y sin profundidad. Así un cerro lejano siempre las tapa.
+const SKY_ADD = { transparent: false, blending: THREE.AdditiveBlending, depthTest: false, depthWrite: false, fog: false };
+const skyDot = canvasTex(32, 32, (g) => { const gr = g.createRadialGradient(16, 16, 0, 16, 16, 16); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.3, 'rgba(255,255,255,.9)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 32, 32); });
+const skyStars = [[340, 2.4, 2411], [60, 3.8, 2412]].map(([n, size, seed]) => {
+  const R = mulberry(seed), pos = new Float32Array(n * 3), col = new Float32Array(n * 3), c = new THREE.Color(), tints = [0xffffff, 0xdfe8ff, 0xfff1c9];
+  for (let i = 0; i < n; i++) {
+    const y = 0.02 + 0.98 * Math.pow(R(), 1.7), a = R() * TAU, r = Math.sqrt(1 - y * y);   // más cerca del horizonte, que es lo que ve la cámara
+    pos[i * 3] = Math.cos(a) * r * 480; pos[i * 3 + 1] = y * 480; pos[i * 3 + 2] = Math.sin(a) * r * 480;
+    c.setHex(tints[Math.floor(R() * 3)]).multiplyScalar(0.5 + 0.5 * R()); col[i * 3] = c.r; col[i * 3 + 1] = c.g; col[i * 3 + 2] = c.b;
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  const m = new THREE.Points(g, new THREE.PointsMaterial(Object.assign({ size, sizeAttenuation: false, map: skyDot, vertexColors: true, opacity: 0 }, SKY_ADD)));
+  m.renderOrder = -9; m.frustumCulled = false; skyMesh.add(m); return m;
+});
+function skySprite(tex, scale) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial(Object.assign({ map: tex }, SKY_ADD)));
+  s.scale.setScalar(scale); s.renderOrder = -8; s.frustumCulled = false; skyMesh.add(s); return s;
+}
+const skyMoon = skySprite(canvasTex(128, 128, (g) => {
+  const gr = g.createRadialGradient(64, 64, 16, 64, 64, 64); gr.addColorStop(0, 'rgba(200,214,255,.45)'); gr.addColorStop(1, 'rgba(200,214,255,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+  const m = document.createElement('canvas'); m.width = m.height = 128; const q = m.getContext('2d');   // la luna creciente, aparte para recortarla
+  q.fillStyle = '#fff6d6'; q.beginPath(); q.arc(64, 64, 24, 0, TAU); q.fill();
+  q.fillStyle = '#efe2b8'; for (const [x, y, r] of [[52, 58, 5], [60, 76, 4], [47, 72, 3]]) { q.beginPath(); q.arc(x, y, r, 0, TAU); q.fill(); }
+  q.globalCompositeOperation = 'destination-out'; q.beginPath(); q.arc(78, 54, 21, 0, TAU); q.fill();
+  g.drawImage(m, 0, 0);
+}), 84);
+const skySun = skySprite(canvasTex(128, 128, (g) => {
+  const gr = g.createRadialGradient(64, 64, 0, 64, 64, 64);
+  gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.26, 'rgba(255,252,236,1)'); gr.addColorStop(0.32, 'rgba(255,236,190,.55)'); gr.addColorStop(1, 'rgba(255,220,150,0)');
+  g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
+}), 120);
+
+// Un arco por el cielo: sale por el este (f = 0) y se pone por el oeste (f = 1); fuera de 0..1 está bajo el horizonte. az es el rumbo
+// desde el este (+x) hacia el sur (+z). El sol no va de este a oeste: se queda entre el este-sureste y el sur, al sureste a mediodía
+// (como antes del ciclo). La cámara empieza al sur: así la escena queda de frente a la luz y las sombras caen de lado, donde se ven
+// (con el sol justo detrás de la cámara se esconden detrás de cada cosa; con el sol al este la casa queda a contraluz). La luna cruza bajita por el norte (a 6° como mucho: la cámara mira hacia abajo y solo con la cámara baja ve el cielo), para que se vea al caminar
+// hacia las montañas; su luz viene del sur, como la del sol.
+function arcDir(out, f, maxE, az0, az1) { const az = lerp(az0, az1, f) * DEG, e = maxE * DEG * Math.sin(Math.PI * f); return out.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)); }
+const _sunD = new THREE.Vector3(), _moonD = new THREE.Vector3(), _moonL = new THREE.Vector3(), _skc = new THREE.Color();
+const _dc = [0, 1, 2, 3, 4].map(() => new THREE.Color()), _tint = new THREE.Color(), _lc = new THREE.Color();
+let skyAt = -1;
+function paintSky(top, mid, hor, glow) {
+  const P = skyMesh.geometry.attributes.position, C = skyMesh.geometry.attributes.color, a = C.array, c = _skc;
+  for (let i = 0; i < P.count; i++) {
+    const x = P.getX(i) / 520, y = P.getY(i) / 520, z = P.getZ(i) / 520;
+    if (y < 0) c.copy(hor); else if (y < 0.22) c.copy(hor).lerp(mid, y / 0.22); else c.copy(mid).lerp(top, (y - 0.22) / 0.78);
+    if (glow > 0) { const d = x * _sunD.x + y * _sunD.y + z * _sunD.z; if (d > 0) c.lerp(GLOW, glow * Math.pow(d, 5) * (1 - clamp(y * 1.4, 0, 1))); }   // resplandor hacia el sol
+    a[i * 3] = c.r; a[i * 3 + 1] = c.g; a[i * 3 + 2] = c.b;
+  }
+  C.needsUpdate = true;
+}
+function setHour(h) { day.h = ((h % 24) + 24) % 24; applyDay(true); }
+function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; applyDay(false); }
+function applyDay(force) {
+  const h = day.h; let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++;
+  const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));
+  for (let k = 0; k < 5; k++) _dc[k].copy(A.c[k]).lerp(B.c[k], t);
+  _tint.copy(A.tint).lerp(B.tint, t); day.light = lerp(A.light, B.light, t); day.warm = lerp(A.warm, B.warm, t);
+  day.stars = smooth(0.45, 0.05, day.light);
+  // dónde van el sol y la luna (la luna sale a las 8 de la noche y se pone a las 5)
+  arcDir(_sunD, (h - DAY.rise) / (DAY.set - DAY.rise), 46, 20, 85);
+  // de día g pasa de 1 (se puso) a 24/night (vuelve a salir): a la mitad del día se cuenta hacia atrás desde 0, así siempre queda bajo el horizonte
+  const night = 24 - DAY.set + DAY.rise; let g = ((h - DAY.set + 24) % 24) / night; if (g > (1 + 24 / night) / 2) g -= 24 / night;
+  arcDir(_moonD, g, 6, -15, -165); _moonL.set(_moonD.x, _moonD.y, -_moonD.z);
+  const sunAmt = smooth(-0.03, 0.25, _sunD.y), moonAmt = smooth(-0.02, 0.04, _moonD.y), bySun = sunAmt >= moonAmt, D = bySun ? _sunD : _moonL;
+  if (bySun) { sun.color.copy(SUN_LOW).lerp(SUN_COL, smooth(0, 0.5, _sunD.y)); sun.intensity = 0.62 * sunAmt; }
+  else { sun.color.copy(MOON_COL); sun.intensity = 0.45 * moonAmt; }
+  const az = Math.atan2(D.z, D.x), e = Math.max(LIGHT_MIN_E, Math.asin(clamp(D.y, -1, 1)));
+  SUN_OFF.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)).multiplyScalar(LIGHT_D);
+  hemi.color.copy(_dc[3]); hemi.groundColor.copy(_dc[4]); hemi.intensity = lerp(A.c[5], B.c[5], t);
+  scene.fog.color.copy(_dc[2]); scene.background.copy(_dc[2]);
+  for (const u of UNLIT) u.mat.color.copy(u.base).multiply(_tint);
+  // en el cielo
+  for (const s of skyStars) s.material.opacity = day.stars;
+  skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light); skyMoon.visible = skyMoon.material.opacity > 0.01;
+  skySun.position.copy(_sunD).multiplyScalar(470); skySun.material.opacity = smooth(-0.07, 0.03, _sunD.y); skySun.visible = skySun.material.opacity > 0.01;
+  skySun.material.color.copy(SUN_DISC_LOW).lerp(SUN_DISC, smooth(0, 0.4, _sunD.y));
+  if (force || Math.abs(h - skyAt) > 0.004) { skyAt = h; paintSky(_dc[0], _dc[1], _dc[2], 0.85 * smooth(-0.25, 0, _sunD.y) * (1 - smooth(0.05, 0.35, _sunD.y))); }
+}
+applyDay(true);
 
 // ───────────────────────── geometría compartida ─────────────────────────
 const GC = {};
@@ -828,9 +929,13 @@ function makeTamachin(o) {
     core.position.y = -d.H / 2; halo.position.y = d.H + 0.22;
     lidMat.color.copy(d.face === 'cream' ? CREAM : mats.body.color);
   };
+  // brillo propio (emissive) en su color: de noche la luz es azul y un cuerpo amarillo se vería verde oscuro (06-main.js)
+  T.glowK = 0;
+  T.glow = (k) => { T.glowK = k; for (const m of [mats.body, mats.alt, lidMat]) m.emissive.copy(m.color).multiplyScalar(k); };
   T.setColor = (hex) => {
     T.color = hex; mats.body.color.set(hex); mats.alt.color.set(hex).offsetHSL(0.01, 0.02, -0.13);
     if (T.def) lidMat.color.copy(T.def.face === 'cream' ? CREAM : mats.body.color);
+    if (T.glowK) T.glow(T.glowK);
   };
   T.setMood = (name) => {
     if (!MOODS[name]) name = 'contento';
@@ -1480,7 +1585,7 @@ scene.add(cityB.mesh(), gardenB.mesh(), parkB.mesh(), meadowB.mesh(), forestB.me
   const m = b.mesh(MAT_SCENERY, false); scene.add(m);
 }
 const clouds = [];
-{ const mat = new THREE.MeshBasicMaterial({ color: 0xffffff });
+{ const mat = dimmable(new THREE.MeshBasicMaterial({ color: 0xffffff }));   // de noche se tiñen con el cielo (01-core.js)
   for (let i = 0; i < 9; i++) {
     const b = new Batch(); for (let k = 0; k < 5; k++) b.ico('#ffffff', (k - 2) * rr(4.5, 6), rr(-1, 1.5), rr(-2, 2), rr(4, 7), rr(3, 4.5), rr(4, 6), 1);
     const m = new THREE.Mesh(b.geometry(), mat); m.position.set(rr(-260, 260), rr(48, 80), rr(-420, -40)); m.scale.setScalar(rr(0.9, 1.7)); scene.add(m); clouds.push(m);
@@ -1824,7 +1929,7 @@ function makeOwl() {
 const butterflies = [];
 const G_WING_R = new THREE.CircleGeometry(0.17, 8).rotateX(-Math.PI / 2).translate(0.17, 0, 0), G_WING_L = new THREE.CircleGeometry(0.17, 8).rotateX(-Math.PI / 2).translate(-0.17, 0, 0);
 function makeButterfly(x, z, col) {
-  const g = new THREE.Group(), mat = new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide });
+  const g = new THREE.Group(), mat = dimmable(new THREE.MeshBasicMaterial({ color: col, side: THREE.DoubleSide }));
   const wr = new THREE.Mesh(G_WING_R, mat), wl = new THREE.Mesh(G_WING_L, mat), body = new THREE.Mesh(G_BOX, M_LINE); body.scale.set(0.035, 0.035, 0.26);
   g.add(wr, wl, body); scene.add(g);
   butterflies.push({ g, wr, wl, home: { x, z }, cx: x, cz: z, a: rand(0, TAU), r: rand(0.6, 2.2), y: rand(0.8, 1.9), sp: rand(0.9, 1.8) * (Math.random() < 0.5 ? -1 : 1), ph: rand(0, 9) });
@@ -2488,7 +2593,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3) }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -3297,13 +3402,52 @@ function updateHud(dt) {
     for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
     const fp = forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
   }
-  curInteract = best;
+  curInteract = best; updateClock();
   const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
+}
+
+// ───────────────────────── reloj (el día y la noche están en 01-core.js) ─────────────────────────
+// Analógico: la manecilla larga da una vuelta por minuto real (una hora de juego). De noche la carátula se oscurece y sale la luna.
+const clockEl = $('#clock'), clockSvg = clockEl.querySelector('svg'), cHour = $('#cHour'), cMin = $('#cMin');
+const cNight = $('#cNight'), cWarm = $('#cWarm'), cSun = $('#cSun'), cMoon = $('#cMoon');
+{ let t = ''; for (let i = 0; i < 12; i++) { const a = i * 30 * DEG, x = Math.sin(a), y = -Math.cos(a), f = (v) => v.toFixed(2);
+    t += i % 3 ? '<circle stroke="none" r="1.75" cx="' + f(x * 24.6) + '" cy="' + f(y * 24.6) + '"/>' : '<line x1="' + f(x * 21) + '" y1="' + f(y * 21) + '" x2="' + f(x * 26.4) + '" y2="' + f(y * 26.4) + '"/>'; }
+  $('#cTicks').innerHTML = t; }
+const CLOCK_INK = new THREE.Color(0x231d3b), CLOCK_INK_NIGHT = new THREE.Color(0xe9edff), _ck = new THREE.Color();
+let clockA = -1, clockN = -1, clockStep = -1;
+function hourText(h) {
+  const H = Math.floor(h) % 24, M = Math.floor((h % 1) * 60), h12 = H % 12 || 12;
+  const part = H === 0 || H >= 20 ? 'de la noche' : H < 6 ? 'de la madrugada' : H < 12 ? 'de la mañana' : 'de la tarde';
+  return (h12 === 1 ? 'Es la ' : 'Son las ') + h12 + ':' + String(M).padStart(2, '0') + ' ' + part;
+}
+function clockSay() {
+  const dark = day.h >= DAY.set || day.h < DAY.rise;
+  toast(hourText(day.h) + '. ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.'), 3.5); SFX.pop();
+}
+clockEl.addEventListener('click', clockSay);
+function updateClock() {
+  const h = day.h, m = (h % 1) * 360;
+  if (Math.abs(m - clockA) > 0.25) { clockA = m; cMin.setAttribute('transform', 'rotate(' + m.toFixed(1) + ')'); cHour.setAttribute('transform', 'rotate(' + ((h % 12) * 30).toFixed(2) + ')'); }
+  const n = 1 - day.light;
+  if (Math.abs(n - clockN) > 0.005) {
+    clockN = n; const sunK = smooth(0.38, 0.48, day.light), nk = smooth(0.5, 0.95, n);   // al atardecer la carátula se pone durazno; ya de noche, azul
+    cNight.setAttribute('opacity', nk.toFixed(3)); cWarm.setAttribute('opacity', (day.warm * 0.9).toFixed(3));
+    cSun.setAttribute('opacity', sunK.toFixed(3)); cMoon.setAttribute('opacity', (1 - sunK).toFixed(3));
+    clockSvg.style.color = '#' + _ck.copy(CLOCK_INK).lerp(CLOCK_INK_NIGHT, smooth(0.35, 0.65, nk)).getHexString();
+  }
+  const step = Math.floor(h * 6);                                  // el texto, cada 10 minutos de juego
+  if (step !== clockStep) { clockStep = step; const txt = hourText(h); clockEl.setAttribute('aria-label', 'Reloj. ' + txt); clockEl.title = txt; }
+}
+// ?hora=21 (o 21.5, o 21:30) en la dirección: empieza a esa hora, para probar la noche
+function hourParam() {
+  const m = /[?&]hora=(\d{1,2})(?:(?::|%3A)(\d{2})|(\.\d+))?/i.exec(location.search); if (!m) return null;
+  const h = +m[1] + (m[2] ? +m[2] / 60 : m[3] ? +m[3] : 0);
+  return h <= 24 ? h : null;
 }
 
 function resize() {
@@ -3331,7 +3475,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
-  resize(); clock += dt;
+  resize(); clock += dt; updateDay(dt);
+  const glow = 0.3 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco: que se vea
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
@@ -3359,6 +3504,7 @@ function boot(data) {
   if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
   if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
+  const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);
@@ -3377,6 +3523,6 @@ document.addEventListener('visibilitychange', () => {
 });
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
-window.__tamachin = { player, cars, npcs, ui, view: camView, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
+window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
 if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
 })();

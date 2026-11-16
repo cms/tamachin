@@ -101,7 +101,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3) }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -910,13 +910,52 @@ function updateHud(dt) {
     for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
     const fp = forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
   }
-  curInteract = best;
+  curInteract = best; updateClock();
   const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
+}
+
+// ───────────────────────── reloj (el día y la noche están en 01-core.js) ─────────────────────────
+// Analógico: la manecilla larga da una vuelta por minuto real (una hora de juego). De noche la carátula se oscurece y sale la luna.
+const clockEl = $('#clock'), clockSvg = clockEl.querySelector('svg'), cHour = $('#cHour'), cMin = $('#cMin');
+const cNight = $('#cNight'), cWarm = $('#cWarm'), cSun = $('#cSun'), cMoon = $('#cMoon');
+{ let t = ''; for (let i = 0; i < 12; i++) { const a = i * 30 * DEG, x = Math.sin(a), y = -Math.cos(a), f = (v) => v.toFixed(2);
+    t += i % 3 ? '<circle stroke="none" r="1.75" cx="' + f(x * 24.6) + '" cy="' + f(y * 24.6) + '"/>' : '<line x1="' + f(x * 21) + '" y1="' + f(y * 21) + '" x2="' + f(x * 26.4) + '" y2="' + f(y * 26.4) + '"/>'; }
+  $('#cTicks').innerHTML = t; }
+const CLOCK_INK = new THREE.Color(0x231d3b), CLOCK_INK_NIGHT = new THREE.Color(0xe9edff), _ck = new THREE.Color();
+let clockA = -1, clockN = -1, clockStep = -1;
+function hourText(h) {
+  const H = Math.floor(h) % 24, M = Math.floor((h % 1) * 60), h12 = H % 12 || 12;
+  const part = H === 0 || H >= 20 ? 'de la noche' : H < 6 ? 'de la madrugada' : H < 12 ? 'de la mañana' : 'de la tarde';
+  return (h12 === 1 ? 'Es la ' : 'Son las ') + h12 + ':' + String(M).padStart(2, '0') + ' ' + part;
+}
+function clockSay() {
+  const dark = day.h >= DAY.set || day.h < DAY.rise;
+  toast(hourText(day.h) + '. ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.'), 3.5); SFX.pop();
+}
+clockEl.addEventListener('click', clockSay);
+function updateClock() {
+  const h = day.h, m = (h % 1) * 360;
+  if (Math.abs(m - clockA) > 0.25) { clockA = m; cMin.setAttribute('transform', 'rotate(' + m.toFixed(1) + ')'); cHour.setAttribute('transform', 'rotate(' + ((h % 12) * 30).toFixed(2) + ')'); }
+  const n = 1 - day.light;
+  if (Math.abs(n - clockN) > 0.005) {
+    clockN = n; const sunK = smooth(0.38, 0.48, day.light), nk = smooth(0.5, 0.95, n);   // al atardecer la carátula se pone durazno; ya de noche, azul
+    cNight.setAttribute('opacity', nk.toFixed(3)); cWarm.setAttribute('opacity', (day.warm * 0.9).toFixed(3));
+    cSun.setAttribute('opacity', sunK.toFixed(3)); cMoon.setAttribute('opacity', (1 - sunK).toFixed(3));
+    clockSvg.style.color = '#' + _ck.copy(CLOCK_INK).lerp(CLOCK_INK_NIGHT, smooth(0.35, 0.65, nk)).getHexString();
+  }
+  const step = Math.floor(h * 6);                                  // el texto, cada 10 minutos de juego
+  if (step !== clockStep) { clockStep = step; const txt = hourText(h); clockEl.setAttribute('aria-label', 'Reloj. ' + txt); clockEl.title = txt; }
+}
+// ?hora=21 (o 21.5, o 21:30) en la dirección: empieza a esa hora, para probar la noche
+function hourParam() {
+  const m = /[?&]hora=(\d{1,2})(?:(?::|%3A)(\d{2})|(\.\d+))?/i.exec(location.search); if (!m) return null;
+  const h = +m[1] + (m[2] ? +m[2] / 60 : m[3] ? +m[3] : 0);
+  return h <= 24 ? h : null;
 }
 
 function resize() {
@@ -944,7 +983,8 @@ function frame(now) {
   requestAnimationFrame(frame);
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
-  resize(); clock += dt;
+  resize(); clock += dt; updateDay(dt);
+  const glow = 0.3 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco: que se vea
   updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
@@ -972,6 +1012,7 @@ function boot(data) {
   if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
   if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
+  const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);
@@ -990,6 +1031,6 @@ document.addEventListener('visibilitychange', () => {
 });
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
-window.__tamachin = { player, cars, npcs, ui, view: camView, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
+window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
 if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
 })();
