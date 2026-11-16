@@ -76,7 +76,7 @@ Hay ocho grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controle
 | Diario (necesidades y encargos) | J | Botón Diario (junto a los medidores) |
 | Girar la cámara | Arrastrar con el mouse de lado, o Z y X | Arrastrar con un dedo (o con dos) de lado |
 | Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
-| Zoom | Rueda del mouse | Botón Acercar, o pellizcar |
+| Zoom | Rueda del mouse o botón Acercar | Pellizcar (en pantallas táctiles no aparece el botón) |
 
 Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
 
