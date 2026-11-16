@@ -1,21 +1,25 @@
 // La música: sigue al lugar (casa, jardín, parque, ciudad, camino, bosque, montañas, Valle Alegre, bosque sin fin), va al paso del
 // reloj del audio, no se atropella tras una pausa, y el botón de sonido pasa por música y efectos → solo efectos → nada, y se guarda.
-// Lo de fondo (pájaros, río, viento) sigue al lugar, a la orilla y a la altura, también con «Solo efectos». Sin oídos: se renderiza
+// Lo de fondo (pájaros, río, viento) sigue al lugar, a la orilla y a la altura, también con «Solo efectos». Reacciones: canción de
+// cuna al dormir, percusión al correr, una parte se calla con una necesidad baja, efectos en la tonalidad de la música, fanfarria en
+// las cimas. Sin oídos: se renderiza
 // cada mezcla con un OfflineAudioContext (el mismo `makeMusic` del juego) y se miden picos y volumen.
 //   npm test -- musica --wav   además deja tests/out/musica-*.wav para escucharlas (al volumen del juego)
 const fs = require('fs');
 const { openGame, sleep } = require('./lib.cjs');
 
 // Renderiza `plan` ([[segundo, lugar, { near, alt }], ...]) durante `secs`: `near` es la cercanía al río o al kiosco y `alt` la altura
-// (0 a 1). Con `amb` suena también lo de fondo; con `music: false`, solo eso. Con `sfx`, encima van saltos y "pop" iguales a los del
+// (0 a 1), `run` corre, `low` tiene una necesidad baja y `fanfare` toca la fanfarria (en la tonalidad `tune`). Con `amb` suena también
+// lo de fondo; con `music: false`, solo eso. Con `sfx`, encima van saltos y "pop" iguales a los del
 // juego, para oír el balance. Devuelve pico, volumen (RMS), el segundo más callado, si hubo NaN, cuántos pájaros y, con `wav`, el
 // archivo en base64.
 const RENDER = async ({ plan, secs, sr, wav, sfx, amb, music = true }) => {
   const D = window.__dbg, oc = new OfflineAudioContext(2, Math.ceil(secs * sr), sr), M = D.makeMusic(oc, oc.destination);
   for (let j = 0; j < plan.length; j++) {
     const [t0, key, o = {}] = plan[j], t1 = j + 1 < plan.length ? plan[j + 1][0] : secs;
-    M.param.near = o.near == null ? 1 : o.near; M.param.alt = o.alt || 0;
+    M.param.near = o.near == null ? 1 : o.near; M.param.alt = o.alt || 0; M.param.run = !!o.run; M.setLow(!!o.low, t0);
     if (music) M.zone(key, t0);
+    if (o.fanfare) M.fanfare(t0 + 0.1, o.tune || 1);
     if (amb) M.ambient(D.ambFor(key, M.param.near, M.param.alt), t0);
     for (let u = t0; u < t1; u += 0.25) { if (music) M.pump(u, Math.min(t1, u + 0.45)); if (amb) M.pumpAmb(u, Math.min(t1, u + 0.45)); }
   }
@@ -38,19 +42,20 @@ const RENDER = async ({ plan, secs, sr, wav, sfx, amb, music = true }) => {
     for (let i = 0, o = 44; i < n; i++, o += 4) { dv.setInt16(o, Math.max(-1, Math.min(1, L[i])) * 32767, true); dv.setInt16(o + 2, Math.max(-1, Math.min(1, R[i])) * 32767, true); }
     const u8 = new Uint8Array(ab); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); b64 = btoa(s);
   }
-  return { peak, rms: Math.sqrt(sum / cnt), quiet, nan, steps: M.steps, calls: M.amb.calls, b64 };
+  return { peak, rms: Math.sqrt(sum / cnt), quiet, nan, steps: M.steps, calls: M.amb.calls, runHits: M.runHits, b64 };
 };
 
 module.exports = {
-  titulo: 'música y lo de fondo: siguen al lugar, van a tiempo, el botón de sonido tiene tres pasos y se guarda',
+  titulo: 'música y lo de fondo: siguen al lugar y a Tamachin, van a tiempo, el botón de sonido tiene tres pasos y se guarda',
   async run(T) {
-    const expose = 'getMus: () => mus, getErr: () => musErr, makeMusic, ambFor, snd';
+    const expose = 'getMus: () => mus, getErr: () => musErr, makeMusic, ambFor, snd, needs';
     const { ctx, page, errors, E } = await openGame(T, { expose });
     const live = () => E(() => {
       const D = window.__dbg, M = D.getMus(), c = D.snd.ctx, name = (pl) => M && Object.keys(M.players).find((k) => M.players[k] === pl);
       return { state: c ? c.state : null, t: c ? c.currentTime : 0, key: M ? M.key : null, cur: M ? name(M.cur) || null : null, steps: M ? M.steps : 0,
         live: M ? Object.keys(M.players).filter((k) => M.players[k].live) : [], ahead: M && M.cur ? M.cur.next - c.currentTime : null, out: M ? M.out.gain.value : 0, err: D.getErr() ? String(D.getErr()) : null,
-        ambOut: M ? +M.amb.out.gain.value.toFixed(3) : 0, river: M ? +M.amb.lv.river.toFixed(2) : 0, wind: M ? +M.amb.lv.wind.toFixed(2) : 0, birds: M ? +M.amb.birds.toFixed(2) : 0, calls: M ? M.amb.calls : 0 };
+        ambOut: M ? +M.amb.out.gain.value.toFixed(3) : 0, tune: +D.snd.tune.toFixed(3), low: M ? M.low : false, runLv: M ? +M.runLv.toFixed(2) : 0, runHits: M ? M.runHits : 0,
+        fanfares: M ? M.fanfares : 0, keys: M ? +M.players.ciudad.L.keys.gain.value.toFixed(3) : 0, sleep: window.__tamachin.player.state === 'sleep', river: M ? +M.amb.lv.river.toFixed(2) : 0, wind: M ? +M.amb.lv.wind.toFixed(2) : 0, birds: M ? +M.amb.birds.toFixed(2) : 0, calls: M ? M.amb.calls : 0 };
     });
     const go = async (x, z, ms) => { await E(([x, z]) => window.__tamachin.go(x, z), [x, z]); await sleep(ms || 3000); return live(); };
 
@@ -66,15 +71,34 @@ module.exports = {
     T.check('en la casa, la caja de música (y la del jardín ya no suena)', s.key === 'casa' && s.cur === 'casa' && s.live.join() === 'casa', JSON.stringify(s));
     for (const [x, z, k, piece] of [[24, 30, 'ciudad', 'ciudad'], [5, -40, 'parque', 'ciudad'], [3, -100, 'camino', 'bosque'], [8, -180, 'bosque', 'bosque'],
       [0, -500, 'montes', 'montes'], [0, -1352, 'pueblo', 'pueblo'], [0, -1600, 'sinfin', 'sinfin'], [0, 3.5, 'jardin', 'ciudad']]) {
-      s = await go(x, z);
-      T.check('en ' + k + ': pieza ' + piece + (k === piece ? '' : ', mezcla ' + k), s.key === k && s.cur === piece && s.live.join() === piece, JSON.stringify(s));
+      s = await go(x, z); const semis = { ciudad: 0, bosque: -5, montes: 2, pueblo: -3, sinfin: -5 }[piece];
+      T.check('en ' + k + ': pieza ' + piece + (k === piece ? '' : ', mezcla ' + k) + ', efectos transportados ' + semis + ' semitonos', s.key === k && s.cur === piece && s.live.join() === piece
+        && Math.abs(s.tune - Math.pow(2, semis / 12)) < 0.002, JSON.stringify(s));
     }
     // lo de fondo: junto al río suena el río y cantan pájaros; en la cima hay viento y ningún pájaro
     s = await go(8, -191, 4000);
     T.check('junto al río: río y pájaros', s.key === 'bosque' && s.river > 0.3 && s.birds === 1 && s.calls > 0, JSON.stringify(s));
     s = await go(2, -762);
     T.check('en la cima: viento fuerte y sin pájaros', s.key === 'montes' && s.wind > 0.9 && s.birds === 0 && s.river === 0, JSON.stringify(s));
+    T.check('y al llegar suena la fanfarria', s.fanfares === 1, s.fanfares + ' fanfarrias');
     s = await go(0, 3.5);
+    // dormido: canción de cuna; al despertar, otra vez la de la casa
+    await go(-2.8, -10.5, 700); await page.keyboard.press('KeyE'); await sleep(3500); s = await live();
+    T.check('dormido en su cama: canción de cuna', s.sleep && s.key === 'cuna' && s.cur === 'cuna' && s.live.join() === 'cuna', JSON.stringify(s));
+    await page.keyboard.down('KeyS'); await sleep(300); await page.keyboard.up('KeyS'); await sleep(3200); s = await live();
+    T.check('al despertar vuelve la de la casa', !s.sleep && s.key === 'casa' && s.cur === 'casa', JSON.stringify(s));
+    // corriendo entra la percusión; al parar se va
+    s = await go(0, 3.5, 2000); const r0 = s.runHits;
+    await page.keyboard.down('ShiftLeft'); await page.keyboard.down('KeyD'); await sleep(2200); s = await live(); await page.keyboard.up('KeyD'); await page.keyboard.up('ShiftLeft');
+    T.check('corriendo, entra la percusión', s.key === 'jardin' && s.runLv > 0.5 && s.runHits > r0 + 3, JSON.stringify(s));
+    await sleep(3000); const r1 = (await live()).runHits; await sleep(1500); s = await live();
+    T.check('al parar, se va', s.runLv < 0.05 && s.runHits === r1, JSON.stringify(s));
+    // con una necesidad baja, los acordes del jardín casi se callan; al recuperarse, vuelven
+    const keys0 = s.keys; await E(() => { window.__dbg.needs.panza = 0.02; }); await sleep(3500); s = await live();
+    T.check('con la panza vacía, los acordes casi se callan', s.low && s.keys < keys0 * 0.5, keys0 + ' → ' + s.keys);
+    await E(() => { window.__dbg.needs.panza = 1; }); await sleep(3500); s = await live();
+    T.check('con la panza llena, vuelven', !s.low && s.keys > keys0 * 0.85, JSON.stringify(s));
+    s = await go(0, 3.5, 1000);
     // asomarse a la puerta (entrar y salir rápido) no cambia la música
     await E(() => window.__tamachin.go(-2.8, -10.5)); await sleep(250); s = await go(0, 3.5, 1500);
     T.check('entrar y salir enseguida no la cambia', s.key === 'jardin' && s.cur === 'ciudad' && s.live.join() === 'ciudad', JSON.stringify(s));
@@ -103,7 +127,7 @@ module.exports = {
     T.check('después de una pausa sigue desde ahora, sin amontonar notas', skip[1] <= 3, skip[0] + ' y luego ' + skip[1] + ' corcheas');
 
     // cada mezcla, renderizada: ni muda, ni saturada, ni con huecos; los efectos del juego llegan a 0.06
-    const ZONES = [['casa', 80], ['ciudad', 72], ['jardin', 24], ['parque', 24], ['camino', 30], ['bosque', 101], ['montes', 64], ['pueblo', 58], ['sinfin', 60]];
+    const ZONES = [['casa', 80], ['ciudad', 72], ['jardin', 24], ['parque', 24], ['camino', 30], ['bosque', 101], ['montes', 64], ['pueblo', 58], ['sinfin', 60], ['cuna', 69]];
     for (const [k, secs] of ZONES) {
       const r = await E(RENDER, { plan: [[0, k]], secs, sr: 22050 });
       T.info(k + ': pico ' + r.peak.toFixed(3) + ', RMS ' + r.rms.toFixed(4) + ', el segundo más callado ' + r.quiet.toFixed(4));
@@ -115,13 +139,18 @@ module.exports = {
       const r = await E(RENDER, { plan: [[0, key, o]], secs: 20, sr: 22050, amb: true, music: false });
       T.check(name + ': RMS ' + r.rms.toFixed(4), !r.nan && r.rms > lo && r.rms < hi && r.peak < 0.06, JSON.stringify({ ...r, b64: undefined }));
     }
+    const run = await E(RENDER, { plan: [[0, 'ciudad', { run: true }]], secs: 20, sr: 22050 });
+    T.check('corriendo en la ciudad: suena sin saturar', !run.nan && run.runHits > 50 && run.peak < 0.2 && run.rms < 0.02, JSON.stringify({ ...run, b64: undefined }));
+    const fan = await E(RENDER, { plan: [[0, 'montes', { fanfare: true, tune: Math.pow(2, 2 / 12) }]], secs: 4, sr: 22050, music: false });
+    T.check('la fanfarria: un poco arriba de los efectos, sin saturar (pico ' + fan.peak.toFixed(3) + ')', !fan.nan && fan.peak > 0.04 && fan.peak < 0.12, JSON.stringify({ ...fan, b64: undefined }));
     const brd = await E(RENDER, { plan: [[0, 'sinfin', { near: 0 }]], secs: 30, sr: 22050, amb: true, music: false });
     T.check('los pájaros del bosque sin fin: seguido y bajito', brd.calls >= 8 && brd.peak < 0.06, brd.calls + ' cantos, pico ' + brd.peak.toFixed(3));
     if (T.flags.has('--wav')) {
       const files = { casa: { plan: [[0, 'casa']], secs: 80 }, ciudad: { plan: [[0, 'ciudad']], secs: 72 }, 'jardin-con-efectos': { plan: [[0, 'jardin']], secs: 40, sfx: true },
         recorrido: { plan: [[0, 'jardin'], [12, 'ciudad'], [24, 'parque'], [34, 'casa'], [52, 'jardin']], secs: 64 },
         bosque: { plan: [[0, 'bosque', { near: 0.15 }], [50, 'bosque', { near: 0.8 }]], secs: 101 }, montes: { plan: [[0, 'montes', { alt: 0.1 }], [32, 'montes', { alt: 0.95 }]], secs: 64 },
-        pueblo: { plan: [[0, 'pueblo', { near: 1 }]], secs: 58 }, sinfin: { plan: [[0, 'sinfin']], secs: 90 },
+        pueblo: { plan: [[0, 'pueblo', { near: 1 }]], secs: 58 }, sinfin: { plan: [[0, 'sinfin']], secs: 90 }, cuna: { plan: [[0, 'cuna']], secs: 69 },
+        reacciones: { plan: [[0, 'jardin'], [8, 'jardin', { run: true }], [16, 'jardin'], [22, 'jardin', { low: true }], [32, 'jardin'], [36, 'montes', { fanfare: true, tune: Math.pow(2, 2 / 12) }], [46, 'cuna']], secs: 72 },
         'recorrido-norte': { plan: [[0, 'camino'], [15, 'bosque', { near: 0.1 }], [27, 'bosque', { near: 1 }], [40, 'montes', { alt: 0.3 }], [55, 'montes', { alt: 0.95 }], [70, 'pueblo', { near: 1 }], [90, 'sinfin']], secs: 110 } };
       for (const f in files) { const r = await E(RENDER, { ...files[f], sr: 44100, wav: true, amb: true }); fs.writeFileSync(T.out(f + '.wav'), Buffer.from(r.b64, 'base64')); T.info('escrito ' + T.out(f + '.wav')); }
     }

@@ -101,6 +101,8 @@ Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toq
 - Valle Alegre: un vals de acordeón, más fuerte cerca del kiosco.
 - Bosque sin fin: nunca se repite; los acordes y la flautita se inventan al momento.
 
+La música también sigue a Tamachin: dormido (en su cama o en la hamaca) suena una canción de cuna; corriendo entra percusión; si tiene hambre, sueño o aburrimiento, una parte alegre se calla hasta que se recupera; los efectos con tono (saltar, trucos, premios) suenan en la tonalidad de la música, que se agacha un momento bajo los premios, y en cada cima suena una fanfarria.
+
 De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 
 ## Mapa (unidades en metros)

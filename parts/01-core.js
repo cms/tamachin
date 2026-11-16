@@ -297,8 +297,9 @@ let toastT = 0; const toastEl = $('#toast');
 function toast(text, dur) { toastEl.textContent = text; toastEl.classList.add('on'); toastT = dur || 3.5; }
 
 // ───────────────────────── sonido (sintetizado, sin archivos) ─────────────────────────
-// `mode`: 'todo' (música y efectos), 'efectos' o 'no'. `on` deja sonar los efectos y `music` la música.
-const snd = { ctx: null, on: true, music: true, mode: 'todo' };
+// `mode`: 'todo' (música y efectos), 'efectos' o 'no'. `on` deja sonar los efectos y `music` la música. `tune` transporta los efectos
+// con tono a la tonalidad de la música que suena (1 = do; lo pone updateMusic).
+const snd = { ctx: null, on: true, music: true, mode: 'todo', tune: 1 };
 function unlockAudio() {
   if (!snd.on) return;
   if (snd.ctx) { if (snd.ctx.state !== 'running') snd.ctx.resume().catch(() => {}); return; }   // en iPhone puede quedar 'interrupted'
@@ -313,20 +314,20 @@ function tone(f0, f1, dur, type, vol, delay) {
     o.connect(g); g.connect(c.destination); o.start(t); o.stop(t + dur + 0.03);
   } catch (e) { /* sin sonido */ }
 }
-const SFX = {
-  jump: () => tone(320, 660, 0.16, 'sine', 0.06),
-  pop: () => tone(680, 1150, 0.1, 'triangle', 0.06),
+const SFX = {   // los que tienen tono van por snd.tune (k): suenan en la tonalidad de la música
+  jump: (k = snd.tune) => tone(320 * k, 660 * k, 0.16, 'sine', 0.06),
+  pop: (k = snd.tune) => tone(680 * k, 1150 * k, 0.1, 'triangle', 0.06),
   talk: () => { for (let i = 0; i < 3; i++) tone(rand(480, 900), rand(480, 900), 0.07, 'square', 0.022, i * 0.085); },
   honk: () => { tone(392, 392, 0.24, 'square', 0.035); tone(494, 494, 0.24, 'square', 0.035); },
   hit: () => tone(280, 55, 0.42, 'sawtooth', 0.07),
   splash: () => tone(950, 180, 0.26, 'triangle', 0.05),
-  dizzy: () => { tone(620, 300, 0.45, 'sine', 0.05); tone(300, 620, 0.45, 'sine', 0.04, 0.3); },
-  nice: () => { tone(523, 523, 0.1, 'triangle', 0.05); tone(784, 784, 0.16, 'triangle', 0.05, 0.1); },
+  dizzy: (k = snd.tune) => { tone(620 * k, 300 * k, 0.45, 'sine', 0.05); tone(300 * k, 620 * k, 0.45, 'sine', 0.04, 0.3); },
+  nice: (k = snd.tune) => { tone(523 * k, 523 * k, 0.1, 'triangle', 0.05); tone(784 * k, 784 * k, 0.16, 'triangle', 0.05, 0.1); },
   fridgeOpen: () => { tone(150, 85, 0.2, 'sine', 0.08); tone(1250, 1900, 0.4, 'sine', 0.022, 0.1); tone(1660, 2490, 0.34, 'sine', 0.018, 0.2); },
   fridgeShut: () => { tone(180, 70, 0.22, 'triangle', 0.08); tone(90, 60, 0.12, 'sine', 0.06, 0.02); },
   munch: () => { tone(rand(230, 320), 120, 0.06, 'square', 0.028); tone(rand(260, 360), 140, 0.05, 'square', 0.022, 0.08); },
-  yay: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, f, i === 3 ? 0.3 : 0.12, 'triangle', 0.05, i * 0.1)),
-  low: () => { tone(420, 330, 0.22, 'sine', 0.045); tone(330, 260, 0.3, 'sine', 0.04, 0.2); },
+  yay: (k = snd.tune) => [523, 659, 784, 1046].forEach((f, i) => tone(f * k, f * k, i === 3 ? 0.3 : 0.12, 'triangle', 0.05, i * 0.1)),
+  low: (k = snd.tune) => { tone(420 * k, 330 * k, 0.22, 'sine', 0.045); tone(330 * k, 260 * k, 0.3, 'sine', 0.04, 0.2); },
 };
 
 // ───────────────────────── música (sintetizada, sin archivos) ─────────────────────────
@@ -392,6 +393,16 @@ const INST = {
     g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.03); g.gain.setValueAtTime(v, t + len); g.gain.exponentialRampToValueAtTime(0.0001, end);
     fl.connect(g); g.connect(d);
   },
+  horn(E, d, t, m, dur, v) {   // trompeta de juguete: diente de sierra con un filtro que se abre al soplar
+    const c = E.ctx, f = mtof(m), len = Math.max(0.08, dur), end = t + len + 0.12, o = osc(c, 'sawtooth', f, t, end), fl = c.createBiquadFilter(), g = c.createGain();
+    fl.type = 'lowpass'; fl.Q.value = 1.5; fl.frequency.setValueAtTime(f * 1.2, t); fl.frequency.exponentialRampToValueAtTime(Math.min(8000, f * 5), t + 0.06); fl.frequency.exponentialRampToValueAtTime(f * 3, t + len);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.025); g.gain.setValueAtTime(v, t + len); g.gain.exponentialRampToValueAtTime(0.0001, end);
+    o.connect(fl); fl.connect(g); g.connect(d);
+  },
+  wood(E, d, t, m, dur, v) {   // bloque de madera: un toquecito que baja de tono
+    const c = E.ctx, o = osc(c, 'sine', 1150, t, t + 0.07), g = c.createGain(); o.frequency.setValueAtTime(1150, t); o.frequency.exponentialRampToValueAtTime(780, t + 0.05);
+    env(g, t, v, 0.002, 0.07); o.connect(g); g.connect(d);
+  },
   shaker(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'highpass', 6500, 0.7, 0.05); },
   snap(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'bandpass', 1900, 1.3, 0.1); },
 };
@@ -429,11 +440,13 @@ const WANDER = { Em: ['C', 'G', 'Am', 'D'], C: ['G', 'Em', 'Am', 'D'], G: ['D', 
 const RHYTHMS = [[2, 2, 4], [1, 1, 2, 4], [3, 1, 2, 2], [2, 1, 1, 4], [4, 2, 2], [2, 2, 2, 2], [6, 2]];
 const ARPS = [[0, 1, 2, 3, 4, 3, 2, 1], [0, 2, 1, 3, 2, 4, 3, 1], [0, null, 2, null, 3, null, 2, null], [4, 3, 2, 1, 0, 1, 2, 3], [0, 1, 2, null, 3, 2, 1, null]];
 const harpTones = (ch, lo) => { const r = rootIn(ch, lo), th = CHORD_Q[ch.slice(1)][1]; return [r, r + 7, r + 12, r + 12 + th, r + 19]; };
-// Piezas: tempo, swing (cuánto se atrasan las corcheas de contratiempo), reverberación, volumen, capas (volumen y paneo; lo sostenido
-// suena mucho más que lo pulsado, por eso el bajo y el colchón llevan tan poco) y `step`, que toca la
+// Piezas: tempo, swing (cuánto se atrasan las corcheas de contratiempo), reverberación, volumen, tonalidad (`key`, semitonos sobre do:
+// a ella se transportan los efectos), corcheas por compás (`meter`, para la percusión de correr; `noRun` la quita), cuánto queda de
+// cada capa con una necesidad baja (`low`), capas (volumen y paneo; lo sostenido suena mucho más que lo pulsado, por eso el bajo y el
+// colchón llevan tan poco) y `step`, que toca la
 // corchea `i` (cuenta desde que empezó la pieza) en el tiempo `t`; `sd` es lo que dura una corchea.
 const MUSIC = {
-  ciudad: { bpm: 108, swing: 0.12, wet: 0.25, vol: 0.13,   // marimba, bajo y acordes a contratiempo; la tercera vuelta es la parte B, con flautita
+  ciudad: { bpm: 108, swing: 0.12, wet: 0.25, vol: 0.13, key: 0, meter: 8, low: { keys: 0.3, snap: 0, shk: 0.4 },   // marimba, bajo y acordes a contratiempo; la tercera vuelta es la parte B, con flautita
     layers: { mel: { vol: 0.54, pan: 0.1 }, keys: { vol: 0.14, pan: -0.3 }, bass: { vol: 0.23 }, shk: { vol: 0.75, pan: 0.3 }, snap: { vol: 0.9, pan: -0.15 } },
     step(E, L, i, t, sd) {
       const s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 4, B = pass === 2, ch = chordAt(B ? PROG_B : PROG_A, bar, s), n = (B ? MEL_B : MEL_A)[i % 64];
@@ -453,7 +466,7 @@ const MUSIC = {
       INST.shaker(E, L.shk, t, 0, 0, s % 2 ? 1 : 0.5);
       if (B ? s === 4 : s === 2 || s === 6) INST.snap(E, L.snap, t, 0, 0, 1);
     } },
-  casa: { bpm: 72, swing: 0, wet: 0.6, vol: 0.18,   // caja de música en fa, con arpegio y un colchón suave; la segunda vuelta es la parte B
+  casa: { bpm: 72, swing: 0, wet: 0.6, vol: 0.18, key: 5, meter: 8, noRun: true, low: { arp: 0.35 },   // caja de música en fa, con arpegio y un colchón suave; la segunda vuelta es la parte B
     layers: { mel: { vol: 0.41, pan: 0.15 }, arp: { vol: 0.1, pan: -0.25 }, bass: { vol: 0.03 }, pad: { vol: 0.012 } },
     step(E, L, i, t, sd) {
       const K = 5, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 3, B = pass === 1, prog = B ? PROG_B : PROG_A, ch = chordAt(prog, bar, s), n = (B ? MEL_B : MEL_A)[i % 64];
@@ -466,7 +479,7 @@ const MUSIC = {
         for (const m of voicing(ch, 60)) INST.pad(E, L.pad, t, m + K, len, 1);
       }
     } },
-  bosque: { bpm: 76, swing: 0, wet: 0.45, vol: 0.1,   // arpa en sol; la flautita toca el tema en la primera y la tercera vuelta, en las otras quedan el arpa y los pájaros
+  bosque: { bpm: 76, swing: 0, wet: 0.45, vol: 0.1, key: 7, meter: 8, low: { harp: 0.4 },   // arpa en sol; la flautita toca el tema en la primera y la tercera vuelta, en las otras quedan el arpa y los pájaros
     layers: { mel: { vol: 0.22, pan: 0.15 }, harp: { vol: 0.4, pan: -0.2 }, bass: { vol: 0.028 } },
     step(E, L, i, t, sd) {
       const K = 7, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 4, B = pass >= 2, prog = B ? PROG_B : PROG_A, ch = chordAt(prog, bar, s);
@@ -474,7 +487,7 @@ const MUSIC = {
       INST.harp(E, L.harp, t, harpTones(ch, 41)[(pass % 2 ? ARPS[3] : ARPS[0])[s]] + K, sd, s ? 0.7 : 1);
       const split = prog[bar].length > 1; if (s === 0 || (s === 4 && split)) INST.pad(E, L.bass, t, rootIn(ch, 41) + K, (split ? 4 : 8) * sd, 1);
     } },
-  montes: { bpm: 60, swing: 0, wet: 0.7, vol: 0.24,   // en re: colchón amplio que entra despacio y campanitas sueltas (las notas fuertes del tema, luego al azar); más arriba, menos notas
+  montes: { bpm: 60, swing: 0, wet: 0.7, vol: 0.24, key: 2, meter: 8, low: { bell: 0.35 },   // en re: colchón amplio que entra despacio y campanitas sueltas (las notas fuertes del tema, luego al azar); más arriba, menos notas
     layers: { pad: { vol: 0.015 }, low: { vol: 0.02 }, bell: { vol: 0.4, pan: 0.2 } },
     step(E, L, i, t, sd) {
       const K = 2, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 2, ch = PROG_M[bar], few = (E.param.alt || 0) * 0.7;
@@ -482,7 +495,7 @@ const MUSIC = {
       if (pass === 0) { const n = MEL_A[i % 64]; if (n && s % 4 === 0 && Math.random() >= few) INST.bell(E, L.bell, t, n[0] + K + 12, 0, 0.8); }
       else if (s % 2 === 0 && Math.random() < 0.3 * (1 - few)) INST.bell(E, L.bell, t, choose(voicing(ch, 72)) + K, 0, rand(0.5, 0.9));
     } },
-  pueblo: { bpm: 150, swing: 0, wet: 0.3, vol: 0.155,   // vals en la: acordeón con el tema en 3/4, bajo en el uno, acordes en el dos y el tres; suena más cerca del kiosco
+  pueblo: { bpm: 150, swing: 0, wet: 0.3, vol: 0.155, key: 9, meter: 6, low: { chords: 0.3, shk: 0 },   // vals en la: acordeón con el tema en 3/4, bajo en el uno, acordes en el dos y el tres; suena más cerca del kiosco
     layers: { mel: { vol: 0.12, pan: 0.1 }, chords: { vol: 0.05, pan: -0.25 }, bass: { vol: 0.25 }, bell: { vol: 0.3, pan: 0.3 }, shk: { vol: 0.6, pan: 0.2 } },
     step(E, L, i, t, sd) {
       const K = -3, s = i % 6, bar = Math.floor(i / 6) % 16, pass = Math.floor(i / 96) % 3, ch = PROG_W[bar], n = MEL_W[i % 96], v0 = 0.5 + 0.5 * (E.param.near == null ? 1 : E.param.near);
@@ -495,7 +508,7 @@ const MUSIC = {
       else if (s === 2 || s === 4) for (const m of voicing(ch, 57)) INST.accordion(E, L.chords, t, m + K, sd * 0.7, v0 * (s === 2 ? 1 : 0.8));
       if (s % 2 === 0) INST.shaker(E, L.shk, t, 0, 0, v0 * (s ? 0.6 : 1));
     } },
-  sinfin: { bpm: 66, swing: 0, wet: 0.55, vol: 0.12,   // nunca igual: los acordes pasean al azar, el arpa cambia de dibujo y la flautita inventa frases cortas, con silencios
+  sinfin: { bpm: 66, swing: 0, wet: 0.55, vol: 0.12, key: 7, meter: 8, low: { harp: 0.4 },   // nunca igual: los acordes pasean al azar, el arpa cambia de dibujo y la flautita inventa frases cortas, con silencios
     layers: { mel: { vol: 0.23, pan: 0.15 }, harp: { vol: 0.34, pan: -0.2 }, pad: { vol: 0.015 } },
     step(E, L, i, t, sd) {
       const s = i % 8, bar = i >> 3;
@@ -513,7 +526,25 @@ const MUSIC = {
       }
       const a = G.arp[s]; if (a !== null) INST.harp(E, L.harp, t, harpTones(G.ch, 40)[a], sd, s % 4 ? rand(0.55, 0.75) : 0.9);
     } },
+  cuna: { bpm: 84, swing: 0, wet: 0.65, vol: 0.14, key: 5, meter: 6, noRun: true, low: {},   // al dormir: caja de música con el vals del tema, despacito, en fa
+    layers: { mel: { vol: 0.4, pan: 0.15 }, arp: { vol: 0.12, pan: -0.25 }, pad: { vol: 0.01 } },
+    step(E, L, i, t, sd) {
+      const K = 5, s = i % 6, bar = Math.floor(i / 6) % 16, pass = Math.floor(i / 96) % 2, ch = PROG_W[bar], n = MEL_W[i % 96];
+      if (n) INST.bell(E, L.mel, t, n[0] + K + (pass ? 12 : 0), 0, (s ? 0.75 : 0.9) * (pass ? 0.5 : 1));   // la segunda vuelta, una octava arriba y más bajito
+      if (s % 2 === 0) { const vc = voicing(ch, 53); INST.bell(E, L.arp, t, vc[[0, 2, 1][s / 2]] + K, 0, s ? 0.7 : 0.9); }   // un arpegio por tiempo: grave, agudo, en medio
+      if (s === 0) for (const m of voicing(ch, 57)) INST.pad(E, L.pad, t, m + K, 6 * sd + 0.8, 1, 1);
+    } },
 };
+// al correr: shaker en cada corchea, bloque de madera en el uno (y a contratiempo en 4/4), palmada en los tiempos débiles
+function runPerc(E, i, t, meter, v) {
+  const s = i % meter, d = E.runBus;
+  INST.shaker(E, d, t, 0, 0, v * (s % 2 ? 0.55 : 0.9));
+  if (s === 0 || (meter === 8 && s === 3)) INST.wood(E, d, t, 0, 0, v * (s ? 0.3 : 0.45));   // seno puro: pica más de lo que mide
+  if (meter === 8 ? s === 2 || s === 6 : s === 2 || s === 4) INST.snap(E, d, t, 0, 0, v * 0.7);
+}
+// la fanfarria de las cimas: [segundo, nota, duración, fuerza], en do (se transporta a la música que suena)
+const FANFARE = [[0, 67, 0.1, 0.8], [0.13, 67, 0.1, 0.8], [0.26, 67, 0.1, 0.8], [0.4, 72, 0.36, 1], [0.4, 64, 0.36, 0.6], [0.82, 76, 0.15, 0.9], [1, 79, 0.15, 0.9],
+  [1.2, 84, 0.9, 1], [1.2, 79, 0.9, 0.55], [1.2, 76, 0.9, 0.55], [1.2, 48, 0.9, 0.7]];
 // Mezcla de cada lugar: qué pieza, cuánto de cada capa (lo que no aparece va entero) y lo de fondo (`amb`: pájaros, río, viento, de 0 a 1).
 const MUSIC_ZONES = {
   casa: { piece: 'casa', mix: {}, amb: {} },
@@ -525,6 +556,7 @@ const MUSIC_ZONES = {
   montes: { piece: 'montes', mix: {}, amb: { birds: 0.5, wind: 0.25 } },
   pueblo: { piece: 'pueblo', mix: {}, amb: { birds: 0.35, wind: 0.05 } },
   sinfin: { piece: 'sinfin', mix: {}, amb: { birds: 1, wind: 0.12 } },
+  cuna: { piece: 'cuna', mix: {}, amb: {} },   // dormido (en la cama o en la hamaca); lo de fondo sigue al lugar
 };
 // lo de fondo de un lugar: `near` es qué tan cerca está el río (0 a 1) y `alt` la altura en las montañas (0 a 1): arriba, más viento y menos pájaros
 function ambFor(key, near, alt) {
@@ -541,15 +573,17 @@ function bird(E, d, t) {
   else if (kind === 1) { chirp(t, 2500 * f, 2700 * f, 0.16, 0.9); chirp(t + 0.22, 2000 * f, 1950 * f, 0.28, 0.8); }
   else { const o = osc(c, 'sine', 3300 * f, t, t + 0.45), lfo = osc(c, 'sine', 28, t, t + 0.45), lg = c.createGain(), e = c.createGain(); lg.gain.value = 420 * f; lfo.connect(lg); lg.connect(o.frequency); env(e, t, 0.7, 0.02, 0.45); o.connect(e); e.connect(g); }
 }
-const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03 };   // el río en la orilla: RMS ≈ 0.006, debajo de la música
+const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
 function makeMusic(ctx, dest) {
-  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1 } };
+  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1, run: false }, low: false, mixNow: {}, runLv: 0, runHits: 0, fanfares: 0 };
   E.noise = ctx.createBuffer(1, sr, sr); const nz = E.noise.getChannelData(0); for (let i = 0; i < sr; i++) nz[i] = Math.random() * 2 - 1;
   const n = Math.floor(sr * 2), ir = ctx.createBuffer(2, n, sr);   // reverberación: ruido que se apaga en 2 s
   for (let ch = 0; ch < 2; ch++) { const a = ir.getChannelData(ch); for (let i = 0; i < n; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); }
   E.verb = ctx.createConvolver(); E.verb.buffer = ir;
   E.out = ctx.createGain(); E.out.gain.value = 0;
   E.verb.connect(E.out); E.out.connect(dest);   // sin compresor: agrega ganancia propia (≈5 dB en Chrome) y los picos no pasan de 0.1
+  E.runBus = ctx.createGain(); E.runBus.gain.value = RUN_VOL; E.runBus.connect(E.out);   // la percusión de correr, igual en todas las piezas
+  E.fx = ctx.createGain(); E.fx.gain.value = FX_VOL; E.fx.connect(dest);                 // la fanfarria es un efecto: suena aunque la música esté apagada
   for (const k in MUSIC) {
     const P = MUSIC[k], pl = { P, out: ctx.createGain(), L: {}, live: false, i: 0, next: 0, end: Infinity }, wet = ctx.createGain();
     pl.out.gain.value = 0; wet.gain.value = P.wet; pl.out.connect(E.out); pl.out.connect(wet); wet.connect(E.verb);
@@ -584,11 +618,13 @@ function makeMusic(ctx, dest) {
     if (A.next < now) A.next = now + rand(0.2, 1.5);
     while (A.next < until) { if (Math.random() < A.birds) { bird(E, A.bird, A.next); A.calls++; } A.next += rand(1.1, 3.4); }
   };
+  // volumen de una capa: el de la pieza, por la mezcla del lugar, por lo que queda con una necesidad baja
+  const layerVol = (pl, l) => pl.P.layers[l].vol * (l in E.mixNow ? E.mixNow[l] : 1) * (E.low && l in pl.P.low ? pl.P.low[l] : 1);
   // otro lugar: si es la misma pieza solo cambian las capas; si no, la de antes se apaga y la nueva empieza desde el principio
   E.zone = (key, t) => {
     const Z = MUSIC_ZONES[key]; if (!Z) return;
-    const pl = E.players[Z.piece], first = !E.cur, same = E.cur === pl;
-    for (const l in pl.L) glide(pl.L[l].gain, pl.P.layers[l].vol * (l in Z.mix ? Z.mix[l] : 1), t, same ? 0.5 : 0.01);
+    const pl = E.players[Z.piece], first = !E.cur, same = E.cur === pl; E.mixNow = Z.mix;
+    for (const l in pl.L) glide(pl.L[l].gain, layerVol(pl, l), t, same ? 0.5 : 0.01);
     if (!same) {
       if (E.cur) { glide(E.cur.out.gain, 0, t, 0.35); E.cur.end = t + 1.5; }
       pl.i = 0; pl.next = t + (E.cur ? 0.8 : 0.05); pl.end = Infinity; pl.live = true;
@@ -597,13 +633,27 @@ function makeMusic(ctx, dest) {
     if (first) glide(E.out.gain, E.vol, t, 0.5);
     E.key = key;
   };
+  // con una necesidad baja, una parte alegre de la pieza se calla (despacio)
+  E.setLow = (on, t) => { if (!!on === E.low) return; E.low = !!on; if (E.cur) for (const l in E.cur.L) glide(E.cur.L[l].gain, layerVol(E.cur, l), t, 1.2); };
+  // la música se agacha mientras suena un premio y luego vuelve
+  E.duck = (t, dur) => { if (!E.cur) return; glide(E.out.gain, E.vol * 0.35, t, 0.04); E.out.gain.setTargetAtTime(E.vol, t + dur, 0.35); };
+  E.tune = () => (E.cur ? Math.pow(2, ((((E.cur.P.key % 12) + 18) % 12) - 6) / 12) : 1);   // a la tonalidad más cercana: de −6 a +5 semitonos
+  E.fanfare = (t, k) => {
+    const tr = Math.round(12 * Math.log2(k || 1));
+    for (const [at, m, d, v] of FANFARE) INST.horn(E, E.fx, t + at, m + tr, d, v);
+    INST.bell(E, E.fx, t + 1.2, 96 + tr, 0, 0.35); E.duck(t, 2.4); E.fanfares++;
+  };
   E.stop = (t) => { glide(E.out.gain, 0, t, 0.12); for (const k in E.players) E.players[k].end = Math.min(E.players[k].end, t); E.cur = null; E.key = null; };
   // programa las corcheas que caen antes de `until`; lo atrasado (pestaña oculta, un cuadro que tardó) se salta sin sonar
   E.pump = (now, until) => {
     for (const k in E.players) {
       const pl = E.players[k], sd = 30 / pl.P.bpm; if (!pl.live) continue;
       if (pl.next < now) { const skip = Math.ceil((now - pl.next) / sd); pl.next += skip * sd; pl.i += skip; }
-      while (pl.next < until && pl.next < pl.end) { pl.P.step(E, pl.L, pl.i, pl.next + (pl.i % 2 ? pl.P.swing * sd : 0), sd); pl.i++; pl.next += sd; E.steps++; }
+      while (pl.next < until && pl.next < pl.end) {
+        const t = pl.next + (pl.i % 2 ? pl.P.swing * sd : 0); pl.P.step(E, pl.L, pl.i, t, sd);
+        if (pl === E.cur && !pl.P.noRun) { E.runLv += ((E.param.run ? 1 : 0) - E.runLv) * 0.3; if (E.runLv > 0.03) { runPerc(E, pl.i, t, pl.P.meter || 8, E.runLv); E.runHits++; } }   // entra y sale en unas corcheas
+        pl.i++; pl.next += sd; E.steps++;
+      }
       if (pl.next >= pl.end) pl.live = false;
     }
   };

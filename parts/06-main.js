@@ -72,8 +72,12 @@ function reachSummit(p) {
   p.reached = true; if (summits.includes(p.name)) return;
   summits.push(p.name); const P = player; say(P, '¡Llegué a la cima del ' + p.name + '!', 3); P.T.doTrick('dance'); burst('star', P.pos.x, P.pos.y + 2, P.pos.z, 8); gain('diversion', 0.25);
   if (!quests.cumbres) startQuest('cumbres');
-  if (summits.length >= 3) finishQuest('cumbres'); else { toast('Cima del ' + p.name + ': ' + summits.length + ' de 3.', 3.5); SFX.yay(); renderDiary(); save(); }
+  fanfare();
+  if (summits.length >= 3) finishQuest('cumbres', true); else { toast('Cima del ' + p.name + ': ' + summits.length + ' de 3.', 3.5); renderDiary(); save(); }
 }
+// premios: el de los encargos agacha la música un momento; en las cimas, fanfarria en la tonalidad de la música (si no hay motor, el premio de siempre)
+function jingle() { SFX.yay(); const c = snd.ctx; if (mus && c && snd.music) mus.duck(c.currentTime, 1); }
+function fanfare() { const c = snd.ctx; if (!snd.on || !c || c.state !== 'running') return; if (mus && !musErr) mus.fanfare(c.currentTime + 0.05, snd.tune); else SFX.yay(); }
 function tasteFruit(kind) {
   if (fruitsTasted.includes(kind)) return; fruitsTasted.push(kind);
   if (!quests.frutas) startQuest('frutas');
@@ -87,8 +91,8 @@ function discover(zone) {
 const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0 };
 const summits = [], fruitsTasted = [];          // nombres de las cimas alcanzadas y frutas probadas (claves de FRUITS)
 function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
-function finishQuest(id) {
-  quests[id] = 2; toast('¡Encargo cumplido! ' + QUESTS[id].title, 4.5); SFX.yay(); gain('diversion', 0.3);
+function finishQuest(id, quiet) {   // quiet: ya sonó otra cosa (la fanfarria de la tercera cima)
+  quests[id] = 2; toast('¡Encargo cumplido! ' + QUESTS[id].title, 4.5); if (!quiet) jingle(); gain('diversion', 0.3);
   burst('star', player.pos.x, player.pos.y + 1.8, player.pos.z, 6); renderDiary(); save();
 }
 
@@ -608,13 +612,14 @@ const riverNear = (x, z) => Math.pow(clamp(1 - Math.max(0, Math.abs(z - riverZ(x
 function updateMusic(dt) {
   const c = snd.ctx; if (!c || c.state !== 'running' || !snd.on || musErr) return;
   if (!mus) mus = makeMusic(c, c.destination);
-  const P = player, now = c.currentTime, k = musicZone(), alt = clamp(P.pos.y / 400, 0, 1);
-  if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
-  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt), now); mus.pumpAmb(now, now + 0.45);
-  if (!snd.music) return;   // con «Solo efectos», setSound ya apagó la música
+  const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
+  if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
+  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar
+  if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, now + 0.05);
-  mus.pump(now, now + 0.45);
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now);
+  if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
+  mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
 function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
 $('#helpOk').addEventListener('click', hideHelp);
@@ -653,6 +658,7 @@ function updatePlayer(dt) {
     const c = camView.c, s = camView.s, wx = ix * c + iz * s; iz = -ix * s + iz * c; ix = wx;   // de la pantalla al mundo: arriba es alejarse de la cámara
   } else if (P.state === 'sleep' && P.sleepT > 0.8 && (keys.KeyW || keys.KeyA || keys.KeyS || keys.KeyD || keys.ArrowUp || keys.ArrowDown || keys.ArrowLeft || keys.ArrowRight)) wake();
   let mag = Math.hypot(ix, iz); if (mag > 1) { ix /= mag; iz /= mag; mag = 1; }
+  P.running = run && mag > 0.5;   // la música suma percusión
   const m = MOODS[T.mood];
   if (T.mood === 'mareado' && P.state === 'normal' && !ui.closeup) {
     const a = Math.sin(clock * 1.9), c = Math.cos(a), s = Math.sin(a), x2 = ix * c - iz * s, z2 = ix * s + iz * c;
