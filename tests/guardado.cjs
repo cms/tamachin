@@ -10,12 +10,12 @@ module.exports = {
     const near = (a, b) => Math.hypot(a[0] - b[0], a[2] - b[2]) < 0.3;
 
     T.check('la primera vez empieza frente a la casa', near(await where(), [0, 0, 3.5]), JSON.stringify(await where()));
-    await page.click('#helpOk'); await page.click('#bSound');
+    await page.click('#helpOk'); await page.click('#bSound'); await page.click('#bSound');   // sí → solo efectos → no
     await E(() => { const V = window.__tamachin.view; V.yaw = V.yawT = 2; V.pitch = V.pitchT = 0.3; window.__tamachin.go(7, -1700); }); await sleep(1200);
     await reload();
     T.check('en el bosque sin fin: sigue ahí', near(await where(), [7, 0, -1700]), JSON.stringify(await where()));
     T.check('la cámara conserva su ángulo y su altura', await E(() => Math.abs(window.__tamachin.view.yaw - 2) < 0.01 && Math.abs(window.__tamachin.view.pitch - 0.3) < 0.01));
-    T.check('el sonido sigue apagado', (await page.textContent('#bSound')) === 'Sonido: no' && await E(() => document.querySelector('#bSound').getAttribute('aria-pressed') === 'false'));
+    T.check('el sonido sigue apagado', (await page.textContent('#bSound')) === 'Sonido: no');
     T.check('la ayuda ya cerrada no vuelve a salir', await E(() => document.querySelector('#help').hidden));
     await page.click('#bSound'); await reload();
     T.check('al prenderlo, sigue prendido después de recargar', (await page.textContent('#bSound')) === 'Sonido: sí');

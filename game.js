@@ -297,9 +297,11 @@ let toastT = 0; const toastEl = $('#toast');
 function toast(text, dur) { toastEl.textContent = text; toastEl.classList.add('on'); toastT = dur || 3.5; }
 
 // ───────────────────────── sonido (sintetizado, sin archivos) ─────────────────────────
-const snd = { ctx: null, on: true };
+// `mode`: 'todo' (música y efectos), 'efectos' o 'no'. `on` deja sonar los efectos y `music` la música.
+const snd = { ctx: null, on: true, music: true, mode: 'todo' };
 function unlockAudio() {
-  if (!snd.on || snd.ctx) { if (snd.ctx && snd.ctx.state === 'suspended') snd.ctx.resume().catch(() => {}); return; }
+  if (!snd.on) return;
+  if (snd.ctx) { if (snd.ctx.state !== 'running') snd.ctx.resume().catch(() => {}); return; }   // en iPhone puede quedar 'interrupted'
   try { const AC = window.AudioContext || window.webkitAudioContext; if (AC) snd.ctx = new AC(); } catch (e) { snd.ctx = null; }
 }
 function tone(f0, f1, dur, type, vol, delay) {
@@ -326,6 +328,169 @@ const SFX = {
   yay: () => [523, 659, 784, 1046].forEach((f, i) => tone(f, f, i === 3 ? 0.3 : 0.12, 'triangle', 0.05, i * 0.1)),
   low: () => { tone(420, 330, 0.22, 'sine', 0.045); tone(330, 260, 0.3, 'sine', 0.04, 0.2); },
 };
+
+// ───────────────────────── música (sintetizada, sin archivos) ─────────────────────────
+// Cada lugar tiene una mezcla (`MUSIC_ZONES`) de una pieza (`MUSIC`): jardín, parque y ciudad tocan la misma y solo entran o salen
+// instrumentos; al entrar a la casa, esa se apaga y empieza la caja de música. `makeMusic(ctx, destino)` es igual en el juego y en
+// las pruebas (con un OfflineAudioContext se renderiza a WAV). Todo va con el reloj del audio, nunca con el del juego, que se
+// atrasa cuando un cuadro tarda. Las notas están en do mayor (60 es el do central) y cada pieza transporta lo suyo.
+const mtof = (m) => 440 * Math.pow(2, (m - 69) / 12);
+function env(g, t, v, a, len) { g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + a); g.gain.exponentialRampToValueAtTime(0.0001, t + len); }
+function osc(c, type, f, t, end) { const o = c.createOscillator(); o.type = type; o.frequency.value = f; o.start(t); o.stop(end + 0.02); return o; }
+function noiseHit(E, d, t, v, type, freq, q, len) {
+  const c = E.ctx, s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = E.noise; fl.type = type; fl.frequency.value = freq; fl.Q.value = q; env(g, t, v, 0.003, len);
+  s.connect(fl); fl.connect(g); g.connect(d); s.start(t, Math.random() * 0.8); s.stop(t + len + 0.02);
+}
+// Instrumentos: (motor, destino, tiempo, nota, duración en s, fuerza 0..1)
+const INST = {
+  bell(E, d, t, m, dur, v) {   // caja de música: FM con brillo solo al ataque
+    const c = E.ctx, f = mtof(m), end = t + 1.5, o = osc(c, 'sine', f, t, end), mo = osc(c, 'sine', f * 4, t, end), mg = c.createGain(), g = c.createGain();
+    mg.gain.setValueAtTime(f * 2.4, t); mg.gain.exponentialRampToValueAtTime(f * 0.01, t + 0.2);
+    mo.connect(mg); mg.connect(o.frequency); env(g, t, v, 0.004, 1.5); o.connect(g); g.connect(d);
+  },
+  mallet(E, d, t, m, dur, v) {   // marimba: la fundamental y el cuarto armónico, que se apaga enseguida
+    const c = E.ctx, f = mtof(m), o = osc(c, 'sine', f, t, t + 0.6), o2 = osc(c, 'sine', f * 4, t, t + 0.1), g = c.createGain(), g2 = c.createGain();
+    env(g, t, v, 0.003, 0.6); env(g2, t, v * 0.28, 0.002, 0.08); o.connect(g); o2.connect(g2); g.connect(d); g2.connect(d);
+  },
+  bass(E, d, t, m, dur, v) {   // bajo pulsado: diente de sierra con un filtro que se cierra (se oye aun en la bocina del teléfono)
+    const c = E.ctx, f = mtof(m), len = Math.max(0.14, dur), o = osc(c, 'sawtooth', f, t, t + len + 0.1), fl = c.createBiquadFilter(), g = c.createGain();
+    fl.type = 'lowpass'; fl.Q.value = 2; fl.frequency.setValueAtTime(f * 8, t); fl.frequency.exponentialRampToValueAtTime(f * 1.6, t + 0.18);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.006); g.gain.exponentialRampToValueAtTime(v * 0.45, t + 0.12); g.gain.exponentialRampToValueAtTime(0.0001, t + len + 0.08);
+    o.connect(fl); fl.connect(g); g.connect(d);
+  },
+  keys(E, d, t, m, dur, v) {   // acordes cortitos, como piano de juguete
+    const c = E.ctx, len = Math.min(0.35, dur + 0.12), o = osc(c, 'triangle', mtof(m), t, t + len), g = c.createGain();
+    env(g, t, v, 0.004, len); o.connect(g); g.connect(d);
+  },
+  pad(E, d, t, m, dur, v) {   // colchón: dos triángulos un poco desafinados, filtrados
+    const c = E.ctx, f = mtof(m), end = t + dur + 0.9, fl = c.createBiquadFilter(), g = c.createGain();
+    fl.type = 'lowpass'; fl.frequency.value = 1400;
+    for (const det of [-8, 8]) { const o = osc(c, 'triangle', f, t, end); o.detune.value = det; o.connect(fl); }
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.5); g.gain.setValueAtTime(v, t + Math.max(0.5, dur)); g.gain.exponentialRampToValueAtTime(0.0001, end);
+    fl.connect(g); g.connect(d);
+  },
+  whistle(E, d, t, m, dur, v) {   // flautita: entra un poquito abajo y vibra
+    const c = E.ctx, f = mtof(m), len = Math.max(0.1, dur * 0.9), end = t + len + 0.1, o = osc(c, 'sine', f, t, end), lfo = osc(c, 'sine', 5.6, t, end), lg = c.createGain(), g = c.createGain();
+    o.frequency.setValueAtTime(f * 0.97, t); o.frequency.exponentialRampToValueAtTime(f, t + 0.05);
+    lg.gain.setValueAtTime(0, t); lg.gain.linearRampToValueAtTime(f * 0.011, t + 0.3); lfo.connect(lg); lg.connect(o.frequency);
+    g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(v, t + 0.035); g.gain.setValueAtTime(v, t + len); g.gain.exponentialRampToValueAtTime(0.0001, end);
+    o.connect(g); g.connect(d);
+  },
+  shaker(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'highpass', 6500, 0.7, 0.05); },
+  snap(E, d, t, m, dur, v) { noiseHit(E, d, t, v, 'bandpass', 1900, 1.3, 0.1); },
+};
+// Armonía: acordes por nombre ('C', 'Am', 'D7'), cada nota en la octava que empieza en `lo` (así no saltan de un acorde a otro).
+const PC = { C: 0, D: 2, E: 4, F: 5, G: 7, A: 9, B: 11 }, CHORD_Q = { '': [0, 4, 7], m: [0, 3, 7], 7: [0, 4, 7, 10] }, SCALE = [0, 2, 4, 5, 7, 9, 11];
+const inOct = (pc, lo) => lo + (((pc - lo) % 12) + 12) % 12;
+function voicing(name, lo) { return CHORD_Q[name.slice(1)].map((i) => inOct(PC[name[0]] + i, lo)).sort((a, b) => a - b); }
+const rootIn = (name, lo) => inOct(PC[name[0]], lo);
+// segunda voz: una tercera abajo si cae en el acorde; si no, una sexta abajo (el final: do sobre mi, no sobre la); si tampoco, nada
+function harmonyBelow(m, ch) {
+  const pcs = voicing(ch, 0).map((n) => n % 12), pc = m % 12, i = SCALE.indexOf(pc), third = i < 0 ? null : m - (pc - SCALE[(i + 5) % 7] + 12) % 12;
+  if (third !== null && pcs.includes(third % 12)) return third;
+  const sixth = [m - 8, m - 9].find((n) => pcs.includes(n % 12)); return sixth === undefined ? null : sixth;
+}
+// El tema de Tamachin (A) y su segunda parte (B): [corchea, nota, cuántas corcheas]; 8 compases de 8 corcheas.
+function melIndex(list) { const a = []; for (const [s, m, d] of list) a[s] = [m, d]; return a; }
+const MEL_A = melIndex([[0, 67, 2], [2, 72, 2], [4, 76, 3], [7, 74, 1], [8, 74, 2], [10, 71, 2], [12, 67, 4], [16, 69, 1], [17, 72, 1], [18, 76, 2], [20, 74, 1], [21, 72, 3],
+  [24, 69, 2], [26, 72, 1], [27, 74, 1], [28, 72, 4], [32, 67, 2], [34, 72, 2], [36, 76, 3], [39, 74, 1], [40, 74, 2], [42, 79, 2], [44, 77, 1], [45, 76, 1], [46, 74, 2],
+  [48, 72, 2], [50, 69, 2], [52, 71, 2], [54, 74, 2], [56, 72, 6]]);
+const MEL_B = melIndex([[0, 69, 2], [2, 72, 2], [4, 76, 4], [8, 77, 2], [10, 76, 2], [12, 72, 4], [16, 76, 2], [18, 74, 2], [20, 72, 2], [22, 67, 2],
+  [24, 71, 2], [26, 69, 1], [27, 71, 1], [28, 74, 4], [32, 69, 2], [34, 72, 2], [36, 76, 2], [38, 81, 2], [40, 81, 2], [42, 79, 1], [43, 77, 1], [44, 76, 2], [46, 72, 2],
+  [48, 69, 2], [50, 72, 2], [52, 74, 2], [54, 78, 2], [56, 79, 6]]);
+const PROG_A = [['C'], ['G'], ['Am'], ['F'], ['C'], ['G'], ['F', 'G'], ['C']], PROG_B = [['Am'], ['F'], ['C'], ['G'], ['Am'], ['F'], ['D7'], ['G']];
+const chordAt = (prog, bar, s) => { const c = prog[bar]; return c[c.length > 1 && s >= 4 ? 1 : 0]; };
+// Piezas: tempo, swing (cuánto se atrasan las corcheas de contratiempo), reverberación, volumen, capas (volumen y paneo; lo sostenido
+// suena mucho más que lo pulsado, por eso el bajo y el colchón llevan tan poco) y `step`, que toca la
+// corchea `i` (cuenta desde que empezó la pieza) en el tiempo `t`; `sd` es lo que dura una corchea.
+const MUSIC = {
+  ciudad: { bpm: 108, swing: 0.12, wet: 0.25, vol: 0.13,   // marimba, bajo y acordes a contratiempo; la tercera vuelta es la parte B, con flautita
+    layers: { mel: { vol: 0.54, pan: 0.1 }, keys: { vol: 0.14, pan: -0.3 }, bass: { vol: 0.23 }, shk: { vol: 0.75, pan: 0.3 }, snap: { vol: 0.9, pan: -0.15 } },
+    step(E, L, i, t, sd) {
+      const s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 4, B = pass === 2, ch = chordAt(B ? PROG_B : PROG_A, bar, s), n = (B ? MEL_B : MEL_A)[i % 64];
+      if (n) {
+        const [m, d] = n, v = s % 4 ? 0.85 : 1;
+        if (B) INST.whistle(E, L.mel, t, m, d * sd, v * 0.3);   // sostenida, suena más que la marimba
+        else {
+          INST.mallet(E, L.mel, t, m, d * sd, v);
+          if (pass === 1) INST.bell(E, L.mel, t, m + 12, d * sd, v * 0.22);   // segunda vuelta: campanita una octava arriba
+          const h = pass === 3 && d >= 2 ? harmonyBelow(m, ch) : null; if (h !== null) INST.mallet(E, L.mel, t, h, d * sd, v * 0.5);   // cuarta: a dos voces
+        }
+      }
+      if (B ? s === 3 || s === 7 : s % 2) for (const m of voicing(ch, 55)) INST.keys(E, L.keys, t, m, sd * 0.6, 1);
+      const r = rootIn(ch, 48);
+      if (B) { if (s === 0) INST.bass(E, L.bass, t, r, sd * 2.5, 1); else if (s === 4) INST.bass(E, L.bass, t, r + 7, sd * 2, 0.9); }
+      else if (s % 2 === 0) INST.bass(E, L.bass, t, s % 4 ? r + 7 : r, sd * 0.9, s ? 0.85 : 1);
+      INST.shaker(E, L.shk, t, 0, 0, s % 2 ? 1 : 0.5);
+      if (B ? s === 4 : s === 2 || s === 6) INST.snap(E, L.snap, t, 0, 0, 1);
+    } },
+  casa: { bpm: 72, swing: 0, wet: 0.6, vol: 0.18,   // caja de música en fa, con arpegio y un colchón suave; la segunda vuelta es la parte B
+    layers: { mel: { vol: 0.41, pan: 0.15 }, arp: { vol: 0.1, pan: -0.25 }, bass: { vol: 0.03 }, pad: { vol: 0.012 } },
+    step(E, L, i, t, sd) {
+      const K = 5, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 3, B = pass === 1, prog = B ? PROG_B : PROG_A, ch = chordAt(prog, bar, s), n = (B ? MEL_B : MEL_A)[i % 64];
+      if (n) { const [m, d] = n, v = s % 4 ? 0.8 : 1; INST.bell(E, L.mel, t, m + K, d * sd, v); if (pass === 2) INST.bell(E, L.mel, t, m + K + 12, d * sd, v * 0.3); }
+      const vc = voicing(ch, 55); INST.bell(E, L.arp, t, [vc[0], vc[vc.length - 1], vc[1], vc[vc.length - 1]][s % 4] + K, sd, s % 4 ? 0.8 : 1);
+      const split = prog[bar].length > 1;
+      if (s === 0 || (s === 4 && split)) {
+        const len = (split ? 4 : 8) * sd;
+        INST.pad(E, L.bass, t, rootIn(ch, 48) + K, len, 1);
+        for (const m of voicing(ch, 60)) INST.pad(E, L.pad, t, m + K, len, 1);
+      }
+    } },
+};
+// Mezcla de cada lugar: qué pieza y cuánto de cada capa (lo que no aparece va entero).
+const MUSIC_ZONES = {
+  casa: { piece: 'casa', mix: {} },
+  jardin: { piece: 'ciudad', mix: { keys: 0.8, bass: 0.8, shk: 0.45, snap: 0 } },
+  parque: { piece: 'ciudad', mix: { bass: 0.9, shk: 0.7, snap: 0.5 } },
+  ciudad: { piece: 'ciudad', mix: {} },
+  lejos: { piece: 'ciudad', mix: { mel: 0.85, keys: 0.6, bass: 0.6, shk: 0, snap: 0 } },   // camino, bosque y el norte, mientras no tengan la suya
+};
+function makeMusic(ctx, dest) {
+  const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0 };
+  E.noise = ctx.createBuffer(1, sr, sr); const nz = E.noise.getChannelData(0); for (let i = 0; i < sr; i++) nz[i] = Math.random() * 2 - 1;
+  const n = Math.floor(sr * 2), ir = ctx.createBuffer(2, n, sr);   // reverberación: ruido que se apaga en 2 s
+  for (let ch = 0; ch < 2; ch++) { const a = ir.getChannelData(ch); for (let i = 0; i < n; i++) a[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / n, 3); }
+  E.verb = ctx.createConvolver(); E.verb.buffer = ir;
+  E.out = ctx.createGain(); E.out.gain.value = 0;
+  E.verb.connect(E.out); E.out.connect(dest);   // sin compresor: agrega ganancia propia (≈5 dB en Chrome) y los picos no pasan de 0.1
+  for (const k in MUSIC) {
+    const P = MUSIC[k], pl = { P, out: ctx.createGain(), L: {}, live: false, i: 0, next: 0, end: Infinity }, wet = ctx.createGain();
+    pl.out.gain.value = 0; wet.gain.value = P.wet; pl.out.connect(E.out); pl.out.connect(wet); wet.connect(E.verb);
+    for (const l in P.layers) {
+      const g = ctx.createGain(); g.gain.value = 0;
+      if (P.layers[l].pan && ctx.createStereoPanner) { const p = ctx.createStereoPanner(); p.pan.value = P.layers[l].pan; g.connect(p); p.connect(pl.out); } else g.connect(pl.out);
+      pl.L[l] = g;
+    }
+    E.players[k] = pl;
+  }
+  const glide = (prm, v, t, tc) => { prm.cancelScheduledValues(t); prm.setTargetAtTime(v, t, tc); };
+  // otro lugar: si es la misma pieza solo cambian las capas; si no, la de antes se apaga y la nueva empieza desde el principio
+  E.zone = (key, t) => {
+    const Z = MUSIC_ZONES[key]; if (!Z) return;
+    const pl = E.players[Z.piece], first = !E.cur, same = E.cur === pl;
+    for (const l in pl.L) glide(pl.L[l].gain, pl.P.layers[l].vol * (l in Z.mix ? Z.mix[l] : 1), t, same ? 0.5 : 0.01);
+    if (!same) {
+      if (E.cur) { glide(E.cur.out.gain, 0, t, 0.35); E.cur.end = t + 1.5; }
+      pl.i = 0; pl.next = t + (E.cur ? 0.8 : 0.05); pl.end = Infinity; pl.live = true;
+      glide(pl.out.gain, pl.P.vol, pl.next, 0.12); E.cur = pl;
+    }
+    if (first) glide(E.out.gain, E.vol, t, 0.5);
+    E.key = key;
+  };
+  E.stop = (t) => { glide(E.out.gain, 0, t, 0.12); for (const k in E.players) E.players[k].end = Math.min(E.players[k].end, t); E.cur = null; E.key = null; };
+  // programa las corcheas que caen antes de `until`; lo atrasado (pestaña oculta, un cuadro que tardó) se salta sin sonar
+  E.pump = (now, until) => {
+    for (const k in E.players) {
+      const pl = E.players[k], sd = 30 / pl.P.bpm; if (!pl.live) continue;
+      if (pl.next < now) { const skip = Math.ceil((now - pl.next) / sd); pl.next += skip * sd; pl.i += skip; }
+      while (pl.next < until && pl.next < pl.end) { pl.P.step(E, pl.L, pl.i, pl.next + (pl.i % 2 ? pl.P.swing * sd : 0), sd); pl.i++; pl.next += sd; E.steps++; }
+      if (pl.next >= pl.end) pl.live = false;
+    }
+  };
+  return E;
+}
 
 // ───────────────────────── Tamachin: formas ─────────────────────────
 function profCircle(R, sy, n) { const p = []; n = n || 18; for (let i = 0; i <= n; i++) { const a = -Math.PI / 2 + Math.PI * i / n; p.push([R * Math.cos(a), (R + R * Math.sin(a)) * (sy || 1)]); } return p; }
@@ -2151,7 +2316,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.on, helpSeen: helpEl.hidden }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -2628,8 +2793,37 @@ bHome.addEventListener('click', goHome);
 bCustom.addEventListener('click', () => togglePanel()); $('#pClose').addEventListener('click', () => togglePanel(false));
 const bZoom = $('#bZoom'), bSound = $('#bSound'), helpEl = $('#help');
 bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.textContent = ZOOM_LABEL[ui.zoomIdx]; });
-function setSound(on) { snd.on = on; bSound.textContent = on ? 'Sonido: sí' : 'Sonido: no'; bSound.setAttribute('aria-pressed', String(on)); }
-bSound.addEventListener('click', () => { setSound(!snd.on); if (snd.on) { unlockAudio(); SFX.pop(); } save(); });
+// El botón de sonido va por tres pasos: música y efectos, solo efectos, nada. Sin nada, el audio se suspende (no gasta batería).
+const SOUND = { todo: ['Sonido: sí', 'Música y efectos', 'efectos'], efectos: ['Solo efectos', 'Efectos, sin música', 'no'], no: ['Sonido: no', 'Sin sonido', 'todo'] };
+function setSound(mode, chirp) {
+  if (!SOUND[mode]) mode = 'todo';
+  snd.mode = mode; snd.on = mode !== 'no'; snd.music = mode === 'todo'; bSound.textContent = SOUND[mode][0]; bSound.title = SOUND[mode][1];
+  const c = snd.ctx;
+  if (c && mus && !snd.music) mus.stop(c.currentTime);
+  if (c && !snd.on) setTimeout(() => { if (!snd.on && c.state === 'running') c.suspend().catch(() => {}); }, 400);   // después de apagar la música
+  if (chirp && snd.on) { unlockAudio(); const c2 = snd.ctx; if (c2 && c2.state !== 'running') c2.resume().then(() => SFX.pop()).catch(() => {}); else SFX.pop(); }
+}
+bSound.addEventListener('click', () => { setSound(SOUND[snd.mode][2], true); save(); });
+
+// ───────────────────────── música ─────────────────────────
+// Sigue al lugar con `musicZone` (más grueso que el nombre del HUD, que lleva metros) y espera 0.8 s antes de cambiar, para que
+// asomarse a la puerta de la casa no la cambie a cada rato. Si algo falla, se apaga sola y queda en `musErr` (las pruebas lo revisan).
+let mus = null, musWant = null, musT = 0, musErr = null;
+function musicZone() {
+  const P = player, x = P.pos.x, z = P.pos.z;
+  if (P.inHouse) return 'casa';
+  if (z < -63) return 'lejos';
+  if (Math.abs(x) < 20 && Math.abs(z) < 20) return 'jardin';
+  if (Math.abs(x) < 20 && z < -28) return 'parque';
+  return 'ciudad';
+}
+function updateMusic(dt) {
+  const c = snd.ctx; if (!c || c.state !== 'running' || !snd.music || musErr) return;
+  if (!mus) mus = makeMusic(c, c.destination);
+  const k = musicZone(); if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
+  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, c.currentTime + 0.05);
+  mus.pump(c.currentTime, c.currentTime + 0.45);
+}
 function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
 $('#helpOk').addEventListener('click', hideHelp);
 
@@ -2957,6 +3151,7 @@ function frame(now) {
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { mus.stop(snd.ctx.currentTime); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
@@ -2977,7 +3172,7 @@ function boot(data) {
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
   if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
-  if (s.sound === false) setSound(false);
+  if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
@@ -2991,7 +3186,10 @@ function restoreQuests() {
   if (quests.gelatina === 2) { nube.mood0 = 'contento'; nube.T.setMood('contento'); }
 }
 window.addEventListener('pagehide', () => save());
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) save();
+  const c = snd.ctx; if (c && snd.on) (document.hidden ? c.suspend() : c.resume()).catch(() => {});   // la música se detiene con la pestaña oculta y sigue donde iba
+});
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
 window.__tamachin = { player, cars, npcs, ui, view: camView, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };

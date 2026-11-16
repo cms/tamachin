@@ -28,7 +28,7 @@ function serve() {
 }
 
 async function launch() {
-  const args = ['--enable-gpu', '--ignore-gpu-blocklist'];
+  const args = ['--enable-gpu', '--ignore-gpu-blocklist', '--mute-audio'];   // la música y los efectos corren, pero no suenan en la compu
   if (process.platform === 'darwin') args.push('--use-angle=metal');
   return playwright().chromium.launch({ channel: 'chrome', headless: true, args });
 }

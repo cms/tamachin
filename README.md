@@ -21,7 +21,7 @@ Necesita conexión a internet para cargar Three.js y las fuentes de Google Fonts
 index.html        Marcado, estilos y HUD (panel, palanca táctil, globos de texto)
 game.js           Script que carga la página. SE GENERA a partir de parts/
 parts/
-  01-core.js      Render, luces, geometría compartida, Batch, colisiones, partículas, globos, sonido
+  01-core.js      Render, luces, geometría compartida, Batch, colisiones, partículas, globos, sonido y música
   02-tamachin.js  Formas, cara, ánimos y animación de la criatura (makeTamachin)
   03-world.js     Suelo, ciudad, casa, parque, camino, bosque, río, instancias
   04-life.js      Autos y semáforos, vecinos, animales del bosque
@@ -62,7 +62,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay ocho grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos` y `caminata`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs.
+Hay nueve grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica` y `caminata`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
 
 ## Controles
 
@@ -78,6 +78,8 @@ Hay ocho grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controle
 | Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
 | Zoom | Rueda del mouse o botón Acercar | Pellizcar (en pantallas táctiles no aparece el botón) |
 
+El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no».
+
 Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
 
 Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
@@ -86,7 +88,11 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
 - Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, si el sonido está apagado y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada) y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+
+## Música
+
+Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toque o tecla (antes el navegador no deja sonar nada). En la casa suena una caja de música; en el jardín, el parque y la ciudad, una pieza con marimba que suma o quita instrumentos según el lugar (la percusión entra en la ciudad). Del camino al norte, por ahora, suena una versión tranquila de esa misma. Con la pestaña oculta se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 
 ## Mapa (unidades en metros)
 

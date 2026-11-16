@@ -52,6 +52,15 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 - **Bosque sin fin**: casillas de 26 m con semilla según su posición (`genChunk`); al volver, todo está igual y lo comido sigue comido (`forest.eaten`). Se dibujan con un InstancedMesh por tipo para todo el bosque (`FK`), con un tramo fijo por casilla; fuera del bosque se ocultan. Para frutas nuevas: una entrada en `FRUITS` y su planta en `genChunk`.
 - **Cámara en las montañas**: sigue al suelo y se sube lo necesario para ver a Tamachin entero cuando baja una ladera (`updateCamera`). La niebla se aleja con la altura (`updateNorth`).
 
+## Sonido y música (`01-core.js`, `06-main.js`)
+
+- `snd.mode` es `'todo'`, `'efectos'` o `'no'` (el botón Sonido pasa por los tres; `setSound`). `snd.on` deja sonar los efectos y `snd.music` la música. Con `'no'` el `AudioContext` se suspende; también con la pestaña oculta. Las partidas viejas guardaban `sound: false`.
+- Efectos: `tone()` y `SFX`, picos de 0.02 a 0.08 directo a la salida. La música va unos 10 dB abajo (RMS ≈ 0.01); si cambias volúmenes, `npm test -- musica` los mide.
+- Música: `makeMusic(ctx, destino)` arma el motor (reverberación con ruido, un `GainNode` por pieza y por capa; sin compresor, que en Chrome agrega unos 5 dB por su cuenta y movería la calibración). `MUSIC` son las piezas (tempo, swing, `wet`, `vol`, capas y `step`, que toca la corchea `i` en el tiempo `t`), `MUSIC_ZONES` la mezcla de cada lugar. Las notas se escriben en do mayor (MIDI, 60 es el do central) y cada pieza transporta lo suyo; el tema está en `MEL_A`/`MEL_B` con `PROG_A`/`PROG_B`. Lo sostenido (colchón, flautita) suena mucho más fuerte que lo pulsado con el mismo volumen: mide antes de subirlo.
+- Todo se programa con `ctx.currentTime`, nunca con `clock`/`dt` (que se atrasan). `pump(ahora, hasta)` agenda 0.45 s adelante y, si se atrasó (pestaña oculta, cuadro lento), salta lo perdido sin tocarlo. Para mutear o cambiar de pieza se rampa una ganancia (`setTargetAtTime`): las notas ya agendadas siguen sonando.
+- En el juego, `updateMusic` (en `frame`, dentro de un try: si falla, la música se apaga y el error queda en `musErr`) usa `musicZone()`, más grueso que el nombre del HUD, y espera 0.8 s antes de cambiar (la puerta de la casa). Si es la misma pieza solo rampan las capas; si es otra, la vieja se apaga y la nueva empieza del principio 0.8 s después.
+- Para agregar un lugar: una entrada en `MUSIC` (o una mezcla nueva de una pieza) y en `MUSIC_ZONES`, y su caso en `musicZone()`. Las pruebas se corren con Chrome mudo (`--mute-audio`); `npm test -- musica --wav` renderiza las mezclas a `tests/out/musica-*.wav` para escucharlas.
+
 ## Capas del panel
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
@@ -75,4 +84,5 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
 
 ## Sin verificar
 
-- Sonido (se sintetiza con WebAudio; no se pudo escuchar en las pruebas).
+- Cómo suenan la música y los efectos (se sintetizan con WebAudio). Las pruebas miden volumen y tiempo; las notas se revisaron a mano en espectrogramas (`sox archivo.wav -n spectrogram`). La música no se ha medido en un teléfono (la reverberación corre todo el tiempo).
+- Que en iPhone el interruptor de silencio calle el juego (así suele hacer Safari con WebAudio).

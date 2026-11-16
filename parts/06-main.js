@@ -97,7 +97,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.on, helpSeen: helpEl.hidden }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -574,8 +574,37 @@ bHome.addEventListener('click', goHome);
 bCustom.addEventListener('click', () => togglePanel()); $('#pClose').addEventListener('click', () => togglePanel(false));
 const bZoom = $('#bZoom'), bSound = $('#bSound'), helpEl = $('#help');
 bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.textContent = ZOOM_LABEL[ui.zoomIdx]; });
-function setSound(on) { snd.on = on; bSound.textContent = on ? 'Sonido: sí' : 'Sonido: no'; bSound.setAttribute('aria-pressed', String(on)); }
-bSound.addEventListener('click', () => { setSound(!snd.on); if (snd.on) { unlockAudio(); SFX.pop(); } save(); });
+// El botón de sonido va por tres pasos: música y efectos, solo efectos, nada. Sin nada, el audio se suspende (no gasta batería).
+const SOUND = { todo: ['Sonido: sí', 'Música y efectos', 'efectos'], efectos: ['Solo efectos', 'Efectos, sin música', 'no'], no: ['Sonido: no', 'Sin sonido', 'todo'] };
+function setSound(mode, chirp) {
+  if (!SOUND[mode]) mode = 'todo';
+  snd.mode = mode; snd.on = mode !== 'no'; snd.music = mode === 'todo'; bSound.textContent = SOUND[mode][0]; bSound.title = SOUND[mode][1];
+  const c = snd.ctx;
+  if (c && mus && !snd.music) mus.stop(c.currentTime);
+  if (c && !snd.on) setTimeout(() => { if (!snd.on && c.state === 'running') c.suspend().catch(() => {}); }, 400);   // después de apagar la música
+  if (chirp && snd.on) { unlockAudio(); const c2 = snd.ctx; if (c2 && c2.state !== 'running') c2.resume().then(() => SFX.pop()).catch(() => {}); else SFX.pop(); }
+}
+bSound.addEventListener('click', () => { setSound(SOUND[snd.mode][2], true); save(); });
+
+// ───────────────────────── música ─────────────────────────
+// Sigue al lugar con `musicZone` (más grueso que el nombre del HUD, que lleva metros) y espera 0.8 s antes de cambiar, para que
+// asomarse a la puerta de la casa no la cambie a cada rato. Si algo falla, se apaga sola y queda en `musErr` (las pruebas lo revisan).
+let mus = null, musWant = null, musT = 0, musErr = null;
+function musicZone() {
+  const P = player, x = P.pos.x, z = P.pos.z;
+  if (P.inHouse) return 'casa';
+  if (z < -63) return 'lejos';
+  if (Math.abs(x) < 20 && Math.abs(z) < 20) return 'jardin';
+  if (Math.abs(x) < 20 && z < -28) return 'parque';
+  return 'ciudad';
+}
+function updateMusic(dt) {
+  const c = snd.ctx; if (!c || c.state !== 'running' || !snd.music || musErr) return;
+  if (!mus) mus = makeMusic(c, c.destination);
+  const k = musicZone(); if (k !== musWant) { musWant = k; musT = 0; } else musT += dt;
+  if (!mus.cur || (k !== mus.key && musT > 0.8)) mus.zone(k, c.currentTime + 0.05);
+  mus.pump(c.currentTime, c.currentTime + 0.45);
+}
 function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
 $('#helpOk').addEventListener('click', hideHelp);
 
@@ -903,6 +932,7 @@ function frame(now) {
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { mus.stop(snd.ctx.currentTime); } catch (_) { /* nada */ } }
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
@@ -923,7 +953,7 @@ function boot(data) {
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
   if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
-  if (s.sound === false) setSound(false);
+  if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
@@ -937,7 +967,10 @@ function restoreQuests() {
   if (quests.gelatina === 2) { nube.mood0 = 'contento'; nube.T.setMood('contento'); }
 }
 window.addEventListener('pagehide', () => save());
-document.addEventListener('visibilitychange', () => { if (document.hidden) save(); });
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) save();
+  const c = snd.ctx; if (c && snd.on) (document.hidden ? c.suspend() : c.resume()).catch(() => {});   // la música se detiene con la pestaña oculta y sigue donde iba
+});
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
 window.__tamachin = { player, cars, npcs, ui, view: camView, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
