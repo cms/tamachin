@@ -92,6 +92,9 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 - Nublado en `applyDay`: los colores del cielo y la luz del cielo pierden color (mismo brillo), el sol baja (sombras suaves), la neblina se acerca (`updateNorth`), las nubes se ponen grises (`cloudMat`), no hay estrellas ni luna. Con lluvia se prenden las ventanas (`day.lamps`).
 - Gotas: `rainDrops`, un `fireParts` de 900 rayitas en una caja de 30 m hacia donde mira la cámara; las pegadas a la cámara se desvanecen. Charcos: `puddles`, un InstancedMesh con lugares fijos (calles, caminos, Valle Alegre) que refleja el color de la niebla.
 - Sonido: `ambFor(…, rain)` calla pájaros y grillos; `E.amb` tiene un canal `rain` (ruido filtrado) que adentro de la casa se apaga con un filtro (`roof`) y suma gotas en el techo (`drip`).
+- Arriba de `WEATHER.top` la lluvia es nieve (`weather.snow`, `snowFlakes`). El arcoíris (`skyBow`, en el cielo como la luna, con `CustomBlending` para pintarse encima del cielo claro en la lista de lo opaco) sale en cuanto deja de llover de día (`weather.bowT`, unas 2 horas de juego); mide 15° y se sienta en el horizonte para que se vea con la cámara baja (uno de 42° quedaba fuera de la pantalla).
+- Paraguas (`UMB_GEO`, `umbrella`, `updateUmbrellas`): el de Tamachin sigue al jugador como el farolito; los vecinos pares llevan uno en su grupo. Charcos: `puddles.list` (círculos) y `puddleJump` al caer de un salto; en la ciudad van en las banquetas (a media calle era jugar entre autos). La banda no toca con lluvia (`BAND.rain`).
+- Encargos `charcos` (sale con la primera lluvia, o al platicar con lluvia; `puddleJumps` se guarda) y `arcoiris` (sale con el primer arcoíris y se cumple a los 2 s de verlo afuera). `weatherText`/`weatherWord`: el tiempo en el toque del reloj y el diario; la carátula cambia sol o luna por una nube (`cCloud`, `cRain`).
 
 ## Capas del panel
 

@@ -160,6 +160,7 @@ function updateNPCs(dt) {
     T.update(dt, facing ? { speed: 0, near: d < 45, lookX: 0, lookY: 0.15 } : { speed, near: d < 45 });
   }
 }
+const RAIN_LINES = ['¡Qué rico huele cuando llueve!', '¿Trajiste paraguas? Yo sí.', 'Después de la lluvia a veces sale un arcoíris.', 'Las plantas están felices con la lluvia.', '¡Cuidado, que salpicas!', 'Los caracoles salen cuando llueve.'];
 const NIGHT_LINES = ['¡Qué noche tan bonita!', '¿Ya viste la luna? Está bajita, hacia el norte.', 'Me gusta tu farolito.', 'Shhh… los pájaros ya se durmieron.',
   'Desde la cima se ven muchas estrellas.', 'Ya es tarde… mañana jugamos más.', '¿Oyes los grillos?'];
 function talkTo(n) {
@@ -168,7 +169,9 @@ function talkTo(n) {
   else if ((n.mood0 === 'triste' || n.mood0 === 'enojado') && T.mood === n.mood0 && ++n.count >= 2) {
     n.count = 0; T.setMood('contento'); n.cheer = 25; line = '¡Gracias por escucharme! Ya me siento mejor.';
     burst('heart', n.pos.x, 1.8, n.pos.z, 5); SFX.nice();
-  } else if (day.light < 0.3 && Math.random() < 0.5) line = choose(NIGHT_LINES);   // de noche, a veces hablan de la noche
+  } else if (weather.rain > 0.3 && !quests.charcos) { startQuest('charcos'); line = '¡Está lloviendo! ¿Sabes qué es lo más divertido? Brincar en los charcos. ¡Brinca en diez!'; }
+  else if (weather.rain > 0.3 && Math.random() < 0.6) line = choose(RAIN_LINES);   // con lluvia, a veces hablan de la lluvia
+  else if (day.light < 0.3 && Math.random() < 0.5) line = choose(NIGHT_LINES);   // de noche, a veces hablan de la noche
   else line = n.lines ? n.lines[n.li++ % n.lines.length] : choose(LINES[T.mood] || LINES.contento);
   say(n, line, 3.4); SFX.talk(); T.doTrick(T.mood === 'dormido' ? 'giggle' : choose(['hop', 'wave', 'giggle'])); gain('diversion', 0.06, 'charla' + n.name, 12);
   player.T.doTrick('wave'); player.heading = Math.atan2(n.pos.x - player.pos.x, n.pos.z - player.pos.z);

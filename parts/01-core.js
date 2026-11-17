@@ -75,7 +75,7 @@ const day = { h: DAY.start, n: 1, light: 1, warm: 0, stars: 0, lamps: 0 };   // 
 // El tiempo: cada día tiene el suyo según su número (al recargar es el mismo; dayWeather, 06-main.js). cloud: qué tan nublado (0 a 1),
 // rain: cuánto llueve, here: cuánto llueve donde está Tamachin (arriba de los cerros no; adentro de la casa suena, no cae), wet: los
 // charcos (se llenan con la lluvia y se secan despacio). Lo mueve updateWeather; aquí cambia el cielo y la luz.
-const weather = { kind: 'sol', cloud: 0, rain: 0, here: 0, wet: 0, force: null };
+const weather = { kind: 'sol', cloud: 0, rain: 0, here: 0, snow: 0, wet: 0, bow: 0, bowT: 0, force: null };   // snow: lo que nieva donde está (arriba de los cerros); bow: el arcoíris
 let cloudMat = null;                                         // el de las nubes (03-world.js): se ponen grises   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
 // hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
 const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
@@ -136,6 +136,24 @@ const skySun = skySprite(canvasTex(128, 128, (g) => {
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
 }), 120);
 
+// El arcoíris: un anillo dentro del cielo (lo tapa todo lo demás, como a la luna), del lado contrario al sol y sentado en el horizonte.
+// Uno de verdad mide 42° y queda casi todo fuera de la pantalla (la cámara mira hacia abajo): este mide 15°, para que con la cámara
+// baja se vea entero. Va de violeta (adentro) a rojo (afuera); applyDay lo voltea y lo prende con weather.bow.
+const skyBow = (() => {
+  const D = 455, a0 = 12.5 * DEG, a1 = 15 * DEG, N = 64, pos = [], uv = [], idx = [];
+  for (let i = 0; i <= N; i++) { const t = i / N * TAU; for (const [a, u] of [[a0, 0], [a1, 1]]) { pos.push(Math.cos(t) * D * Math.sin(a), Math.sin(t) * D * Math.sin(a), D * Math.cos(a)); uv.push(u, 0.5); } }
+  for (let i = 0; i < N; i++) { const k = i * 2; idx.push(k, k + 1, k + 2, k + 1, k + 3, k + 2); }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx);
+  const tex = canvasTex(64, 4, (c) => { const gr = c.createLinearGradient(0, 0, 64, 0);
+    [[0, 'rgba(150,80,255,0)'], [0.1, 'rgba(150,80,255,.9)'], [0.27, '#4a6bff'], [0.44, '#3fd06b'], [0.6, '#ffe23a'], [0.76, '#ff9a2a'], [0.9, 'rgba(255,60,60,.9)'], [1, 'rgba(255,60,60,0)']].forEach(([o, col]) => gr.addColorStop(o, col));
+    c.fillStyle = gr; c.fillRect(0, 0, 64, 4); });
+  // sumar luz sobre el cielo claro lo borraba: se pinta encima (mezcla normal), pero en la lista de lo opaco (CustomBlending: three la
+  // aplica aunque no sea transparente), para que se dibuje con el cielo y lo tape todo lo demás
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial(Object.assign({ map: tex, side: THREE.DoubleSide, opacity: 0 }, SKY_ADD,
+    { blending: THREE.CustomBlending, blendEquation: THREE.AddEquation, blendSrc: THREE.SrcAlphaFactor, blendDst: THREE.OneMinusSrcAlphaFactor })));
+  m.renderOrder = -8; m.frustumCulled = false; m.visible = false; skyMesh.add(m); return m;
+})();
+const _bowQ = new THREE.Quaternion(), _zAxis = new THREE.Vector3(0, 0, 1), _anti = new THREE.Vector3();
 // Un arco por el cielo: sale por el este (f = 0) y se pone por el oeste (f = 1); fuera de 0..1 está bajo el horizonte. az es el rumbo
 // desde el este (+x) hacia el sur (+z). El sol no va de este a oeste: se queda entre el este-sureste y el sur, al sureste a mediodía
 // (como antes del ciclo). La cámara empieza al sur: así la escena queda de frente a la luz y las sombras caen de lado, donde se ven
@@ -189,6 +207,8 @@ function applyDay(force) {
   skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light) * (1 - 0.85 * cl); skyMoon.visible = skyMoon.material.opacity > 0.01;
   skySun.position.copy(_sunD).multiplyScalar(470); skySun.material.opacity = smooth(-0.07, 0.03, _sunD.y) * (1 - 0.9 * cl); skySun.visible = skySun.material.opacity > 0.01;
   skySun.material.color.copy(SUN_DISC_LOW).lerp(SUN_DISC, smooth(0, 0.4, _sunD.y));
+  skyBow.material.opacity = 0.6 * weather.bow * smooth(0.02, 0.15, _sunD.y); skyBow.visible = skyBow.material.opacity > 0.01;
+  if (skyBow.visible) skyBow.quaternion.copy(_bowQ.setFromUnitVectors(_zAxis, _anti.set(-_sunD.x, 0, -_sunD.z).normalize().setY(-0.035).normalize()));   // en el horizonte
   if (force || Math.abs(h - skyAt) > 0.004 || Math.abs(cl - skyCl) > 0.01) { skyAt = h; skyCl = cl; paintSky(_dc[0], _dc[1], _dc[2], 0.85 * smooth(-0.25, 0, _sunD.y) * (1 - smooth(0.05, 0.35, _sunD.y)) * (1 - cl)); }
 }
 applyDay(true);

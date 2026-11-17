@@ -1,8 +1,9 @@
 // El tiempo: cada día el suyo (1 de cada 5 llueve, el primero hace sol), nublado y lluvia cambian la luz, cae lluvia, se forman
-// charcos que luego se secan, y adentro de la casa la lluvia se oye apagada. ?clima=lluvia, nublado o sol lo fija.
+// charcos que luego se secan, y adentro de la casa la lluvia se oye apagada. Paraguas, brincar en charcos, arcoíris al despejar,
+// nieve en los cerros, la banda no toca con lluvia, y el reloj y el diario dicen el tiempo. ?clima=lluvia, nublado, sol o arcoiris lo fija.
 const { openGame, sleep } = require('./lib.cjs');
 
-const EXPOSE = 'day, setHour, weather, dayWeather, updateWeather, rainDrops, puddles, hemi, sun, scene, renderer, camera, player, butterflies, getMus: () => mus, WEATHER';
+const EXPOSE = 'day, setHour, weather, dayWeather, updateWeather, rainDrops, snowFlakes, puddles, umbrella, npcs, quests, skyBow, hemi, sun, scene, renderer, camera, player, butterflies, getMus: () => mus, WEATHER, town';
 const LUMA = () => {
   const D = window.__dbg; D.renderer.render(D.scene, D.camera);
   const src = D.renderer.domElement, w = 160, h = Math.round(160 * src.height / src.width), c = document.createElement('canvas'); c.width = w; c.height = h;
@@ -24,14 +25,15 @@ module.exports = {
     sunny.lum = await E(LUMA);
     // un día de lluvia, hora por hora: antes, durante y después del chubasco; los charcos se llenan y se secan
     const tl = await E(() => {
-      const D = window.__dbg; let n = 2; while (D.dayWeather(n).kind !== 'lluvia') n++;
-      const p = D.dayWeather(n), at = (h, secs) => { D.setHour(h); for (let i = 0; i < secs; i++) D.updateWeather(1); return { cloud: +D.weather.cloud.toFixed(2), rain: +D.weather.rain.toFixed(2), wet: +D.weather.wet.toFixed(2) }; };
-      D.day.n = n; const before = at(p.from - 3, 30), during = at((p.from + p.to) / 2, 80), after = at(p.to + 2.5, 260);
-      return { n, p, before, during, after };
+      const D = window.__dbg; let n = 2; while (D.dayWeather(n).kind !== 'lluvia' || D.dayWeather(n).to > 18.3) n++;   // un chubasco que acaba de día
+      const p = D.dayWeather(n), at = (h, secs) => { D.setHour(h); for (let i = 0; i < secs; i++) D.updateWeather(1); return { cloud: +D.weather.cloud.toFixed(2), rain: +D.weather.rain.toFixed(2), wet: +D.weather.wet.toFixed(2), bow: +D.weather.bow.toFixed(2) }; };
+      D.day.n = n; const before = at(p.from - 3, 30), during = at((p.from + p.to) / 2, 80), bow = at(p.to + 0.6, 12), q = D.quests.arcoiris, after = at(p.to + 2.5, 260);
+      return { n, p, before, during, bow, q, after };
     });
     T.check('antes del chubasco: sin lluvia', tl.before.rain < 0.05, JSON.stringify(tl));
     T.check('durante: nublado, llueve y se llenan los charcos', tl.during.cloud > 0.9 && tl.during.rain > 0.9 && tl.during.wet > 0.95, JSON.stringify(tl.during));
-    T.check('después: despeja y los charcos se secan', tl.after.rain < 0.05 && tl.after.wet < 0.05 && tl.after.cloud < 0.4, JSON.stringify(tl.after));
+    T.check('al despejar de día sale el arcoíris y el encargo se cumple al verlo', tl.bow.bow > 0.6 && tl.q === 2, JSON.stringify({ bow: tl.bow, q: tl.q }));
+    T.check('después: despeja, los charcos se secan y el arcoíris se va', tl.after.rain < 0.05 && tl.after.wet < 0.05 && tl.after.cloud < 0.4 && tl.after.bow < 0.1, JSON.stringify(tl.after));
     T.check('sin errores', !errors.length, errors.join(' | ') || undefined);
     await ctx.close();
 
@@ -45,13 +47,25 @@ module.exports = {
     const lum = await r.E(LUMA);
     T.check('lloviendo se ve bien: al menos 65 % del brillo de un día de sol (de noche es como 55 %)', lum > sunny.lum * 0.65, Math.round(lum / sunny.lum * 100) + ' %');
     await r.page.screenshot({ path: T.out('lluvia.jpg'), type: 'jpeg', quality: 70 });
+    const umb = await r.E(() => ({ mine: window.__dbg.umbrella.m.visible, npcs: window.__dbg.npcs.filter((n) => n.umb && n.umb.visible).length, charcos: window.__dbg.quests.charcos }));
+    T.check('con lluvia: Tamachin y la mitad de los vecinos abren paraguas, y sale el encargo de los charcos', umb.mine && umb.npcs >= 8 && umb.charcos === 1, JSON.stringify(umb));
+    await r.E(() => { window.__tamachin.cars.length = 0; });   // los autos quietos: que ninguno lo atropelle a media prueba
+    for (let i = 0; i < 3; i++) { await r.E((i) => { const p = window.__dbg.puddles.list[i]; window.__tamachin.go(p.x, p.z); }, i); await sleep(400); await r.page.keyboard.press('Space'); await sleep(1000); }
+    T.check('brincar en tres charcos: tres de diez', (await r.page.textContent('#toast')) === 'Charcos: 3 de 10.', await r.page.textContent('#toast'));
+    await r.E(() => window.__tamachin.go(0, 3.5)); await sleep(300); await r.page.click('#clock'); await sleep(300);
+    T.check('el reloj dice que está lloviendo', /Está lloviendo\./.test(await r.page.textContent('#toast')), await r.page.textContent('#toast'));
+    await r.page.keyboard.press('KeyJ'); await sleep(300);
+    T.check('y el diario: día lluvioso', / · lluvioso · /.test(await r.page.textContent('#dDay')), await r.page.textContent('#dDay')); await r.page.keyboard.press('Escape');
+    await r.E(() => window.__dbg.setHour(20)); await sleep(600);
+    T.check('con lluvia la banda no toca', await r.E(() => !window.__dbg.town.band));
+    await r.E(() => window.__dbg.setHour(12));
     // adentro de la casa no caen gotas y la lluvia se oye apagada, con gotas en el techo
     await r.page.keyboard.press('KeyZ'); await r.E(() => window.__tamachin.go(0, -8)); await sleep(3500);
-    const inside = await r.E(() => { const M = window.__dbg.getMus(); return { drops: window.__dbg.rainDrops.pts.visible, roof: M && M.amb.roof, lp: M && Math.round(M.amb.rainLP.frequency.value), drips: M && M.amb.drips, rain: M && +M.amb.lv.rain.toFixed(2) }; });
-    T.check('en la casa: sin gotas cayendo, la lluvia apagada y gotas en el techo', !inside.drops && inside.roof && inside.lp < 1500 && inside.drips > 0 && inside.rain > 0.9, JSON.stringify(inside));
+    const inside = await r.E(() => { const M = window.__dbg.getMus(); return { drops: window.__dbg.rainDrops.pts.visible, umbrella: window.__dbg.umbrella.m.visible, roof: M && M.amb.roof, lp: M && Math.round(M.amb.rainLP.frequency.value), drips: M && M.amb.drips, rain: M && +M.amb.lv.rain.toFixed(2) }; });
+    T.check('en la casa: sin gotas cayendo, la lluvia apagada y gotas en el techo', !inside.drops && !inside.umbrella && inside.roof && inside.lp < 1500 && inside.drips > 0 && inside.rain > 0.9, JSON.stringify(inside));
     // arriba de los cerros no llueve (en el paso 2 nevará)
     await r.E(() => window.__tamachin.go(2, -770)); await sleep(2000);
-    T.check('en la cima no cae lluvia', await r.E(() => window.__dbg.weather.here === 0 && !window.__dbg.rainDrops.pts.visible));
+    T.check('en la cima no llueve: nieva', await r.E(() => window.__dbg.weather.here === 0 && !window.__dbg.rainDrops.pts.visible && window.__dbg.weather.snow > 0.9 && window.__dbg.snowFlakes.pts.visible));
     T.check('sin errores con lluvia', !r.errors.length, r.errors.join(' | ') || undefined);
     await r.ctx.close();
 
@@ -61,5 +75,10 @@ module.exports = {
     T.check('?clima=nublado: gris, sin lluvia ni estrellas', cl.cloud > 0.8 && cl.rain === 0 && !cl.drops && cl.stars === 0, JSON.stringify(cl));
     T.check('sin errores nublado', !c.errors.length, c.errors.join(' | ') || undefined);
     await c.ctx.close();
+    // ?clima=arcoiris: por la tarde, el arcoíris en el cielo
+    const b = await openGame(T, { expose: EXPOSE, clima: 'arcoiris', hora: 17.5 });
+    T.check('?clima=arcoiris: sale el arcoíris', await b.E(() => window.__dbg.weather.bow === 1 && window.__dbg.skyBow.visible && window.__dbg.skyBow.material.opacity > 0.5));
+    T.check('sin errores con arcoíris', !b.errors.length, b.errors.join(' | ') || undefined);
+    await b.ctx.close();
   },
 };

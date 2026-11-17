@@ -3,6 +3,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const crypto = require('crypto');
 
 const REPO = path.resolve(__dirname, '..');
 const OUT = path.join(__dirname, 'out');                 // capturas de pantalla (no se versiona)
@@ -45,6 +46,19 @@ async function three() {
   return (threeSrc = fs.readFileSync(THREE_FILE));
 }
 
+// Las fuentes de Google (la hoja y los archivos): la primera vez se bajan y se guardan en tests/.cache/fuentes; luego salen de ahí.
+// Sin red y sin copia, se cancelan (el juego usa otras fuentes); la página no se queda esperando su "load".
+const FONT_DIR = path.join(__dirname, '.cache', 'fuentes');
+async function fontRoute(route) {
+  const url = route.request().url(), f = path.join(FONT_DIR, crypto.createHash('sha1').update(url).digest('hex'));
+  if (fs.existsSync(f)) return route.fulfill({ body: fs.readFileSync(f), headers: { 'content-type': fs.readFileSync(f + '.tipo', 'utf8'), 'access-control-allow-origin': '*' } });
+  try {
+    const res = await route.fetch({ timeout: 8000 }), body = await res.body(), type = res.headers()['content-type'] || 'application/octet-stream';
+    if (res.ok()) { fs.mkdirSync(FONT_DIR, { recursive: true }); fs.writeFileSync(f, body); fs.writeFileSync(f + '.tipo', type); }
+    return route.fulfill({ status: res.status(), body, headers: { 'content-type': type, 'access-control-allow-origin': '*' } });
+  } catch (e) { return route.abort(); }
+}
+
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
 
@@ -59,7 +73,8 @@ async function openGame(T, opts = {}) {
   const errors = [];
   page.on('pageerror', (e) => errors.push('error: ' + e.message));
   page.on('response', (r) => { if (r.status() >= 400) errors.push('http ' + r.status() + ' ' + r.url()); });
-  page.on('requestfailed', (r) => errors.push('falló ' + r.url() + ' ' + ((r.failure() || {}).errorText || '')));
+  // las fuentes de Google vienen de afuera: si la red falla, el juego usa otras y sigue bien (no es un error del juego)
+  page.on('requestfailed', (r) => { if (!/fonts\.(googleapis|gstatic)\.com/.test(r.url())) errors.push('falló ' + r.url() + ' ' + ((r.failure() || {}).errorText || '')); });
   if (opts.expose) {
     const src = fs.readFileSync(path.join(REPO, 'game.js'), 'utf8');
     const hook = 'window.__dbg = { ' + opts.expose + ' };\nwindow.__tamachin = {';
@@ -68,6 +83,7 @@ async function openGame(T, opts = {}) {
     await page.route('**/game.js', (r) => r.fulfill({ body, contentType: 'application/javascript' }));
   }
   const src3 = await three(); await page.route(THREE_URL, (r) => r.fulfill({ body: src3, contentType: 'application/javascript' }));
+  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, fontRoute);
   if (opts.init) await page.addInitScript(opts.init);
   const hq = [opts.hora === false ? '' : 'hora=' + (opts.hora == null ? 12 : opts.hora), opts.clima === false ? '' : 'clima=' + (opts.clima || 'sol')].filter(Boolean).join('&'), q = opts.query || '';
   await page.goto(T.url + (q && hq ? q + '&' + hq : q || (hq ? '?' + hq : '')));
@@ -87,8 +103,11 @@ async function touchscreen(ctx, page) {
 // Raycast cámara→Tamachin contra la escena (la página debe exponer scene, camera, player, occluders, house).
 // Devuelve qué tapa: 'edificio', 'casa', 'árbol' (InstancedMesh), 'otro' o null. El raycast no sabe de planos de corte ni del
 // shader: lo cortado se descarta a mano, pero los árboles del norte agachados no, así que ahí 'árbol' puede ser falso.
+// Lo que camina (autos, vecinos, animales) no cuenta: pasa por delante un momento y hacía que la prueba fallara al azar.
 const BLOCKER = () => {
   const D = window.__dbg, rc = new THREE.Raycaster(), own = new Set(); rc.camera = D.camera; D.player.T.group.traverse((o) => own.add(o));
+  const add = (o) => o && o.traverse && o.traverse((x) => own.add(x));
+  window.__tamachin.cars.forEach((c) => add(c.mesh)); window.__tamachin.npcs.forEach((n) => add(n.T.group)); (D.creatures || []).forEach((c) => { add(c.mesh); add(c.g); add(c.T && c.T.group); });
   const houseMats = [D.house.mWalls, D.house.mFront, D.house.mRoof, D.house.mShelf, D.house.doorMat];
   window.__blocker = (h = 0.75) => {
     const P = D.player, t = new THREE.Vector3(P.pos.x, P.pos.y + h * P.T.scale, P.pos.z), d = t.clone().sub(D.camera.position), L = d.length();

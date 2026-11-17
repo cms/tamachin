@@ -74,9 +74,9 @@ module.exports = {
     T.check('y Tamachin al menos 60 % (brilla un poco de noche)', tamaOk, rows.join(', '));
 
     await E(() => window.__dbg.setHour(23)); await sleep(200); await page.click('#clock'); await sleep(300);
-    T.check('tocar el reloj dice la hora y cuándo amanece', (await page.textContent('#toast')) === 'Son las 11:00 de la noche. Amanece a las 5 de la mañana.', await page.textContent('#toast'));
+    T.check('tocar el reloj dice la hora, el tiempo y cuándo amanece', (await page.textContent('#toast')) === 'Son las 11:00 de la noche. El cielo está despejado. Amanece a las 5 de la mañana.', await page.textContent('#toast'));
     await E(() => window.__dbg.setHour(13.05)); await sleep(200); await page.click('#clock'); await sleep(300);
-    T.check('de día, cuándo oscurece', (await page.textContent('#toast')) === 'Es la 1:03 de la tarde. Oscurece a las 8 de la noche.', await page.textContent('#toast'));
+    T.check('de día, cuándo oscurece', (await page.textContent('#toast')) === 'Es la 1:03 de la tarde. Hace sol. Oscurece a las 8 de la noche.', await page.textContent('#toast'));
 
     // de noche se prenden las luces: ventanas, faroles y el farolito de Tamachin; sin agregar ni quitar luces (eso recompilaría todo)
     const lights = () => E(() => { let n = 0; window.__dbg.scene.traverseVisible((o) => { if (o.isLight) n++; }); return n; });
@@ -109,7 +109,7 @@ module.exports = {
       JSON.stringify(s1) + ', en ' + ((Date.now() - t0) / 1000).toFixed(1) + ' s');
 
     const n1 = await E(() => window.__dbg.day.n); await page.keyboard.press('KeyJ'); await sleep(300); const dd = await page.textContent('#dDay');
-    T.check('al despertar ya es otro día, y el diario lo dice', n1 === n0 + 1 && new RegExp('^Día ' + n1 + ' · son las 7:0\\d de la mañana$').test(dd), n0 + ' → ' + n1 + ': ' + dd);
+    T.check('al despertar ya es otro día, y el diario lo dice', n1 === n0 + 1 && new RegExp('^Día ' + n1 + ' · soleado · son las 7:0\\d de la mañana$').test(dd), n0 + ' → ' + n1 + ': ' + dd);
     await page.keyboard.press('Escape');
 
     // a ciertas horas: el mercado de Valle Alegre, el búho, la banda del kiosco

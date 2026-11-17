@@ -68,7 +68,7 @@ module.exports = {
       const D = window.__dbg, n = D.npcs.find((q) => q.name === 'Tofu'), t0 = performance.now();
       const id = setInterval(() => { const p = D.player.pos, dx = n.pos.x - p.x, dz = n.pos.z - p.z, d = Math.hypot(dx, dz);
         if (D.quests.conejo === 2 || performance.now() - t0 > 40000) { D.joy.x = D.joy.y = 0; clearInterval(id); res(); return; }
-        if (d < 1.8) D.joy.x = D.joy.y = 0; else { D.joy.x = dx / d * 0.85; D.joy.y = dz / d * 0.85; } }, 30); }));
+        if (d < 0.9) D.joy.x = D.joy.y = 0; else { D.joy.x = dx / d * 0.85; D.joy.y = dz / d * 0.85; } }, 30); }));   // muy cerca: el conejo va 1.8 m detrás y tiene que quedar a menos de 3.6 m de Tofu
     await sleep(600);
     let done = await E(() => window.__dbg.quests.conejo === 2 && !!window.__dbg.creatures.find((c) => c.kind === 'conejo').buddy);
     T.check('al llegar con Tofu, encargo cumplido', done, done ? undefined : await why('conejo'));

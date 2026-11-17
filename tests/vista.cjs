@@ -9,7 +9,7 @@ const VIEWS = [0, 45, 90, 135, 180, 270].map((d) => [d, 34.2]).concat([[0, 15], 
 module.exports = {
   titulo: 'edificios, casa y árboles se apartan desde cualquier ángulo',
   async run(T) {
-    const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house' });
+    const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house, creatures' });
     await E(BLOCKER);
     const adv = (sec) => E((sec) => window.__tamachin.advance(sec), sec);   // corre el juego `sec` segundos de golpe, sin esperar
     const setView = (deg, p) => E(([y, p]) => { const V = window.__tamachin.view; V.yaw = V.yawT = y; V.pitch = V.pitchT = p; }, [deg * Math.PI / 180, p * Math.PI / 180]);

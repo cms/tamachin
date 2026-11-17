@@ -68,6 +68,8 @@ const QUESTS = {
   cumbres: { title: 'Tres cumbres', hint: 'Sube a los picos Malvavisco, Gelatina y Turrón, al norte del bosque. Cada cima tiene una bandera.', done: 'Subiste a las tres cimas.', progress: () => summits.length + ' de 3' },
   amanecer: { title: 'El amanecer desde la cima', hint: 'Sube a una de las tres cimas y quédate ahí entre las 5 y las 6:30 de la mañana, cuando sale el sol. Dormido no cuenta: se despierta a las 7.', done: 'Viste salir el sol desde la cima.' },
   luciernagas: { title: 'Diez luciérnagas', hint: 'De noche, toca las luciérnagas o pasa junto a ellas (en el jardín, el parque, el camino y los bosques). Musgo te dará un frasco para que brillen en tu casa.', done: 'Diez luciérnagas brillan en un frasco sobre tu mesa.', progress: () => fliesCaught + ' de 10' },
+  charcos: { title: 'Diez charcos', hint: 'Cuando llueve, salta en los charcos de las calles y los caminos: brinca en diez.', done: 'Brincaste en diez charcos. ¡Splash!', progress: () => puddleJumps + ' de 10' },
+  arcoiris: { title: 'Un arcoíris', hint: 'Cuando deja de llover de día, sale un arcoíris del lado contrario al sol. Baja la cámara para ver el cielo.', done: 'Viste un arcoíris.' },
   frutas: { title: 'Las siete frutas', hint: 'Prueba naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas del bosque sin fin, al norte de Valle Alegre.', done: 'Probaste las siete frutas del bosque sin fin.', progress: () => fruitsTasted.length + ' de 7' },
 };
 function reachSummit(p) {
@@ -90,8 +92,8 @@ function discover(zone) {
     bosque: 'El bosque sin fin: mientras más caminas, más bosque hay. Está lleno de fruta.' };
   toast(T[zone], 5); gain('diversion', 0.12);
 }
-const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0, amanecer: 0, luciernagas: 0 };
-let fliesCaught = 0;
+const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0, amanecer: 0, luciernagas: 0, charcos: 0, arcoiris: 0 };
+let fliesCaught = 0, puddleJumps = 0;
 const summits = [], fruitsTasted = [];          // nombres de las cimas alcanzadas y frutas probadas (claves de FRUITS)
 function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
 function finishQuest(id, quiet) {   // quiet: ya sonó otra cosa (la fanfarria de la tercera cima)
@@ -104,7 +106,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught }));
+      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -373,7 +375,7 @@ rocio.onTalk = () => { if (quests.peces) return null; startQuest('peces'); retur
 // ───────────────────────── a ciertas horas (el día y la noche están en 01-core.js) ─────────────────────────
 // El mercado de Valle Alegre abre de 8 a 7 de la noche: cerrado, la fruta se tapa (TOWN.closed) y Lila se duerme en su puesto.
 // De 7 a 10 de la noche toca la banda en el kiosco: cinco vecinos dejan su paseo, bailan alrededor y la música suena con trompeta.
-const MARKET = { open: 8, close: 19 }, BAND = { from: 19, to: 22, r: 6.6 };
+const MARKET = { open: 8, close: 19 }, BAND = { from: 19, to: 22, r: 6.6, rain: false };   // rain: si toca aunque llueva
 const marketOpen = () => day.h >= MARKET.open && day.h < MARKET.close;
 const lila = npcBy('Lila'), musgo = npcBy('Musgo'), DANCERS = ['Tomate', 'Miel', 'Chabacano', 'Nopal', 'Brote'].map(npcBy);
 lila.onTalk = () => (marketOpen() ? null : choose(['Zzz… el mercado abre a las 8…', 'Zzz… mañana hay fruta fresca…']));
@@ -389,7 +391,7 @@ function updateTownHours(dt) {
   // Cada uno sigue su paseo (alrededor de su manzana) hasta la esquina más cercana al kiosco, cruza la calle hasta su lugar y baila;
   // al terminar regresa a esa esquina y sigue paseando desde ahí. Así nadie atraviesa los edificios. Con Tamachin lejos (más de 75 m
   // nadie camina, updateNPCs) se acomodan de golpe: no se ve.
-  const band = day.h >= BAND.from && day.h < BAND.to;
+  const band = day.h >= BAND.from && day.h < BAND.to && (BAND.rain || weather.rain < 0.3);   // con lluvia la banda se queda en casa
   if (band !== town.band) {
     town.band = band;
     DANCERS.forEach((n, i) => {
@@ -471,7 +473,7 @@ function dayWeather(n) {
 let wPlan = null;
 function weatherAt(h) {                                          // { cloud, rain } que tocan a esta hora
   const f = weather.force;
-  if (f) return f === 'lluvia' ? { cloud: 1, rain: 1 } : { cloud: f === 'nublado' ? 0.85 : 0, rain: 0 };
+  if (f) return f === 'lluvia' ? { cloud: 1, rain: 1 } : { cloud: f === 'nublado' ? 0.85 : f === 'arcoiris' ? 0.2 : 0, rain: 0 };
   if (!wPlan || wPlan.n !== day.n) { wPlan = dayWeather(day.n); wPlan.n = day.n; }
   weather.kind = wPlan.kind;
   if (wPlan.kind === 'nublado') return { cloud: 0.85, rain: 0 };
@@ -484,8 +486,16 @@ function updateWeather(dt, snap) {
   if (W.force) W.kind = W.force;
   W.cloud = snap ? tg.cloud : damp(W.cloud, tg.cloud, 0.5, dt); W.rain = snap ? tg.rain : damp(W.rain, tg.rain, 0.7, dt);
   W.wet = snap ? (tg.rain > 0.5 ? 0.7 : 0) : clamp(W.wet + (W.rain > 0.3 ? dt / 50 * W.rain : -dt / 200), 0, 1);   // se llenan en ~50 s, se secan en ~3 min
-  W.here = W.rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y));
-  updateRain(dt); updatePuddles();
+  const high = smooth(WEATHER.top, WEATHER.top + 50, P.pos.y);
+  W.here = W.rain * (1 - high); W.snow = W.rain * high;                       // arriba de los cerros, la lluvia es nieve
+  // el arcoíris: cuando deja de llover de día (o con ?clima=arcoiris), por unas dos horas de juego
+  if (W.rain > 0.5) W.rained = true;
+  else if (W.rained && W.rain < 0.1) { W.rained = false; if (day.light > 0.6) { W.bowT = 120; if (!quests.arcoiris) startQuest('arcoiris'); toast('¡Salió un arcoíris! Está del lado contrario al sol: baja la cámara para verlo.', 4.5); } }
+  W.bowT = Math.max(0, W.bowT - dt);
+  W.bow = snap ? (W.force === 'arcoiris' ? 1 : 0) : damp(W.bow, (W.bowT > 0 || W.force === 'arcoiris') && day.light > 0.5 && W.rain < 0.1 ? 1 : 0, 0.8, dt);   // en cuanto deja de llover (el sol ya asoma)
+  if (quests.arcoiris === 1 && W.bow > 0.6 && !P.inHouse) { W.bowSeen = (W.bowSeen || 0) + dt; if (W.bowSeen > 2) { finishQuest('arcoiris'); say(P, '¡Un arcoíris! ¡Qué bonito!', 3); P.T.doTrick('dance'); } }
+  if (!quests.charcos && W.here > 0.4 && !P.inHouse) startQuest('charcos');   // la primera lluvia trae el encargo de los charcos
+  updateRain(dt); updateSnow(dt); updatePuddles(); updateUmbrellas(dt);
 }
 // La lluvia: gotas (rayitas) que caen en una caja de 32 m alrededor de lo que se ve, con el mismo shader que la fogata (una llamada).
 // Adentro de la casa no caen (se oyen en el techo, 01-core.js).
@@ -509,11 +519,12 @@ function updateRain(dt) {
   });
   for (const key in a) a[key].needsUpdate = true;
 }
-// charcos: en las calles, el camino del jardín, el camino al bosque y las calles de Valle Alegre (con su propia semilla). Uno solo
+// charcos: en las banquetas de la ciudad, el camino del jardín, el camino al bosque y las calles de Valle Alegre (con su propia semilla). Uno solo
 // InstancedMesh; reflejan el color del cielo (la niebla) y aparecen y se secan con `wet`.
 const puddles = (() => {
   const R = mulberry(8080), r2 = (a, b) => a + (b - a) * R(), pts = [];
-  for (const sx of [-24, 24]) for (let k = 0; k < 7; k++) { pts.push([sx + r2(-2.5, 2.5), r2(-56, 56)]); pts.push([r2(-56, 56), sx + r2(-2.5, 2.5)]); }
+  const walk = () => (R() < 0.5 ? -1 : 1) * r2(5.2, 6);   // en la ciudad, en las banquetas: brincar en charcos a media calle era jugar entre los autos
+  for (const sx of [-24, 24]) for (let k = 0; k < 7; k++) { pts.push([sx + walk(), r2(-56, 56)]); pts.push([r2(-56, 56), sx + walk()]); }
   for (const z of [6.5, 12, 17]) pts.push([r2(-0.4, 0.4), z]);
   for (let k = 0; k < 9; k++) { const z = r2(-155, -70); pts.push([pathX(z) + r2(-0.8, 0.8), z]); }
   for (let k = 0; k < 7; k++) { let z = r2(-262, -165); if (Math.abs(z + 205) < 14) z -= 30; pts.push([pathX(z) + r2(-0.8, 0.8), z]); }
@@ -522,10 +533,60 @@ const puddles = (() => {
     g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.ellipse(24, 24, 9, 4, -0.5, 0, TAU); g.fill(); });
   const m = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 }), pts.length);
   const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
-  pts.forEach(([x, z], i) => m.setMatrixAt(i, m4.compose(v.set(x, groundY(x, z) + 0.06, z), q.setFromEuler(e.set(0, R() * TAU, 0)), sc.set(r2(0.7, 1.5), 1, r2(0.45, 0.9)))));
-  m.frustumCulled = false; m.visible = false; m.raycast = () => {}; scene.add(m); m.pts = pts; return m;
+  m.list = pts.map(([x, z], i) => { const ry = R() * TAU, rx = r2(0.7, 1.5), rz = r2(0.45, 0.9); m.setMatrixAt(i, m4.compose(v.set(x, groundY(x, z) + 0.06, z), q.setFromEuler(e.set(0, ry, 0)), sc.set(rx, 1, rz)));
+    return { x, z, rx: Math.max(rx, rz), rz: Math.max(rx, rz) }; });   // para brincar en ellos basta un círculo
+  m.frustumCulled = false; m.visible = false; m.raycast = () => {}; scene.add(m); return m;
 })();
 const PUDDLE_DARK = new THREE.Color(0x283240);
+// nieve: copos que bajan despacio y se mecen, arriba de los cerros (mismo shader, una llamada)
+const snowFlakes = (() => { const S = fireParts(500, skyDot, THREE.NormalBlending); S.pts.visible = false; S.pts.renderOrder = 3; return S; })();
+function updateSnow(dt) {
+  const S = snowFlakes, P = player, k = P.inHouse ? 0 : weather.snow; S.pts.visible = k > 0.01;
+  if (!S.pts.visible) { for (const p of S.list) p.born = false; return; }
+  const c = camView.c, s = camView.s, cx = P.pos.x - s * 4, cz = P.pos.z - c * 4, top = P.pos.y + 11, floor = P.pos.y - 3, H = 13, C = camera.position;
+  const n = Math.round(S.list.length * k), lum = 0.55 + 0.45 * day.light, a = S.a;
+  S.list.forEach((p, i) => {
+    if (!p.born || p.y < floor) { p.x = cx + rand(-H, H); p.z = cz + rand(-H, H); p.y = p.born ? top : rand(floor, top); p.born = true; p.s0 = rand(0.07, 0.15); }
+    if (p.x < cx - H) p.x += 2 * H; else if (p.x > cx + H) p.x -= 2 * H;
+    if (p.z < cz - H) p.z += 2 * H; else if (p.z > cz + H) p.z -= 2 * H;
+    p.y -= 1.5 * dt; p.x += (Math.sin(clock * 0.9 + p.ph) * 0.6 + 0.4) * dt; p.z += Math.cos(clock * 0.7 + p.ph) * 0.4 * dt;
+    const near = smooth(2, 5, Math.hypot(p.x - C.x, p.y - C.y, p.z - C.z));
+    a.position.setXYZ(i, p.x, p.y, p.z); a.size.setX(i, p.s0); a.alpha.setX(i, i < n ? 0.9 * near : 0); a.tint.setXYZ(i, lum, lum, lum * 1.03); a.spin.setX(i, 0);
+  });
+  for (const key in a) a[key].needsUpdate = true;
+}
+// El paraguas: Tamachin abre uno cuando llueve (afuera), como el farolito de noche; la mitad de los vecinos también.
+// Un cono de 8 gajos rojos y blancos (color por vértice) con mango; la misma geometría para todos.
+const UMB_GEO = (() => {
+  const cone = new THREE.ConeGeometry(1, 0.42, 8, 1, true).toNonIndexed(), P = cone.attributes.position, col = [], A = new THREE.Color(0xef4b4b), B = new THREE.Color(0xfff4e6);
+  for (let i = 0; i < P.count; i += 3) { const cx = (P.getX(i) + P.getX(i + 1) + P.getX(i + 2)) / 3, cz = (P.getZ(i) + P.getZ(i + 1) + P.getZ(i + 2)) / 3, k = Math.floor(((Math.atan2(cz, cx) + TAU) % TAU) / (TAU / 8)), c = k % 2 ? A : B;
+    for (let j = 0; j < 3; j++) col.push(c.r, c.g, c.b); }
+  cone.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); cone.computeVertexNormals();
+  const b = new Batch(); b.addGeo(cone, null, new THREE.Matrix4().makeTranslation(0, 0.21, 0));
+  b.cyl('#3b2a4a', 0, -0.35, 0, 0.025, 0.025, 1.1, 6).sph('#3b2a4a', 0, 0.45, 0, 0.05).sph('#3b2a4a', 0.06, -0.92, 0, 0.07);
+  return b.geometry();
+})();
+const UMB_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide });
+const umbrella = (() => { const m = new THREE.Mesh(UMB_GEO, UMB_MAT); m.visible = false; m.castShadow = true; scene.add(m); return { m, k: 0 }; })();
+function updateUmbrellas(dt) {
+  const P = player, U = umbrella, want = weather.here > 0.25 && !P.inHouse && P.state !== 'sleep' && !ui.closeup ? 1 : 0, sc = P.T.scale;
+  U.k = damp(U.k, want, 5, dt); U.m.visible = U.k > 0.02;
+  if (U.m.visible) {
+    U.m.position.set(P.pos.x + Math.cos(camView.yaw) * 0.18 * sc, P.pos.y + (P.T.def.H + 0.75) * sc * (1 - 0.6 * P.T.lieK), P.pos.z - Math.sin(camView.yaw) * 0.18 * sc);
+    U.m.rotation.set(0.12 * Math.sin(clock * 1.3), P.heading, -0.18 + 0.06 * Math.sin(clock * 1.7)); U.m.scale.setScalar(0.9 * sc * U.k);
+  }
+  // vecinos: los pares abren paraguas (en su grupo: se mueven con ellos)
+  const rainy = weather.rain > 0.3;
+  if (rainy !== U.npcs) { U.npcs = rainy; npcs.forEach((n, i) => { if (i % 2) return; if (!n.umb) { n.umb = new THREE.Mesh(UMB_GEO, UMB_MAT); n.umb.position.set(0.12, SHAPES[n.T.shape].H + 0.62, 0); n.umb.rotation.z = -0.15; n.umb.scale.setScalar(0.75); n.T.group.add(n.umb); } n.umb.visible = rainy; }); }
+}
+// brincar en un charco (con lluvia o recién llovido): salpica, divierte y cuenta para el encargo
+function puddleAt(x, z) { for (const p of puddles.list) if (Math.hypot((x - p.x) / p.rx, (z - p.z) / p.rz) < 1.05) return p; return null; }
+function puddleJump(x, z) {
+  if (weather.wet < 0.3 || !puddleAt(x, z)) return;
+  burst('splash', x, 0.25, z, 12, { spread: 2.4 }); SFX.splash(); say(player, choose(['¡Splash!', '¡Splish, splash!', '¡Chapuzón!']), 1.2); player.T.poke(4);
+  gain('diversion', 0.04, 'charco', 0.8);
+  if (quests.charcos === 1) { puddleJumps++; if (puddleJumps >= 10) finishQuest('charcos'); else { toast('Charcos: ' + puddleJumps + ' de 10.', 2.2); renderDiary(); save(); } }
+}
 function updatePuddles() {
   const m = puddles, w = weather.wet; m.visible = w > 0.01; if (!m.visible) return;
   m.material.opacity = 0.7 * Math.min(1, w * 1.6); m.material.color.copy(scene.fog.color).lerp(PUDDLE_DARK, 0.45);   // reflejan el cielo
@@ -730,7 +791,7 @@ function toggleDiary(on) {
 const dayEl = $('#dDay');
 function renderDiary() {
   if (diaryEl.hidden) return;
-  const ht = hourText(day.h); dayEl.textContent = 'Día ' + day.n + ' · ' + ht[0].toLowerCase() + ht.slice(1);
+  const ht = hourText(day.h); dayEl.textContent = 'Día ' + day.n + ' · ' + weatherWord() + ' · ' + ht[0].toLowerCase() + ht.slice(1);
   needListEl.innerHTML = Object.keys(NEEDS).map((k) => '<div class="nrow n-' + k + '">' + needEls[k].el.querySelector('svg').outerHTML + '<strong>' + NEEDS[k].label + '</strong><span class="pct"></span>'
     + '<span class="bar"><b></b></span><p>Se llena con ' + NEEDS[k].fill + '.</p></div>').join('');
   const open = Object.keys(QUESTS).filter((k) => quests[k] === 1), done = Object.keys(QUESTS).filter((k) => quests[k] === 2), left = Object.keys(QUESTS).length - open.length - done.length;
@@ -885,6 +946,7 @@ function updatePlayer(dt) {
         P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
       } else {
         if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
+        if (P.vy < -4 && !pr && !P.onGround && P.state === 'normal') puddleJump(pos.x, pos.z);   // en un charco: ¡splash!
         const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
         if (pr && landed && P.state === 'normal') perched(pr);
       }
@@ -1289,7 +1351,7 @@ function updateLantern(dt) {
 // ───────────────────────── reloj (el día y la noche están en 01-core.js) ─────────────────────────
 // Analógico: la manecilla larga da una vuelta por minuto real (una hora de juego). De noche la carátula se oscurece y sale la luna.
 const clockEl = $('#clock'), clockSvg = clockEl.querySelector('svg'), cHour = $('#cHour'), cMin = $('#cMin');
-const cNight = $('#cNight'), cWarm = $('#cWarm'), cSun = $('#cSun'), cMoon = $('#cMoon');
+const cNight = $('#cNight'), cWarm = $('#cWarm'), cSun = $('#cSun'), cMoon = $('#cMoon'), cCloud = $('#cCloud'), cRain = $('#cRain');
 { let t = ''; for (let i = 0; i < 12; i++) { const a = i * 30 * DEG, x = Math.sin(a), y = -Math.cos(a), f = (v) => v.toFixed(2);
     t += i % 3 ? '<circle stroke="none" r="1.75" cx="' + f(x * 24.6) + '" cy="' + f(y * 24.6) + '"/>' : '<line x1="' + f(x * 21) + '" y1="' + f(y * 21) + '" x2="' + f(x * 26.4) + '" y2="' + f(y * 26.4) + '"/>'; }
   $('#cTicks').innerHTML = t; }
@@ -1300,23 +1362,36 @@ function hourText(h) {
   const part = H === 0 || H >= 20 ? 'de la noche' : H < 6 ? 'de la madrugada' : H < 12 ? 'de la mañana' : 'de la tarde';
   return (h12 === 1 ? 'Es la ' : 'Son las ') + h12 + ':' + String(M).padStart(2, '0') + ' ' + part;
 }
+// el tiempo en palabras: lo que dicen el reloj y el diario
+function weatherText() {
+  const W = weather, h = day.h, p = wPlan;
+  if (W.rain > 0.3) return W.snow > W.here ? 'Está nevando en los cerros.' : 'Está lloviendo.';
+  if (W.bow > 0.5) return '¡Hay un arcoíris!';
+  if (!W.force && p && p.kind === 'lluvia') return h < p.from ? 'Al rato va a llover.' : 'Ya dejó de llover.';
+  if (W.cloud > 0.5) return 'Está nublado.';
+  return day.light > 0.5 ? 'Hace sol.' : 'El cielo está despejado.';
+}
+const weatherWord = () => (weather.kind === 'lluvia' ? 'lluvioso' : weather.kind === 'nublado' ? 'nublado' : day.light > 0.5 ? 'soleado' : 'despejado');
 function clockSay() {
   const dark = day.h >= DAY.set || day.h < DAY.rise;
-  toast(hourText(day.h) + '. ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.'), 3.5); SFX.pop();
+  toast(hourText(day.h) + '. ' + weatherText() + ' ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.'), 4); SFX.pop();
 }
 clockEl.addEventListener('click', clockSay);
 function updateClock() {
   const h = day.h, m = (h % 1) * 360;
   if (Math.abs(m - clockA) > 0.25) { clockA = m; cMin.setAttribute('transform', 'rotate(' + m.toFixed(1) + ')'); cHour.setAttribute('transform', 'rotate(' + ((h % 12) * 30).toFixed(2) + ')'); }
   const n = 1 - day.light;
-  if (Math.abs(n - clockN) > 0.005) {
-    clockN = n; const sunK = smooth(0.38, 0.48, day.light), nk = smooth(0.5, 0.95, n);   // al atardecer la carátula se pone durazno; ya de noche, azul
+  const wkey = n + weather.cloud * 3 + weather.rain * 7;
+  if (Math.abs(wkey - clockN) > 0.005) {
+    clockN = wkey; const sunK = smooth(0.38, 0.48, day.light), nk = smooth(0.5, 0.95, n);   // al atardecer la carátula se pone durazno; ya de noche, azul
     cNight.setAttribute('opacity', nk.toFixed(3)); cWarm.setAttribute('opacity', (day.warm * 0.9).toFixed(3));
-    cSun.setAttribute('opacity', sunK.toFixed(3)); cMoon.setAttribute('opacity', (1 - sunK).toFixed(3));
+    const cloudK = smooth(0.4, 0.7, weather.cloud);
+    cSun.setAttribute('opacity', (sunK * (1 - cloudK)).toFixed(3)); cMoon.setAttribute('opacity', ((1 - sunK) * (1 - cloudK)).toFixed(3));
+    cCloud.setAttribute('opacity', cloudK.toFixed(3)); cRain.setAttribute('opacity', smooth(0.2, 0.5, weather.rain).toFixed(3));
     clockSvg.style.color = '#' + _ck.copy(CLOCK_INK).lerp(CLOCK_INK_NIGHT, smooth(0.35, 0.65, nk)).getHexString();
   }
   const step = Math.floor(h * 6);                                  // el texto, cada 10 minutos de juego
-  if (step !== clockStep) { clockStep = step; const txt = hourText(h); clockEl.setAttribute('aria-label', 'Reloj. ' + txt); clockEl.title = txt; if (!diaryEl.hidden) dayEl.textContent = 'Día ' + day.n + ' · ' + txt[0].toLowerCase() + txt.slice(1); }
+  if (step !== clockStep) { clockStep = step; const txt = hourText(h); clockEl.setAttribute('aria-label', 'Reloj. ' + txt); clockEl.title = txt; if (!diaryEl.hidden) dayEl.textContent = 'Día ' + day.n + ' · ' + weatherWord() + ' · ' + txt[0].toLowerCase() + txt.slice(1); }
 }
 // ?hora=21 (o 21.5, o 21:30) en la dirección: empieza a esa hora, para probar la noche
 function hourParam() {
@@ -1389,8 +1464,9 @@ function boot(data) {
   if (s.helpSeen === true) helpEl.hidden = true;
   const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
   if (Number.isInteger(s.dia) && s.dia > 0) day.n = s.dia; lastHour = day.h;
-  const qc = /[?&]clima=(lluvia|nublado|sol)\b/.exec(location.search); weather.force = qc ? qc[1] : null; updateWeather(0, true);   // el tiempo de hoy, sin esperar a que entre
+  const qc = /[?&]clima=(lluvia|nublado|sol|arcoiris)\b/.exec(location.search); weather.force = qc ? qc[1] : null; updateWeather(0, true);   // el tiempo de hoy, sin esperar a que entre
   if (Number.isInteger(s.flies) && s.flies >= 0) fliesCaught = Math.min(10, s.flies); jar.visible = quests.luciernagas === 2;
+  if (Number.isInteger(s.charcos) && s.charcos >= 0) puddleJumps = Math.min(10, s.charcos);
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
   player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);

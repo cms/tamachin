@@ -112,9 +112,13 @@ Un día dura 24 minutos: una hora del juego es un minuto. Amanece a las 5 y oscu
 Cada día tiene su tiempo, según su número (al recargar es el mismo): 1 de cada 5 días llueve, en un chubasco de 2 a 4 horas entre las 9 de la mañana y las 9 de la noche; 1 de cada 4 está nublado; los demás hace sol. El primer día siempre hace sol.
 
 - Nublado: el cielo y la luz se ponen grises, las sombras se suavizan, la neblina se acerca y de noche no se ven estrellas ni luna.
-- Con lluvia caen gotas alrededor de Tamachin (adentro de la casa no), se prenden las ventanas, se forman charcos en las calles y los caminos que se secan despacio cuando deja de llover, se oye la lluvia (apagada y con gotas en el techo adentro de la casa) y se callan los pájaros. Las mariposas y las luciérnagas se esconden.
-- Arriba de los cerros (más de 180 m) no llueve.
-- Para probar: `?clima=lluvia`, `?clima=nublado` o `?clima=sol` en la dirección (no se guarda).
+- Con lluvia caen gotas alrededor de Tamachin (adentro de la casa no), se prenden las ventanas, se forman charcos en las banquetas de la ciudad, los caminos y Valle Alegre que se secan despacio cuando deja de llover, se oye la lluvia (apagada y con gotas en el techo adentro de la casa) y se callan los pájaros. Las mariposas y las luciérnagas se esconden.
+- Tamachin abre un paraguas rojo y blanco, y la mitad de los vecinos también; los vecinos hablan de la lluvia. Brincar en un charco salpica y divierte. La banda del kiosco no toca si llueve (el mercado sí abre).
+- Arriba de los cerros (más de 180 m), en vez de llover, nieva.
+- Cuando deja de llover de día sale un arcoíris del lado contrario al sol, sentado en el horizonte (se ve bajando la cámara).
+- Encargos: la primera lluvia trae «Diez charcos» (brincar en diez) y el primer arcoíris, «Un arcoíris» (verlo).
+- Tocar el reloj también dice el tiempo («Está lloviendo», «Al rato va a llover»…), y su carátula muestra una nube con gotas; el diario dice si el día está soleado, nublado o lluvioso.
+- Para probar: `?clima=lluvia`, `?clima=nublado`, `?clima=sol` o `?clima=arcoiris` en la dirección (no se guarda).
 
 ## Música
 
