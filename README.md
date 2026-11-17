@@ -57,12 +57,12 @@ Corren el juego en el Chrome instalado, sin interfaz, y lo juegan: caminan con l
 
 ```sh
 npm install                  # una vez: playwright-core (usa el Chrome que ya tienes, no descarga navegadores)
-npm test                     # todas menos la caminata larga (unos 6 minutos)
+npm test                     # todas menos la caminata larga (unos 6 minutos; van 3 grupos a la vez)
 npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay once grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima` y `caminata`. Todas abren el juego a mediodía (`?hora=12`), salvo las que revisan la hora. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
+Hay once grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
 
 ## Controles
 

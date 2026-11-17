@@ -6,6 +6,7 @@ const { openGame, sleep } = require('./lib.cjs');
 const EXPOSE = 'scene, camera, renderer, player, joy, needs, quests, summits, fruitsTasted, TRAIL, groundY, forest, genChunk, forestPlantNear, eatPlant, forestTrailX';
 
 module.exports = {
+  solo: true,                                   // depende del tiempo real: corre sola, sin otras pruebas a la vez
   titulo: 'caminata de la fogata al bosque sin fin (larga)',
   largo: true,
   async run(T) {

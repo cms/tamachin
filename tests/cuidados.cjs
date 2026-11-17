@@ -4,6 +4,7 @@ const { openGame, sleep } = require('./lib.cjs');
 const EXPOSE = 'player, needs, quests, npcs, creatures, berryBushes, house, joy, interacts, toggleDiary, talkTo, get clock() { return clock; }, set clock(v) { clock = v; }';
 
 module.exports = {
+  solo: true,                                   // depende del tiempo real: corre sola, sin otras pruebas a la vez
   titulo: 'necesidades, refri, bayas y encargos; se guardan',
   async run(T) {
     const { ctx, page, errors, E } = await openGame(T, { expose: EXPOSE });

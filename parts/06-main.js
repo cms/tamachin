@@ -1350,7 +1350,13 @@ function frame(now) {
   requestAnimationFrame(frame);
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
-  resize(); clock += dt; updateDay(dt); updateDayCount(); updateWeather(dt); updateTownHours(dt);
+  resize(); step(dt);
+  renderer.render(scene, camera);
+  if (statsEl) updateStats(raw);
+}
+// todo lo que pasa en un cuadro, sin dibujar (las pruebas lo repiten con `advance` para adelantar el juego sin esperar)
+function step(dt) {
+  clock += dt; updateDay(dt); updateDayCount(); updateWeather(dt); updateTownHours(dt);
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
   if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
@@ -1359,9 +1365,9 @@ function frame(now) {
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateShootingStar(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
-  renderer.render(scene, camera);
-  if (statsEl) updateStats(raw);
 }
+// para las pruebas: corre `sec` segundos de juego de golpe, en pasos de `dt`, y dibuja una vez (así quedan al día las matrices)
+function advance(sec, dt) { dt = dt || 1 / 30; for (let i = 0, n = Math.ceil(sec / dt); i < n; i++) step(dt); renderer.render(scene, camera); }
 
 // ───────────────────────── arranque ─────────────────────────
 function boot(data) {
@@ -1403,6 +1409,6 @@ document.addEventListener('visibilitychange', () => {
 });
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
-window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
+window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, advance, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
 if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
 })();

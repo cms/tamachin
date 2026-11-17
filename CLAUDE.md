@@ -107,6 +107,8 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 - `mundo` compara lo que se genera con `tests/mundo.json`. Si falla sin que quisieras cambiar el mundo, es casi siempre una llamada de más a `rnd()`. Si el cambio es a propósito: `npm test -- mundo --actualizar`.
 - El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
 - Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.
+- Para no esperar en tiempo real: `window.__tamachin.advance(seg)` corre el juego `seg` segundos de golpe (`step(dt)` repetido, sin dibujar, y dibuja una vez al final para que las matrices queden al día). `vista` lo usa en cada lugar (de 7 minutos a 5 s). Lo que depende del reloj del audio o de eventos reales (la palanca con `setInterval`, la música en vivo) no se puede adelantar así.
+- `run.cjs` corre 3 grupos a la vez (`--paralelo=N`) e imprime cada uno al terminar; los que llevan `solo: true` (`cuidados`, `musica`, `caminata`) van solos al final porque con la máquina ocupada su tiempo real se atrasa. Three.js lo sirve `lib.cjs` desde `tests/.cache/` (se baja la primera vez).
 
 ## Rendimiento
 

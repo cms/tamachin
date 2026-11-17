@@ -47,6 +47,7 @@ const RENDER = async ({ plan, secs, sr, wav, sfx, amb, music = true }) => {
 };
 
 module.exports = {
+  solo: true,                                   // depende del tiempo real: corre sola, sin otras pruebas a la vez
   titulo: 'música y lo de fondo: siguen al lugar y a Tamachin, van a tiempo, el botón de sonido tiene tres pasos y se guarda',
   async run(T) {
     const expose = 'getMus: () => mus, getErr: () => musErr, makeMusic, ambFor, owl, snd, needs, setHour';

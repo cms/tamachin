@@ -33,6 +33,18 @@ async function launch() {
   return playwright().chromium.launch({ channel: 'chrome', headless: true, args });
 }
 
+// Three.js: se baja una vez de cdnjs a tests/.cache y las páginas lo reciben de ahí (más rápido, y sin depender de la red en cada página)
+const THREE_URL = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', THREE_FILE = path.join(__dirname, '.cache', 'three-r128.min.js');
+let threeSrc = null;
+async function three() {
+  if (threeSrc) return threeSrc;
+  if (!fs.existsSync(THREE_FILE)) {
+    const r = await fetch(THREE_URL); if (!r.ok) throw new Error('No se pudo bajar Three.js: ' + r.status);
+    fs.mkdirSync(path.dirname(THREE_FILE), { recursive: true }); fs.writeFileSync(THREE_FILE, Buffer.from(await r.arrayBuffer()));
+  }
+  return (threeSrc = fs.readFileSync(THREE_FILE));
+}
+
 const PHONE = { viewport: { width: 390, height: 844 }, deviceScaleFactor: 2, isMobile: true, hasTouch: true };
 const DESKTOP = { viewport: { width: 1280, height: 800 } };
 
@@ -55,6 +67,7 @@ async function openGame(T, opts = {}) {
     const body = src.replace('window.__tamachin = {', hook);
     await page.route('**/game.js', (r) => r.fulfill({ body, contentType: 'application/javascript' }));
   }
+  const src3 = await three(); await page.route(THREE_URL, (r) => r.fulfill({ body: src3, contentType: 'application/javascript' }));
   if (opts.init) await page.addInitScript(opts.init);
   const hq = [opts.hora === false ? '' : 'hora=' + (opts.hora == null ? 12 : opts.hora), opts.clima === false ? '' : 'clima=' + (opts.clima || 'sol')].filter(Boolean).join('&'), q = opts.query || '';
   await page.goto(T.url + (q && hq ? q + '&' + hq : q || (hq ? '?' + hq : '')));
