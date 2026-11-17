@@ -63,7 +63,14 @@ module.exports = {
     T.check('el conejo lo sigue hasta el portón del parque', w1 && rab < 6, rab.toFixed(1) + ' m');
     await E(() => window.__walk([[0.5, -58], [-6.5, -52], [-6.8, -45], [-6.5, -38.5], [-1.2, -31], [0.5, -26], [8, -26], [24, -26], [24, 0], [24, 24], [10, 25.5], [3, 27.5]]));
     // Tofu sigue caminando su manzana: si no llegamos a tiempo, se le persigue (como haría un jugador) hasta que el conejo quede con él.
-    // Caminar a donde estaba fallaba cuando la máquina iba lenta: al llegar, Tofu ya iba media cuadra adelante.
+    // Caminar a donde estaba fallaba cuando la máquina iba lenta: al llegar, Tofu ya iba media cuadra adelante. Y en línea recta,
+    // si iba del otro lado, Tamachin se atoraba contra un edificio de la manzana: se le detiene (como cuando platica) y se llega
+    // por la banqueta, rodeando la manzana (su vuelta es el rectángulo x ±18, z 30 a 60: blockLoop(1, 2)).
+    if (await E(() => window.__dbg.quests.conejo) !== 2) {
+      const route = await E(() => { const n = window.__dbg.npcs.find((q) => q.name === 'Tofu'); n.talkT = 60; const x = n.pos.x, z = n.pos.z, sx = x < 0 ? -18 : 18;
+        return z < 34 ? [] : Math.abs(Math.abs(x) - 18) < 3 ? [[sx, 30], [sx, z]] : [[sx, 30], [sx, 60], [x, 60]]; });
+      if (route.length) await E((r) => window.__walk(r), route);
+    }
     if (await E(() => window.__dbg.quests.conejo) !== 2) await E(() => new Promise((res) => {
       const D = window.__dbg, n = D.npcs.find((q) => q.name === 'Tofu'), t0 = performance.now();
       const id = setInterval(() => { const p = D.player.pos, dx = n.pos.x - p.x, dz = n.pos.z - p.z, d = Math.hypot(dx, dz);

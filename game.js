@@ -3518,7 +3518,7 @@ function togglePanel(on) {
   if (on && player.state === 'sleep') wake();
   if (on && !diaryEl.hidden) toggleDiary(false);
   if (on && !ui.closeup) ui.faceYaw = camView.yaw;
-  panelEl.hidden = !on; ui.closeup = on; document.body.classList.toggle('custom', on); bCustom.setAttribute('aria-expanded', String(on)); bCustom.textContent = on ? 'Volver al mundo' : 'Personalizar';
+  panelEl.hidden = !on; ui.closeup = on; document.body.classList.toggle('custom', on); bCustom.setAttribute('aria-expanded', String(on)); bCustom.querySelector('.lab').textContent = on ? 'Volver al mundo' : 'Personalizar';
   if (on) { syncPanel(); for (const k in keys) keys[k] = false; updMore(panelEl); }
 }
 
@@ -3570,12 +3570,15 @@ function goHome() {
 bHome.addEventListener('click', goHome);
 bCustom.addEventListener('click', () => togglePanel()); $('#pClose').addEventListener('click', () => togglePanel(false));
 const bZoom = $('#bZoom'), bSound = $('#bSound'), helpEl = $('#help');
-bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.textContent = ZOOM_LABEL[ui.zoomIdx]; });
+bZoom.addEventListener('click', () => { ui.zoomIdx = (ui.zoomIdx + 1) % 3; ui.zoomTarget = ZOOMS[ui.zoomIdx]; bZoom.querySelector('.lab').textContent = ZOOM_LABEL[ui.zoomIdx]; });
 // El botón de sonido va por tres pasos: música y efectos, solo efectos, nada. Sin nada, el audio se suspende (no gasta batería).
+// En el teléfono es solo un ícono (`data-mode` elige cuál: nota, ondas o tache): al tocarlo, un aviso dice en qué quedó.
+const ICONS_ONLY = window.matchMedia ? window.matchMedia('(max-width: 760px)') : { matches: false };   // la misma medida que el CSS
 const SOUND = { todo: ['Sonido: sí', 'Música y efectos', 'efectos'], efectos: ['Solo efectos', 'Efectos, sin música', 'no'], no: ['Sonido: no', 'Sin sonido', 'todo'] };
 function setSound(mode, chirp) {
   if (!SOUND[mode]) mode = 'todo';
-  snd.mode = mode; snd.on = mode !== 'no'; snd.music = mode === 'todo'; bSound.textContent = SOUND[mode][0]; bSound.title = SOUND[mode][1];
+  snd.mode = mode; snd.on = mode !== 'no'; snd.music = mode === 'todo'; bSound.querySelector('.lab').textContent = SOUND[mode][0]; bSound.title = SOUND[mode][1]; bSound.dataset.mode = mode;
+  if (chirp && ICONS_ONLY.matches) toast(SOUND[mode][1] + '.', 1.6);
   const c = snd.ctx;
   if (c && mus && !snd.music) mus.stop(c.currentTime);
   if (c && mus) { const g = mus.amb.out.gain; g.cancelScheduledValues(c.currentTime); g.setTargetAtTime(snd.on ? 1 : 0, c.currentTime, 0.08); }   // lo de fondo se apaga suave antes de suspender y vuelve igual

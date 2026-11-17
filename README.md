@@ -78,7 +78,7 @@ Hay doce grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controle
 | Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
 | Zoom | Rueda del mouse o botón Acercar | Pellizcar (en pantallas táctiles no aparece el botón) |
 
-El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no».
+El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no». En el teléfono, Sonido y Personalizar son íconos redondos junto al reloj: la bocina con una nota es música y efectos, con ondas solo efectos y con un tache sin sonido; al tocarla, un aviso dice en qué quedó. La paleta abre Personalizar.
 
 El reloj de arriba, junto a los medidores, marca la hora del juego; tocarlo dice la hora y cuándo amanece u oscurece.
 

@@ -97,6 +97,10 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 - Paraguas (`UMB_GEO`, `umbrella`, `updateUmbrellas`): el de Tamachin sigue al jugador como el farolito; los vecinos pares llevan uno en su grupo. Charcos: `puddles.list` (círculos) y `puddleJump` al caer de un salto; en la ciudad van en las banquetas (a media calle era jugar entre autos). La banda no toca con lluvia (`BAND.rain`).
 - Encargos `charcos` (sale con la primera lluvia, o al platicar con lluvia; `puddleJumps` se guarda) y `arcoiris` (sale con el primer arcoíris y se cumple a los 2 s de verlo afuera). `weatherText`/`weatherWord`: el tiempo en el toque del reloj y el diario; la carátula cambia sol o luna por una nube (`cCloud`, `cRain`).
 
+## La barra de arriba
+
+`.top` tiene dos partes: `.brand` (el nombre y el lugar) y `.hud` (medidores, reloj y `.tools`). Los botones de `.tools` llevan un ícono y su texto en `.lab`: cambia el texto con `boton.querySelector('.lab').textContent`, no con `textContent` del botón (borraría el ícono). Hasta 760 px de ancho (`ICONS_ONLY` en `06-main.js` usa la misma medida que el CSS) son íconos redondos de 44 px junto al reloj y el texto queda solo para lectores de pantalla; el de sonido cambia de ícono con `data-mode` y al tocarlo avisa en qué quedó. Para que todo quepa en una fila, las barras de los medidores se encogen (hasta 12 px) y abajo de 370 px se esconde la palabra «Diario». `arranque` lo revisa a 390 y 360 px.
+
 ## Capas del panel
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
