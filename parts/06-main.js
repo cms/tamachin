@@ -581,11 +581,12 @@ function updateUmbrellas(dt) {
 }
 // brincar en un charco (con lluvia o recién llovido): salpica, divierte y cuenta para el encargo
 function puddleAt(x, z) { for (const p of puddles.list) if (Math.hypot((x - p.x) / p.rx, (z - p.z) / p.rz) < 1.05) return p; return null; }
-function puddleJump(x, z) {
-  if (weather.wet < 0.3 || !puddleAt(x, z)) return;
+function puddleJump(x, z) {   // devuelve si salpicó (entonces no suena además el paso al caer)
+  if (weather.wet < 0.3 || !puddleAt(x, z)) return false;
   burst('splash', x, 0.25, z, 12, { spread: 2.4 }); SFX.splash(); say(player, choose(['¡Splash!', '¡Splish, splash!', '¡Chapuzón!']), 1.2); player.T.poke(4);
   gain('diversion', 0.04, 'charco', 0.8);
   if (quests.charcos === 1) { puddleJumps++; if (puddleJumps >= 10) finishQuest('charcos'); else { toast('Charcos: ' + puddleJumps + ' de 10.', 2.2); renderDiary(); save(); } }
+  return true;
 }
 function updatePuddles() {
   const m = puddles, w = weather.wet; m.visible = w > 0.01; if (!m.visible) return;
@@ -898,6 +899,45 @@ function perchUnder(x, z, y0) {
   }
   return best;
 }
+// ───────────────────────── pasos ─────────────────────────
+// Suenan cuando un pie toca el suelo en la animación: cada pie baja cuando su fase pasa por π/2, y los dos van medio ciclo
+// desfasados, así que hay un paso cada vez que `T.walk` cruza π/2 + kπ (02-tamachin.js). Solo en el suelo, caminando de verdad
+// (no al frenar) y con pies (el fantasma flota). `foot.n` cuenta por suelo aunque no haya audio (las pruebas lo leen); el sonido se
+// salta si el anterior fue hace menos de 0.07 s del reloj del audio, porque `advance()` corre muchos cuadros sin que ese reloj avance.
+// Van directo a la salida como los efectos (suenan con «Solo efectos», sin el filtro de la noche) y con su propio try (el error
+// queda en `foot.err`, sin apagar la música).
+const foot = { n: {}, total: 0, played: 0, lands: 0, last: null, at: -1, err: null };
+const inRect = (x, z, r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3];
+function stepSurface(x, z, perch) {   // qué pisa: con las mismas medidas con que se pinta cada suelo
+  const P = player;
+  if (perch) return perch.step || 'piedra';
+  if (P.inHouse) return 'madera';
+  if (onBridge(x, z)) return 'madera';
+  if (P.inWater || (riverDepth(x, z) < -0.2 && P.pos.y < 0)) return 'agua';
+  if (weather.wet > 0.3 && puddleAt(x, z)) return 'charco';
+  if (z < NORTH_Z) return northSurface(x, z);                       // cerros, pueblo, bosque sin fin (05-norte.js)
+  if (z < -62.6) return (z > -246.5 && Math.abs(x - pathX(z)) < 1.5) || nearTrail(x, z, 1.35) ? 'tierra' : 'pasto';   // el camino y el bosque
+  const road = ROADS.some((r) => Math.abs(x - r) < RW + 0.28 || Math.abs(z - r) < RW + 0.28);   // las calles se pintan encima de los senderos
+  if (!road && (SAND_PATHS.some((r) => inRect(x, z, r)) || Math.hypot(x - PARK_PLAZA.x, z - PARK_PLAZA.z) < PARK_PLAZA.r)) return 'tierra';   // también donde cruzan la banqueta
+  return LAWNS.some((r) => inRect(x, z, r)) ? 'pasto' : 'piedra';    // si no, calles y banquetas
+}
+function stepSound(kind, v) {
+  foot.n[kind] = (foot.n[kind] || 0) + 1; foot.total++; foot.last = kind;
+  const c = snd.ctx; if (!c || !snd.on || c.state !== 'running' || c.currentTime - foot.at < 0.07) return;
+  foot.at = c.currentTime;
+  const wet = weather.wet > 0.35 && !player.inHouse && (kind === 'pasto' || kind === 'tierra' || kind === 'piedra');   // después de llover chapotea
+  try { footstep(c, c.destination, c.currentTime + 0.005, kind, v, wet); foot.played++; } catch (e) { foot.err = e; }   // si falla, sin pasos (las pruebas lo leen)
+}
+function walkSteps(w0, w1) {
+  const P = player, HALF = Math.PI / 2;
+  if (Math.floor((w1 - HALF) / Math.PI) === Math.floor((w0 - HALF) / Math.PI)) return;   // ningún pie bajó
+  if (!P.onGround || P.state !== 'normal' || P.T.def.feet === false || P.speedN < 0.25) return;
+  stepSound(stepSurface(P.pos.x, P.pos.z, P.perch), P.running ? 1.2 : 0.75 + 0.25 * Math.min(1, P.speedN));
+}
+function landStep(perch) {   // al caer de un salto: los dos pies, más fuerte (la cama rebota y suena aparte)
+  const P = player; if (P.T.def.feet === false) return;
+  foot.lands++; stepSound(stepSurface(P.pos.x, P.pos.z, perch), 1.35);
+}
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
   if (P.tempT > 0) { P.tempT -= dt; if (P.tempT <= 0) { const f = P.onTempEnd; P.tempMood = null; P.onTempEnd = null; applyMood(); if (f) f(); } }
@@ -946,7 +986,8 @@ function updatePlayer(dt) {
         P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
       } else {
         if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
-        if (P.vy < -4 && !pr && !P.onGround && P.state === 'normal') puddleJump(pos.x, pos.z);   // en un charco: ¡splash!
+        const drop = P.vy < -4 && !P.onGround && P.state === 'normal';
+        if (drop && !(!pr && puddleJump(pos.x, pos.z)) && !(!pr && gy < -0.2)) landStep(pr);   // en un charco: ¡splash!; si no, el paso de caer (en el río ya salpica)
         const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
         if (pr && landed && P.state === 'normal') perched(pr);
       }
@@ -970,7 +1011,7 @@ function updatePlayer(dt) {
     const k = Math.cos(P.heading - camView.yaw), sc = Math.max(30, pScreen.r * 3);
     st.lookX = clamp((ptr.x - pScreen.x) / sc, -1, 1) * (k >= 0 ? 1 : -1); st.lookY = clamp(-(ptr.y - (pScreen.y - pScreen.r * 0.3)) / sc, -1, 1);
   }
-  T.update(dt, st);
+  const w0 = T.walk; T.update(dt, st); walkSteps(w0, T.walk);
 }
 
 const camPos = new THREE.Vector3(), camTgt = new THREE.Vector3(), _cp = new THREE.Vector3(), _ct = new THREE.Vector3(); let camInit = false, camSlope = 0.7;

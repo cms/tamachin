@@ -62,7 +62,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay once grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
+Hay doce grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
 
 ## Controles
 
@@ -132,6 +132,8 @@ Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toq
 - Bosque sin fin: nunca se repite; los acordes y la flautita se inventan al momento.
 
 La música también sigue a Tamachin: dormido (en su cama o en la hamaca) suena una canción de cuna; corriendo entra percusión; si tiene hambre, sueño o aburrimiento, una parte alegre se calla hasta que se recupera; los efectos con tono (saltar, trucos, premios) suenan en la tonalidad de la música, que se agacha un momento bajo los premios, y en cada cima suena una fanfarria.
+
+Los pasos de Tamachin suenan según lo que pisa: pasto, tierra (senderos y caminos), piso (calles, banquetas y el empedrado de Valle Alegre), madera (la casa y el puente), roca y nieve en los cerros, agua en el río, charcos, metal (botes e hidrantes) y la cama. Corriendo van más seguido, al caer de un salto suenan más fuerte, después de llover chapotean un poco y el fantasma, que flota, no hace ruido. Son efectos: suenan también con «Solo efectos».
 
 De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». De noche cantan grillos en vez de pájaros, ulula un búho en el camino y los bosques, y la música se oye más suave. Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 

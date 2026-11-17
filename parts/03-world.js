@@ -41,6 +41,12 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.Mes
 ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, -100); ground.receiveShadow = true; scene.add(ground);
 const decal = (o) => Object.assign({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }, o);
 
+// lo que se pinta en el suelo de la ciudad, también para los pasos (stepSurface, 06-main.js): [x0, z0, x1, z1]
+const blockRect = (i, j) => [BLOCKS[i][0] + (i > 0 ? 2.8 : 0.6), BLOCKS[j][0] + (j > 0 ? 2.8 : 0.6), BLOCKS[i][1] - (i < 2 ? 2.8 : 0.6), BLOCKS[j][1] - (j < 2 ? 2.8 : 0.6)];
+const LAWNS = [blockRect(1, 1), blockRect(1, 0)];                  // el jardín de la casa y el parque; lo demás de la ciudad es piso
+const SAND_PATHS = [[-1.1, -4, 1.1, 17.4], [-1.1, -3.4, 10.1, -1.8], [8.4, -15.8, 10.1, -1.8], [-0.85, -15.8, 10.1, -14.2], [-0.85, -17.4, 0.85, -14.2], [10.1, -3.4, 17.4, -1.8],   // jardín
+  [-1.3, -62.6, 1.3, -27.2], [-17.2, -46.3, 17.2, -43.7]];        // parque, y su plaza redonda:
+const PARK_PLAZA = { x: 0, z: -45, r: 6.3 };
 const cityTex = canvasTex(2048, 2048, (g, S) => {
   const K = S / 128, X = (x) => (x + 64) * K, Z = (z) => (z + 64) * K;
   const rect = (x0, z0, x1, z1, fill) => { g.fillStyle = fill; g.fillRect(X(x0), Z(z0), (x1 - x0) * K, (z1 - z0) * K); };
@@ -50,16 +56,9 @@ const cityTex = canvasTex(2048, 2048, (g, S) => {
   g.strokeStyle = 'rgba(120,110,95,.2)'; g.lineWidth = 1.5; g.beginPath();
   for (let v = -62; v <= 62; v += 1.3) { g.moveTo(X(v), Z(-62.6)); g.lineTo(X(v), Z(62.6)); g.moveTo(X(-62.6), Z(v)); g.lineTo(X(62.6), Z(v)); }
   g.stroke();
-  BLOCKS.forEach((bx, i) => BLOCKS.forEach((bz, j) => {
-    const x0 = bx[0] + (i > 0 ? 2.8 : 0.6), x1 = bx[1] - (i < 2 ? 2.8 : 0.6), z0 = bz[0] + (j > 0 ? 2.8 : 0.6), z1 = bz[1] - (j < 2 ? 2.8 : 0.6);
-    rect(x0, z0, x1, z1, i === 1 && j < 2 ? (j === 1 ? '#93d470' : '#8bd06c') : '#cfc7b6');
-  }));
-  // jardín de la casa: senderos
-  rect(-1.1, -4, 1.1, 17.4, SAND); rect(-1.1, -3.4, 10.1, -1.8, SAND); rect(8.4, -15.8, 10.1, -1.8, SAND);
-  rect(-0.85, -15.8, 10.1, -14.2, SAND); rect(-0.85, -17.4, 0.85, -14.2, SAND); rect(10.1, -3.4, 17.4, -1.8, SAND);
-  // parque
-  rect(-1.3, -62.6, 1.3, -27.2, SAND); rect(-17.2, -46.3, 17.2, -43.7, SAND);
-  g.fillStyle = SAND; g.beginPath(); g.arc(X(0), Z(-45), 6.3 * K, 0, TAU); g.fill();
+  BLOCKS.forEach((bx, i) => BLOCKS.forEach((bz, j) => rect(...blockRect(i, j), i === 1 && j < 2 ? (j === 1 ? '#93d470' : '#8bd06c') : '#cfc7b6')));
+  for (const p of SAND_PATHS) rect(...p, SAND);                    // senderos del jardín y del parque
+  g.fillStyle = SAND; g.beginPath(); g.arc(X(PARK_PLAZA.x), Z(PARK_PLAZA.z), PARK_PLAZA.r * K, 0, TAU); g.fill();
   // calles
   for (const r of ROADS) { rect(r - RW - 0.28, -64, r + RW + 0.28, 64, WHITE); rect(-64, r - RW - 0.28, 64, r + RW + 0.28, WHITE); }
   for (const r of ROADS) { rect(r - RW, -64, r + RW, 64, ASPH); rect(-64, r - RW, 64, r + RW, ASPH); }
@@ -215,8 +214,8 @@ function sidewalkProps(i, j) {
         cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18); lampAt(x, z, s.ry);
         const q = rnd(), ox = s.ax === 'x' ? 1.6 : 0, oz = s.ax === 'x' ? 0 : 1.6;
         // se sube saltando; como son delgados y Tamachin es redondo, lo sostienen aunque quede un poco fuera de la orilla (`rim`)
-        if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.22, 0.8).rim = 0.25; }
-        else if (q < 0.6) { cityB.merge(PF_BIN, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.34, 0.96).rim = 0.25; }
+        if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); Object.assign(solidCircle(x + ox, z + oz, 0.22, 0.8), { rim: 0.25, step: 'metal' }); }   // `step`: cómo suenan los pasos encima
+        else if (q < 0.6) { cityB.merge(PF_BIN, x + ox, 0, z + oz, 0); Object.assign(solidCircle(x + ox, z + oz, 0.34, 0.96), { rim: 0.25, step: 'metal' }); }
       }
     }
   }
@@ -302,7 +301,7 @@ const house = (() => {
     .box('#c8553d', 3.4, H.h + 1.9, cz - 1.2, 0.95, 2.2, 0.95).box('#a8442f', 3.4, H.h + 3.05, cz - 1.2, 1.2, 0.2, 1.2).sph('#ffd76a', 0, H.h + 3.3, cz, 0.3);
   // muebles
   furnB.box('#b07a4f', -4.4, 0.3, -10.9, 2.2, 0.6, 3.4).rbox('#fffaf0', -4.4, 0.69, -10.9, 2.0, 0.28, 3.2, 0.1).rbox('#ff8a7a', -4.4, 0.78, -10.3, 2.08, 0.22, 2.0, 0.08)
-    .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); solidBox(-5.5, -3.3, -12.6, -9.2, 0.86).bounce = true;   // la cama rebota
+    .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); Object.assign(solidBox(-5.5, -3.3, -12.6, -9.2, 0.86), { bounce: true, step: 'cama' });   // la cama rebota
   furnB.box('#b07a4f', -2.8, 0.35, -12.3, 0.7, 0.7, 0.6).cyl('#8a6a4a', -2.8, 0.9, -12.3, 0.04, 0.1, 0.4, 8).cone('#ffe9a8', -2.8, 1.25, -12.3, 0.28, 0.36, 12); solidBox(-3.15, -2.45, -12.6, -12.0);
   shelfB.box('#9a6540', -0.9, 1.2, -12.5, 2.4, 2.4, 0.5);
   for (let lv = 0; lv < 3; lv++) { let x = -1.95; while (x < 0.05) { const w = rr(0.12, 0.24), hh = rr(0.42, 0.6); shelfB.box(pick(['#ff6b6b', '#ffd23f', '#4fc3a1', '#5aa9ff', '#c58bff', '#ff9f6b', '#f4f1e8']), x + w / 2, 0.32 + lv * 0.72 + hh / 2, -12.3, w, hh, 0.3); x += w + 0.02; } shelfB.box('#b98552', -0.9, 0.28 + lv * 0.72, -12.28, 2.3, 0.06, 0.42); }
@@ -486,7 +485,7 @@ for (let gx = -58; gx <= 58; gx += 7.6) for (let gz = -164; gz >= -258; gz -= 7.
 for (let z = -68; z >= -268; z -= 4.8) for (const sx of [-1, 1]) addTree(rnd() < 0.6 ? 0 : 1, sx * rr(65.5, 70), z + rr(-1.5, 1.5), rr(1.1, 1.6), false);
 for (let x = -70; x <= 70; x += 4.8) addTree(rnd() < 0.7 ? 0 : 1, x + rr(-1.5, 1.5), rr(-271, -266.5), rr(1.2, 1.7), false);
 for (let q = 0; q < 60; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) bushes.push({ x, z, s: rr(0.8, 1.5) }); }
-for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) { const s = rr(0.4, 1.1); rocks.push({ x, z, s }); if (s > 0.7) solidCircle(x, z, s * 0.75, s); } }   // a las grandes se sube saltando (su punta está a s metros)
+for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) { const s = rr(0.4, 1.1); rocks.push({ x, z, s }); if (s > 0.7) solidCircle(x, z, s * 0.75, s).step = 'piedra'; } }   // a las grandes se sube saltando (su punta está a s metros)
 for (let q = 0; q < 150; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 1.9)) addFlower(x, z); }
 for (let q = 0; q < 380; q++) { const x = rr(-60, 60), z = rr(-262, -160); if (freeSpot(x, z, 1.8)) tufts.push({ x, z, s: rr(0.9, 1.7) }); }
 for (let q = 0; q < 34; q++) {

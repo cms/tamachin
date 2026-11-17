@@ -472,6 +472,43 @@ const SFX = {   // los que tienen tono van por snd.tune (k): suenan en la tonali
   low: (k = snd.tune) => { tone(420 * k, 330 * k, 0.22, 'sine', 0.045); tone(330 * k, 260 * k, 0.3, 'sine', 0.04, 0.2); },
 };
 
+// ───────────────────────── pasos ─────────────────────────
+// Un paso es un golpe de ruido filtrado (a veces con un tono cortito) que depende del suelo. Todo va arriba de unos 300 Hz: en la
+// bocina del teléfono lo grave no se oye. `footstep(contexto, destino, tiempo, suelo, fuerza, mojado)` es igual en el juego y en las
+// pruebas (con un OfflineAudioContext). Cada paso varía un poco de tono (`r`) para que no suene a máquina.
+const STEP_NOISE = new WeakMap();
+function stepNoise(c) {
+  let b = STEP_NOISE.get(c); if (b) return b;
+  b = c.createBuffer(1, c.sampleRate, c.sampleRate); const a = b.getChannelData(0); for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1;
+  STEP_NOISE.set(c, b); return b;
+}
+// La ganancia empieza en 0 y no en 1: si el paso cae entre dos muestras, la primera ya sonaba entera antes de la envolvente (un
+// chasquido que con el filtro de agudos llegaba a 0.9).
+function swish(c, d, t, v, type, f, q, len, f1) {   // ruido filtrado; con `f1`, el filtro se mueve hacia ahí
+  const s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = stepNoise(c); fl.type = type; fl.Q.value = q; fl.frequency.setValueAtTime(f, t); if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + len);
+  g.gain.value = 0; env(g, t, v, 0.004, len); s.connect(fl); fl.connect(g); g.connect(d); s.start(t, Math.random() * 0.7); s.stop(t + len + 0.02);
+}
+function blip(c, d, t, f0, f1, len, v, type) {
+  const o = c.createOscillator(), g = c.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len);
+  g.gain.value = 0; env(g, t, v, 0.003, len); o.connect(g); g.connect(d); o.start(t); o.stop(t + len + 0.02);
+}
+const STEPS = {   // (contexto, destino, tiempo, fuerza, variación)
+  pasto: (c, d, t, v, r) => { swish(c, d, t, 0.05 * v, 'bandpass', 3000 * r, 0.8, 0.07); swish(c, d, t + 0.02, 0.03 * v, 'bandpass', 6000 * r, 1.2, 0.05); },
+  tierra: (c, d, t, v, r) => { swish(c, d, t, 0.05 * v, 'bandpass', 900 * r, 0.9, 0.06); for (let i = 0; i < 3; i++) swish(c, d, t + 0.008 + i * 0.013 * r, 0.025 * v, 'bandpass', 2600 * r, 1.5, 0.016); },
+  piedra: (c, d, t, v, r) => { swish(c, d, t, 0.07 * v, 'bandpass', 2400 * r, 2.2, 0.03); swish(c, d, t, 0.045 * v, 'bandpass', 900 * r, 1.4, 0.045); },
+  madera: (c, d, t, v, r) => { blip(c, d, t, 520 * r, 420 * r, 0.08, 0.016 * v); blip(c, d, t, 1100 * r, 1000 * r, 0.03, 0.01 * v, 'triangle'); swish(c, d, t, 0.05 * v, 'bandpass', 1600 * r, 2, 0.025); },
+  nieve: (c, d, t, v, r) => { swish(c, d, t, 0.03 * v, 'bandpass', 800 * r, 0.8, 0.1); for (let i = 0; i < 5; i++) swish(c, d, t + i * 0.016 + Math.random() * 0.008, (0.02 + Math.random() * 0.02) * v, 'bandpass', 3000 + Math.random() * 3000, 1.5, 0.018); },
+  agua: (c, d, t, v, r) => { swish(c, d, t, 0.06 * v, 'bandpass', 1800 * r, 1.1, 0.16, 500); blip(c, d, t + 0.05, 600 * r, 1300 * r, 0.05, 0.008 * v); },
+  charco: (c, d, t, v, r) => { swish(c, d, t, 0.05 * v, 'bandpass', 2200 * r, 1.2, 0.1, 700); blip(c, d, t + 0.03, 800 * r, 1600 * r, 0.04, 0.006 * v); },
+  metal: (c, d, t, v, r) => { blip(c, d, t, 1250 * r, 1180 * r, 0.12, 0.013 * v, 'triangle'); blip(c, d, t, 2950 * r, 2900 * r, 0.06, 0.004 * v); swish(c, d, t, 0.03 * v, 'bandpass', 3400 * r, 3, 0.02); },
+  cama: (c, d, t, v, r) => swish(c, d, t, 0.05 * v, 'bandpass', 600 * r, 0.7, 0.08),
+};
+function footstep(c, d, t, kind, v, wet) {
+  const f = STEPS[kind]; if (!f) return; const r = 0.92 + Math.random() * 0.16;
+  f(c, d, t, v, r); if (wet) swish(c, d, t + 0.012, 0.05 * v, 'bandpass', 1500 * r, 1.6, 0.07, 800);   // el suelo mojado chapotea un poco
+}
+
 // ───────────────────────── música (sintetizada, sin archivos) ─────────────────────────
 // Cada lugar tiene una mezcla (`MUSIC_ZONES`) de una pieza (`MUSIC`): jardín, parque y ciudad tocan la misma y solo entran o salen
 // instrumentos; al entrar a la casa, esa se apaga y empieza la caja de música. `makeMusic(ctx, destino)` es igual en el juego y en

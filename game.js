@@ -472,6 +472,43 @@ const SFX = {   // los que tienen tono van por snd.tune (k): suenan en la tonali
   low: (k = snd.tune) => { tone(420 * k, 330 * k, 0.22, 'sine', 0.045); tone(330 * k, 260 * k, 0.3, 'sine', 0.04, 0.2); },
 };
 
+// ───────────────────────── pasos ─────────────────────────
+// Un paso es un golpe de ruido filtrado (a veces con un tono cortito) que depende del suelo. Todo va arriba de unos 300 Hz: en la
+// bocina del teléfono lo grave no se oye. `footstep(contexto, destino, tiempo, suelo, fuerza, mojado)` es igual en el juego y en las
+// pruebas (con un OfflineAudioContext). Cada paso varía un poco de tono (`r`) para que no suene a máquina.
+const STEP_NOISE = new WeakMap();
+function stepNoise(c) {
+  let b = STEP_NOISE.get(c); if (b) return b;
+  b = c.createBuffer(1, c.sampleRate, c.sampleRate); const a = b.getChannelData(0); for (let i = 0; i < a.length; i++) a[i] = Math.random() * 2 - 1;
+  STEP_NOISE.set(c, b); return b;
+}
+// La ganancia empieza en 0 y no en 1: si el paso cae entre dos muestras, la primera ya sonaba entera antes de la envolvente (un
+// chasquido que con el filtro de agudos llegaba a 0.9).
+function swish(c, d, t, v, type, f, q, len, f1) {   // ruido filtrado; con `f1`, el filtro se mueve hacia ahí
+  const s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+  s.buffer = stepNoise(c); fl.type = type; fl.Q.value = q; fl.frequency.setValueAtTime(f, t); if (f1) fl.frequency.exponentialRampToValueAtTime(f1, t + len);
+  g.gain.value = 0; env(g, t, v, 0.004, len); s.connect(fl); fl.connect(g); g.connect(d); s.start(t, Math.random() * 0.7); s.stop(t + len + 0.02);
+}
+function blip(c, d, t, f0, f1, len, v, type) {
+  const o = c.createOscillator(), g = c.createGain(); o.type = type || 'sine'; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(f1, t + len);
+  g.gain.value = 0; env(g, t, v, 0.003, len); o.connect(g); g.connect(d); o.start(t); o.stop(t + len + 0.02);
+}
+const STEPS = {   // (contexto, destino, tiempo, fuerza, variación)
+  pasto: (c, d, t, v, r) => { swish(c, d, t, 0.05 * v, 'bandpass', 3000 * r, 0.8, 0.07); swish(c, d, t + 0.02, 0.03 * v, 'bandpass', 6000 * r, 1.2, 0.05); },
+  tierra: (c, d, t, v, r) => { swish(c, d, t, 0.05 * v, 'bandpass', 900 * r, 0.9, 0.06); for (let i = 0; i < 3; i++) swish(c, d, t + 0.008 + i * 0.013 * r, 0.025 * v, 'bandpass', 2600 * r, 1.5, 0.016); },
+  piedra: (c, d, t, v, r) => { swish(c, d, t, 0.07 * v, 'bandpass', 2400 * r, 2.2, 0.03); swish(c, d, t, 0.045 * v, 'bandpass', 900 * r, 1.4, 0.045); },
+  madera: (c, d, t, v, r) => { blip(c, d, t, 520 * r, 420 * r, 0.08, 0.016 * v); blip(c, d, t, 1100 * r, 1000 * r, 0.03, 0.01 * v, 'triangle'); swish(c, d, t, 0.05 * v, 'bandpass', 1600 * r, 2, 0.025); },
+  nieve: (c, d, t, v, r) => { swish(c, d, t, 0.03 * v, 'bandpass', 800 * r, 0.8, 0.1); for (let i = 0; i < 5; i++) swish(c, d, t + i * 0.016 + Math.random() * 0.008, (0.02 + Math.random() * 0.02) * v, 'bandpass', 3000 + Math.random() * 3000, 1.5, 0.018); },
+  agua: (c, d, t, v, r) => { swish(c, d, t, 0.06 * v, 'bandpass', 1800 * r, 1.1, 0.16, 500); blip(c, d, t + 0.05, 600 * r, 1300 * r, 0.05, 0.008 * v); },
+  charco: (c, d, t, v, r) => { swish(c, d, t, 0.05 * v, 'bandpass', 2200 * r, 1.2, 0.1, 700); blip(c, d, t + 0.03, 800 * r, 1600 * r, 0.04, 0.006 * v); },
+  metal: (c, d, t, v, r) => { blip(c, d, t, 1250 * r, 1180 * r, 0.12, 0.013 * v, 'triangle'); blip(c, d, t, 2950 * r, 2900 * r, 0.06, 0.004 * v); swish(c, d, t, 0.03 * v, 'bandpass', 3400 * r, 3, 0.02); },
+  cama: (c, d, t, v, r) => swish(c, d, t, 0.05 * v, 'bandpass', 600 * r, 0.7, 0.08),
+};
+function footstep(c, d, t, kind, v, wet) {
+  const f = STEPS[kind]; if (!f) return; const r = 0.92 + Math.random() * 0.16;
+  f(c, d, t, v, r); if (wet) swish(c, d, t + 0.012, 0.05 * v, 'bandpass', 1500 * r, 1.6, 0.07, 800);   // el suelo mojado chapotea un poco
+}
+
 // ───────────────────────── música (sintetizada, sin archivos) ─────────────────────────
 // Cada lugar tiene una mezcla (`MUSIC_ZONES`) de una pieza (`MUSIC`): jardín, parque y ciudad tocan la misma y solo entran o salen
 // instrumentos; al entrar a la casa, esa se apaga y empieza la caja de música. `makeMusic(ctx, destino)` es igual en el juego y en
@@ -1166,6 +1203,12 @@ const ground = new THREE.Mesh(new THREE.PlaneGeometry(2000, 2000), new THREE.Mes
 ground.rotation.x = -Math.PI / 2; ground.position.set(0, 0, -100); ground.receiveShadow = true; scene.add(ground);
 const decal = (o) => Object.assign({ polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 }, o);
 
+// lo que se pinta en el suelo de la ciudad, también para los pasos (stepSurface, 06-main.js): [x0, z0, x1, z1]
+const blockRect = (i, j) => [BLOCKS[i][0] + (i > 0 ? 2.8 : 0.6), BLOCKS[j][0] + (j > 0 ? 2.8 : 0.6), BLOCKS[i][1] - (i < 2 ? 2.8 : 0.6), BLOCKS[j][1] - (j < 2 ? 2.8 : 0.6)];
+const LAWNS = [blockRect(1, 1), blockRect(1, 0)];                  // el jardín de la casa y el parque; lo demás de la ciudad es piso
+const SAND_PATHS = [[-1.1, -4, 1.1, 17.4], [-1.1, -3.4, 10.1, -1.8], [8.4, -15.8, 10.1, -1.8], [-0.85, -15.8, 10.1, -14.2], [-0.85, -17.4, 0.85, -14.2], [10.1, -3.4, 17.4, -1.8],   // jardín
+  [-1.3, -62.6, 1.3, -27.2], [-17.2, -46.3, 17.2, -43.7]];        // parque, y su plaza redonda:
+const PARK_PLAZA = { x: 0, z: -45, r: 6.3 };
 const cityTex = canvasTex(2048, 2048, (g, S) => {
   const K = S / 128, X = (x) => (x + 64) * K, Z = (z) => (z + 64) * K;
   const rect = (x0, z0, x1, z1, fill) => { g.fillStyle = fill; g.fillRect(X(x0), Z(z0), (x1 - x0) * K, (z1 - z0) * K); };
@@ -1175,16 +1218,9 @@ const cityTex = canvasTex(2048, 2048, (g, S) => {
   g.strokeStyle = 'rgba(120,110,95,.2)'; g.lineWidth = 1.5; g.beginPath();
   for (let v = -62; v <= 62; v += 1.3) { g.moveTo(X(v), Z(-62.6)); g.lineTo(X(v), Z(62.6)); g.moveTo(X(-62.6), Z(v)); g.lineTo(X(62.6), Z(v)); }
   g.stroke();
-  BLOCKS.forEach((bx, i) => BLOCKS.forEach((bz, j) => {
-    const x0 = bx[0] + (i > 0 ? 2.8 : 0.6), x1 = bx[1] - (i < 2 ? 2.8 : 0.6), z0 = bz[0] + (j > 0 ? 2.8 : 0.6), z1 = bz[1] - (j < 2 ? 2.8 : 0.6);
-    rect(x0, z0, x1, z1, i === 1 && j < 2 ? (j === 1 ? '#93d470' : '#8bd06c') : '#cfc7b6');
-  }));
-  // jardín de la casa: senderos
-  rect(-1.1, -4, 1.1, 17.4, SAND); rect(-1.1, -3.4, 10.1, -1.8, SAND); rect(8.4, -15.8, 10.1, -1.8, SAND);
-  rect(-0.85, -15.8, 10.1, -14.2, SAND); rect(-0.85, -17.4, 0.85, -14.2, SAND); rect(10.1, -3.4, 17.4, -1.8, SAND);
-  // parque
-  rect(-1.3, -62.6, 1.3, -27.2, SAND); rect(-17.2, -46.3, 17.2, -43.7, SAND);
-  g.fillStyle = SAND; g.beginPath(); g.arc(X(0), Z(-45), 6.3 * K, 0, TAU); g.fill();
+  BLOCKS.forEach((bx, i) => BLOCKS.forEach((bz, j) => rect(...blockRect(i, j), i === 1 && j < 2 ? (j === 1 ? '#93d470' : '#8bd06c') : '#cfc7b6')));
+  for (const p of SAND_PATHS) rect(...p, SAND);                    // senderos del jardín y del parque
+  g.fillStyle = SAND; g.beginPath(); g.arc(X(PARK_PLAZA.x), Z(PARK_PLAZA.z), PARK_PLAZA.r * K, 0, TAU); g.fill();
   // calles
   for (const r of ROADS) { rect(r - RW - 0.28, -64, r + RW + 0.28, 64, WHITE); rect(-64, r - RW - 0.28, 64, r + RW + 0.28, WHITE); }
   for (const r of ROADS) { rect(r - RW, -64, r + RW, 64, ASPH); rect(-64, r - RW, 64, r + RW, ASPH); }
@@ -1340,8 +1376,8 @@ function sidewalkProps(i, j) {
         cityB.merge(PF_LAMP, x, 0, z, s.ry); solidCircle(x, z, 0.18); lampAt(x, z, s.ry);
         const q = rnd(), ox = s.ax === 'x' ? 1.6 : 0, oz = s.ax === 'x' ? 0 : 1.6;
         // se sube saltando; como son delgados y Tamachin es redondo, lo sostienen aunque quede un poco fuera de la orilla (`rim`)
-        if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.22, 0.8).rim = 0.25; }
-        else if (q < 0.6) { cityB.merge(PF_BIN, x + ox, 0, z + oz, 0); solidCircle(x + ox, z + oz, 0.34, 0.96).rim = 0.25; }
+        if (q < 0.3) { cityB.merge(PF_HYDRANT, x + ox, 0, z + oz, 0); Object.assign(solidCircle(x + ox, z + oz, 0.22, 0.8), { rim: 0.25, step: 'metal' }); }   // `step`: cómo suenan los pasos encima
+        else if (q < 0.6) { cityB.merge(PF_BIN, x + ox, 0, z + oz, 0); Object.assign(solidCircle(x + ox, z + oz, 0.34, 0.96), { rim: 0.25, step: 'metal' }); }
       }
     }
   }
@@ -1427,7 +1463,7 @@ const house = (() => {
     .box('#c8553d', 3.4, H.h + 1.9, cz - 1.2, 0.95, 2.2, 0.95).box('#a8442f', 3.4, H.h + 3.05, cz - 1.2, 1.2, 0.2, 1.2).sph('#ffd76a', 0, H.h + 3.3, cz, 0.3);
   // muebles
   furnB.box('#b07a4f', -4.4, 0.3, -10.9, 2.2, 0.6, 3.4).rbox('#fffaf0', -4.4, 0.69, -10.9, 2.0, 0.28, 3.2, 0.1).rbox('#ff8a7a', -4.4, 0.78, -10.3, 2.08, 0.22, 2.0, 0.08)
-    .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); solidBox(-5.5, -3.3, -12.6, -9.2, 0.86).bounce = true;   // la cama rebota
+    .sph('#ffffff', -4.4, 0.92, -12.1, 0.62, 0.17, 0.36).box('#9a6540', -4.4, 0.9, -12.56, 2.2, 1.3, 0.14); Object.assign(solidBox(-5.5, -3.3, -12.6, -9.2, 0.86), { bounce: true, step: 'cama' });   // la cama rebota
   furnB.box('#b07a4f', -2.8, 0.35, -12.3, 0.7, 0.7, 0.6).cyl('#8a6a4a', -2.8, 0.9, -12.3, 0.04, 0.1, 0.4, 8).cone('#ffe9a8', -2.8, 1.25, -12.3, 0.28, 0.36, 12); solidBox(-3.15, -2.45, -12.6, -12.0);
   shelfB.box('#9a6540', -0.9, 1.2, -12.5, 2.4, 2.4, 0.5);
   for (let lv = 0; lv < 3; lv++) { let x = -1.95; while (x < 0.05) { const w = rr(0.12, 0.24), hh = rr(0.42, 0.6); shelfB.box(pick(['#ff6b6b', '#ffd23f', '#4fc3a1', '#5aa9ff', '#c58bff', '#ff9f6b', '#f4f1e8']), x + w / 2, 0.32 + lv * 0.72 + hh / 2, -12.3, w, hh, 0.3); x += w + 0.02; } shelfB.box('#b98552', -0.9, 0.28 + lv * 0.72, -12.28, 2.3, 0.06, 0.42); }
@@ -1611,7 +1647,7 @@ for (let gx = -58; gx <= 58; gx += 7.6) for (let gz = -164; gz >= -258; gz -= 7.
 for (let z = -68; z >= -268; z -= 4.8) for (const sx of [-1, 1]) addTree(rnd() < 0.6 ? 0 : 1, sx * rr(65.5, 70), z + rr(-1.5, 1.5), rr(1.1, 1.6), false);
 for (let x = -70; x <= 70; x += 4.8) addTree(rnd() < 0.7 ? 0 : 1, x + rr(-1.5, 1.5), rr(-271, -266.5), rr(1.2, 1.7), false);
 for (let q = 0; q < 60; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) bushes.push({ x, z, s: rr(0.8, 1.5) }); }
-for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) { const s = rr(0.4, 1.1); rocks.push({ x, z, s }); if (s > 0.7) solidCircle(x, z, s * 0.75, s); } }   // a las grandes se sube saltando (su punta está a s metros)
+for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 2.6)) { const s = rr(0.4, 1.1); rocks.push({ x, z, s }); if (s > 0.7) solidCircle(x, z, s * 0.75, s).step = 'piedra'; } }   // a las grandes se sube saltando (su punta está a s metros)
 for (let q = 0; q < 150; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 1.9)) addFlower(x, z); }
 for (let q = 0; q < 380; q++) { const x = rr(-60, 60), z = rr(-262, -160); if (freeSpot(x, z, 1.8)) tufts.push({ x, z, s: rr(0.9, 1.7) }); }
 for (let q = 0; q < 34; q++) {
@@ -2212,6 +2248,10 @@ const slopeAt = (x, z) => Math.hypot(terrainY(x + 1, z) - terrainY(x - 1, z), te
 // ───────────────────────── montañas: malla ─────────────────────────
 // Sombreado suave: normales y colores salen de la rejilla (no de cada losa), así no se notan las costuras.
 // Color por altura y pendiente: pasto, pasto alto, roca y nieve. Lo llano no se dibuja: ahí se ve el pasto de siempre.
+// `ny` es la componente vertical de la normal; los pasos (`northSurface`) usan las mismas mezclas para saber qué pisa.
+const terrainWob = (x, z) => Math.sin(x * 0.11 + z * 0.07) * 0.5 + Math.sin(x * 0.037 - z * 0.051) * 0.5;
+const rockK = (h, ny) => clamp((0.8 - ny) * 3.2, 0, 1) * 0.85 + clamp((h - 270) / 50, 0, 1) * 0.6;
+const snowK = (h, wob) => clamp((h - 322 - 12 * wob) / 22, 0, 1);
 const terrain = (() => {
   const hAt = (i, j) => TH[clamp(j, 0, TG.nz - 1) * TG.nx + clamp(i, 0, TG.nx - 1)];
   const GR = new THREE.Color('#8fd16b'), GR2 = new THREE.Color('#82c562'), HI = new THREE.Color('#63a354'), RK = new THREE.Color('#aaa295'), SN = new THREE.Color('#dfe7f1'), c = new THREE.Color(), n = new THREE.Vector3();
@@ -2224,11 +2264,11 @@ const terrain = (() => {
     for (let j = tj; j <= j1; j++) for (let i = ti; i <= i1; i++) {
       const h = hAt(i, j), dx = (hAt(i + 1, j) - hAt(i - 1, j)) / (2 * TG.s), dz = -(hAt(i, j + 1) - hAt(i, j - 1)) / (2 * TG.s);
       n.set(-dx, 1, -dz).normalize(); pos.push(TG.x0 + i * TG.s, h > 0.05 ? h : -0.15, TG.z0 - j * TG.s); nor.push(n.x, n.y, n.z); uv.push(i * TG.s / 6, j * TG.s / 6);
-      const x = TG.x0 + i * TG.s, z = TG.z0 - j * TG.s, wob = Math.sin(x * 0.11 + z * 0.07) * 0.5 + Math.sin(x * 0.037 - z * 0.051) * 0.5;
+      const x = TG.x0 + i * TG.s, z = TG.z0 - j * TG.s, wob = terrainWob(x, z);
       c.copy(GR).lerp(GR2, 0.5 + 0.5 * wob);
       if (h > 120) c.lerp(HI, Math.min(1, (h - 120) / 170));
-      c.lerp(RK, clamp((0.8 - n.y) * 3.2, 0, 1) * 0.85 + clamp((h - 270) / 50, 0, 1) * 0.6);
-      c.lerp(SN, clamp((h - 322 - 12 * wob) / 22, 0, 1));
+      c.lerp(RK, rockK(h, n.y));
+      c.lerp(SN, snowK(h, wob));
       col.push(c.r, c.g, c.b);
     }
     for (let j = tj; j < j1; j++) for (let i = ti; i < i1; i++) {
@@ -2345,6 +2385,16 @@ function nearTrail(x, z, d) {
   }
   return false;
 }
+// Qué pisa Tamachin al norte del bosque (para los pasos, 06-main.js), con las mismas medidas con que se pinta: el sendero (cintas de
+// 1.35 y 1.4 m), el pueblo empedrado menos el jardín de la posada, y en los cerros la roca y la nieve de `rockK`/`snowK`.
+function northSurface(x, z) {
+  if (z < Z_FOREST2) return Math.abs(x - forestTrailX(z)) < 1.4 ? 'tierra' : 'pasto';
+  if (Math.abs(x) < 62.6 && Math.abs(z - TOWN_Z) < 62.6) { const g = TOWN_GARDEN; return x > g[0] && x < g[2] && z > g[1] && z < g[3] && Math.abs(x) > TOWN_PATH ? 'pasto' : 'piedra'; }
+  if (nearTrail(x, z, 1.35)) return 'tierra';
+  const h = terrainY(x, z); if (h < 1) return 'pasto';
+  const S = TG.s, gx = (terrainY(x + S, z) - terrainY(x - S, z)) / (2 * S), gz = (terrainY(x, z + S) - terrainY(x, z - S)) / (2 * S);   // la normal, como la de la malla
+  return snowK(h, terrainWob(x, z)) > 0.5 ? 'nieve' : rockK(h, 1 / Math.sqrt(1 + gx * gx + gz * gz)) > 0.5 ? 'piedra' : 'pasto';
+}
 // cinta del sendero pegada al terreno: cada orilla toma la altura del suelo bajo ella
 function terrainRibbon(pts, halfW, lift, step) {
   const P = []; for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let k = 0; k < n; k++) P.push([lerp(a[0], b[0], k / n), lerp(a[1], b[1], k / n)]); }
@@ -2399,13 +2449,14 @@ northSign('Montañas ↑', TRAIL_GAP_X - 3.4, -262.5, 2.8);
 // ───────────────────────── Valle Alegre ─────────────────────────
 // Un pueblo sin autos: calles empedradas, kiosco en la plaza, mercado al sur y posada con hamaca al norte.
 const TBX = [[-62, -28], [-20, 20], [28, 62]], TBZ = TBX.map(([a, b]) => [TOWN_Z + a, TOWN_Z + b]);
+const TOWN_GARDEN = [TBX[1][0] + 2.8, TBZ[0][0] + 2.8, TBX[1][1] - 2.8, TBZ[0][1] - 2.8], TOWN_PATH = 1.4;   // el jardín de la posada y su vereda; lo demás es empedrado
 const TOWN = { hammock: { x: 8.6, y: 1.05, z: TOWN_Z - 44.6 }, market: { x: 0, z: TOWN_Z + 41.5 }, stalls: [-10.5, 10.5] };   // puestos a los lados: el portón sur da a un pasillo
 { const tex = canvasTex(1024, 1024, (g, S) => {
     const K = S / 128, X = (x) => (x + 64) * K, Z = (z) => (z - TOWN_Z + 64) * K, rect = (x0, z0, x1, z1, f) => { g.fillStyle = f; g.fillRect(X(x0), Z(z0), (x1 - x0) * K, (z1 - z0) * K); };
     const R = mulberry(818), STONE2 = '#d9ccb2', COB = '#c2b59d';
     rect(-64, TOWN_Z - 64, 64, TOWN_Z + 64, '#8fd16b'); rect(-62.6, TOWN_Z - 62.6, 62.6, TOWN_Z + 62.6, STONE2);
     TBX.forEach((bx, i) => TBZ.forEach((bz, j) => { if (i === 1 && j === 0) return; rect(bx[0] + 2.8, bz[0] + 2.8, bx[1] - 2.8, bz[1] - 2.8, i === 1 ? '#e6d8bd' : '#cfc7b6'); }));
-    rect(TBX[1][0] + 2.8, TBZ[0][0] + 2.8, TBX[1][1] - 2.8, TBZ[0][1] - 2.8, '#93d470'); rect(-1.4, TOWN_Z - 64, 1.4, TBZ[0][1], STONE2);   // jardín de la posada y su vereda
+    rect(...TOWN_GARDEN, '#93d470'); rect(-TOWN_PATH, TOWN_Z - 64, TOWN_PATH, TBZ[0][1], STONE2);   // jardín de la posada y su vereda
     for (const r of [-24, 24]) { rect(r - 4, TOWN_Z - 62.6, r + 4, TOWN_Z + 62.6, COB); rect(-62.6, TOWN_Z + r - 4, 62.6, TOWN_Z + r + 4, COB); }
     for (let i = 0; i < 5200; i++) { const r = [-24, 24][i % 2], a = TOWN_Z + (R() * 2 - 1) * 62, b = r + (R() * 2 - 1) * 3.8, w = 0.4 + R() * 0.5; g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.12)' : 'rgba(90,70,50,.13)';
       if (i % 4 < 2) g.fillRect(X(b), Z(a), w * K, w * K * 0.8); else g.fillRect(X(a - TOWN_Z), Z(b + TOWN_Z), w * K, w * K * 0.8); }
@@ -3272,11 +3323,12 @@ function updateUmbrellas(dt) {
 }
 // brincar en un charco (con lluvia o recién llovido): salpica, divierte y cuenta para el encargo
 function puddleAt(x, z) { for (const p of puddles.list) if (Math.hypot((x - p.x) / p.rx, (z - p.z) / p.rz) < 1.05) return p; return null; }
-function puddleJump(x, z) {
-  if (weather.wet < 0.3 || !puddleAt(x, z)) return;
+function puddleJump(x, z) {   // devuelve si salpicó (entonces no suena además el paso al caer)
+  if (weather.wet < 0.3 || !puddleAt(x, z)) return false;
   burst('splash', x, 0.25, z, 12, { spread: 2.4 }); SFX.splash(); say(player, choose(['¡Splash!', '¡Splish, splash!', '¡Chapuzón!']), 1.2); player.T.poke(4);
   gain('diversion', 0.04, 'charco', 0.8);
   if (quests.charcos === 1) { puddleJumps++; if (puddleJumps >= 10) finishQuest('charcos'); else { toast('Charcos: ' + puddleJumps + ' de 10.', 2.2); renderDiary(); save(); } }
+  return true;
 }
 function updatePuddles() {
   const m = puddles, w = weather.wet; m.visible = w > 0.01; if (!m.visible) return;
@@ -3589,6 +3641,45 @@ function perchUnder(x, z, y0) {
   }
   return best;
 }
+// ───────────────────────── pasos ─────────────────────────
+// Suenan cuando un pie toca el suelo en la animación: cada pie baja cuando su fase pasa por π/2, y los dos van medio ciclo
+// desfasados, así que hay un paso cada vez que `T.walk` cruza π/2 + kπ (02-tamachin.js). Solo en el suelo, caminando de verdad
+// (no al frenar) y con pies (el fantasma flota). `foot.n` cuenta por suelo aunque no haya audio (las pruebas lo leen); el sonido se
+// salta si el anterior fue hace menos de 0.07 s del reloj del audio, porque `advance()` corre muchos cuadros sin que ese reloj avance.
+// Van directo a la salida como los efectos (suenan con «Solo efectos», sin el filtro de la noche) y con su propio try (el error
+// queda en `foot.err`, sin apagar la música).
+const foot = { n: {}, total: 0, played: 0, lands: 0, last: null, at: -1, err: null };
+const inRect = (x, z, r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3];
+function stepSurface(x, z, perch) {   // qué pisa: con las mismas medidas con que se pinta cada suelo
+  const P = player;
+  if (perch) return perch.step || 'piedra';
+  if (P.inHouse) return 'madera';
+  if (onBridge(x, z)) return 'madera';
+  if (P.inWater || (riverDepth(x, z) < -0.2 && P.pos.y < 0)) return 'agua';
+  if (weather.wet > 0.3 && puddleAt(x, z)) return 'charco';
+  if (z < NORTH_Z) return northSurface(x, z);                       // cerros, pueblo, bosque sin fin (05-norte.js)
+  if (z < -62.6) return (z > -246.5 && Math.abs(x - pathX(z)) < 1.5) || nearTrail(x, z, 1.35) ? 'tierra' : 'pasto';   // el camino y el bosque
+  const road = ROADS.some((r) => Math.abs(x - r) < RW + 0.28 || Math.abs(z - r) < RW + 0.28);   // las calles se pintan encima de los senderos
+  if (!road && (SAND_PATHS.some((r) => inRect(x, z, r)) || Math.hypot(x - PARK_PLAZA.x, z - PARK_PLAZA.z) < PARK_PLAZA.r)) return 'tierra';   // también donde cruzan la banqueta
+  return LAWNS.some((r) => inRect(x, z, r)) ? 'pasto' : 'piedra';    // si no, calles y banquetas
+}
+function stepSound(kind, v) {
+  foot.n[kind] = (foot.n[kind] || 0) + 1; foot.total++; foot.last = kind;
+  const c = snd.ctx; if (!c || !snd.on || c.state !== 'running' || c.currentTime - foot.at < 0.07) return;
+  foot.at = c.currentTime;
+  const wet = weather.wet > 0.35 && !player.inHouse && (kind === 'pasto' || kind === 'tierra' || kind === 'piedra');   // después de llover chapotea
+  try { footstep(c, c.destination, c.currentTime + 0.005, kind, v, wet); foot.played++; } catch (e) { foot.err = e; }   // si falla, sin pasos (las pruebas lo leen)
+}
+function walkSteps(w0, w1) {
+  const P = player, HALF = Math.PI / 2;
+  if (Math.floor((w1 - HALF) / Math.PI) === Math.floor((w0 - HALF) / Math.PI)) return;   // ningún pie bajó
+  if (!P.onGround || P.state !== 'normal' || P.T.def.feet === false || P.speedN < 0.25) return;
+  stepSound(stepSurface(P.pos.x, P.pos.z, P.perch), P.running ? 1.2 : 0.75 + 0.25 * Math.min(1, P.speedN));
+}
+function landStep(perch) {   // al caer de un salto: los dos pies, más fuerte (la cama rebota y suena aparte)
+  const P = player; if (P.T.def.feet === false) return;
+  foot.lands++; stepSound(stepSurface(P.pos.x, P.pos.z, perch), 1.35);
+}
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
   if (P.tempT > 0) { P.tempT -= dt; if (P.tempT <= 0) { const f = P.onTempEnd; P.tempMood = null; P.onTempEnd = null; applyMood(); if (f) f(); } }
@@ -3637,7 +3728,8 @@ function updatePlayer(dt) {
         P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
       } else {
         if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
-        if (P.vy < -4 && !pr && !P.onGround && P.state === 'normal') puddleJump(pos.x, pos.z);   // en un charco: ¡splash!
+        const drop = P.vy < -4 && !P.onGround && P.state === 'normal';
+        if (drop && !(!pr && puddleJump(pos.x, pos.z)) && !(!pr && gy < -0.2)) landStep(pr);   // en un charco: ¡splash!; si no, el paso de caer (en el río ya salpica)
         const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
         if (pr && landed && P.state === 'normal') perched(pr);
       }
@@ -3661,7 +3753,7 @@ function updatePlayer(dt) {
     const k = Math.cos(P.heading - camView.yaw), sc = Math.max(30, pScreen.r * 3);
     st.lookX = clamp((ptr.x - pScreen.x) / sc, -1, 1) * (k >= 0 ? 1 : -1); st.lookY = clamp(-(ptr.y - (pScreen.y - pScreen.r * 0.3)) / sc, -1, 1);
   }
-  T.update(dt, st);
+  const w0 = T.walk; T.update(dt, st); walkSteps(w0, T.walk);
 }
 
 const camPos = new THREE.Vector3(), camTgt = new THREE.Vector3(), _cp = new THREE.Vector3(), _ct = new THREE.Vector3(); let camInit = false, camSlope = 0.7;

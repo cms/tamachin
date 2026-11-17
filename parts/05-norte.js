@@ -43,6 +43,10 @@ const slopeAt = (x, z) => Math.hypot(terrainY(x + 1, z) - terrainY(x - 1, z), te
 // ───────────────────────── montañas: malla ─────────────────────────
 // Sombreado suave: normales y colores salen de la rejilla (no de cada losa), así no se notan las costuras.
 // Color por altura y pendiente: pasto, pasto alto, roca y nieve. Lo llano no se dibuja: ahí se ve el pasto de siempre.
+// `ny` es la componente vertical de la normal; los pasos (`northSurface`) usan las mismas mezclas para saber qué pisa.
+const terrainWob = (x, z) => Math.sin(x * 0.11 + z * 0.07) * 0.5 + Math.sin(x * 0.037 - z * 0.051) * 0.5;
+const rockK = (h, ny) => clamp((0.8 - ny) * 3.2, 0, 1) * 0.85 + clamp((h - 270) / 50, 0, 1) * 0.6;
+const snowK = (h, wob) => clamp((h - 322 - 12 * wob) / 22, 0, 1);
 const terrain = (() => {
   const hAt = (i, j) => TH[clamp(j, 0, TG.nz - 1) * TG.nx + clamp(i, 0, TG.nx - 1)];
   const GR = new THREE.Color('#8fd16b'), GR2 = new THREE.Color('#82c562'), HI = new THREE.Color('#63a354'), RK = new THREE.Color('#aaa295'), SN = new THREE.Color('#dfe7f1'), c = new THREE.Color(), n = new THREE.Vector3();
@@ -55,11 +59,11 @@ const terrain = (() => {
     for (let j = tj; j <= j1; j++) for (let i = ti; i <= i1; i++) {
       const h = hAt(i, j), dx = (hAt(i + 1, j) - hAt(i - 1, j)) / (2 * TG.s), dz = -(hAt(i, j + 1) - hAt(i, j - 1)) / (2 * TG.s);
       n.set(-dx, 1, -dz).normalize(); pos.push(TG.x0 + i * TG.s, h > 0.05 ? h : -0.15, TG.z0 - j * TG.s); nor.push(n.x, n.y, n.z); uv.push(i * TG.s / 6, j * TG.s / 6);
-      const x = TG.x0 + i * TG.s, z = TG.z0 - j * TG.s, wob = Math.sin(x * 0.11 + z * 0.07) * 0.5 + Math.sin(x * 0.037 - z * 0.051) * 0.5;
+      const x = TG.x0 + i * TG.s, z = TG.z0 - j * TG.s, wob = terrainWob(x, z);
       c.copy(GR).lerp(GR2, 0.5 + 0.5 * wob);
       if (h > 120) c.lerp(HI, Math.min(1, (h - 120) / 170));
-      c.lerp(RK, clamp((0.8 - n.y) * 3.2, 0, 1) * 0.85 + clamp((h - 270) / 50, 0, 1) * 0.6);
-      c.lerp(SN, clamp((h - 322 - 12 * wob) / 22, 0, 1));
+      c.lerp(RK, rockK(h, n.y));
+      c.lerp(SN, snowK(h, wob));
       col.push(c.r, c.g, c.b);
     }
     for (let j = tj; j < j1; j++) for (let i = ti; i < i1; i++) {
@@ -176,6 +180,16 @@ function nearTrail(x, z, d) {
   }
   return false;
 }
+// Qué pisa Tamachin al norte del bosque (para los pasos, 06-main.js), con las mismas medidas con que se pinta: el sendero (cintas de
+// 1.35 y 1.4 m), el pueblo empedrado menos el jardín de la posada, y en los cerros la roca y la nieve de `rockK`/`snowK`.
+function northSurface(x, z) {
+  if (z < Z_FOREST2) return Math.abs(x - forestTrailX(z)) < 1.4 ? 'tierra' : 'pasto';
+  if (Math.abs(x) < 62.6 && Math.abs(z - TOWN_Z) < 62.6) { const g = TOWN_GARDEN; return x > g[0] && x < g[2] && z > g[1] && z < g[3] && Math.abs(x) > TOWN_PATH ? 'pasto' : 'piedra'; }
+  if (nearTrail(x, z, 1.35)) return 'tierra';
+  const h = terrainY(x, z); if (h < 1) return 'pasto';
+  const S = TG.s, gx = (terrainY(x + S, z) - terrainY(x - S, z)) / (2 * S), gz = (terrainY(x, z + S) - terrainY(x, z - S)) / (2 * S);   // la normal, como la de la malla
+  return snowK(h, terrainWob(x, z)) > 0.5 ? 'nieve' : rockK(h, 1 / Math.sqrt(1 + gx * gx + gz * gz)) > 0.5 ? 'piedra' : 'pasto';
+}
 // cinta del sendero pegada al terreno: cada orilla toma la altura del suelo bajo ella
 function terrainRibbon(pts, halfW, lift, step) {
   const P = []; for (let i = 0; i < pts.length - 1; i++) { const a = pts[i], b = pts[i + 1], n = Math.max(1, Math.ceil(Math.hypot(b[0] - a[0], b[1] - a[1]) / step)); for (let k = 0; k < n; k++) P.push([lerp(a[0], b[0], k / n), lerp(a[1], b[1], k / n)]); }
@@ -230,13 +244,14 @@ northSign('Montañas ↑', TRAIL_GAP_X - 3.4, -262.5, 2.8);
 // ───────────────────────── Valle Alegre ─────────────────────────
 // Un pueblo sin autos: calles empedradas, kiosco en la plaza, mercado al sur y posada con hamaca al norte.
 const TBX = [[-62, -28], [-20, 20], [28, 62]], TBZ = TBX.map(([a, b]) => [TOWN_Z + a, TOWN_Z + b]);
+const TOWN_GARDEN = [TBX[1][0] + 2.8, TBZ[0][0] + 2.8, TBX[1][1] - 2.8, TBZ[0][1] - 2.8], TOWN_PATH = 1.4;   // el jardín de la posada y su vereda; lo demás es empedrado
 const TOWN = { hammock: { x: 8.6, y: 1.05, z: TOWN_Z - 44.6 }, market: { x: 0, z: TOWN_Z + 41.5 }, stalls: [-10.5, 10.5] };   // puestos a los lados: el portón sur da a un pasillo
 { const tex = canvasTex(1024, 1024, (g, S) => {
     const K = S / 128, X = (x) => (x + 64) * K, Z = (z) => (z - TOWN_Z + 64) * K, rect = (x0, z0, x1, z1, f) => { g.fillStyle = f; g.fillRect(X(x0), Z(z0), (x1 - x0) * K, (z1 - z0) * K); };
     const R = mulberry(818), STONE2 = '#d9ccb2', COB = '#c2b59d';
     rect(-64, TOWN_Z - 64, 64, TOWN_Z + 64, '#8fd16b'); rect(-62.6, TOWN_Z - 62.6, 62.6, TOWN_Z + 62.6, STONE2);
     TBX.forEach((bx, i) => TBZ.forEach((bz, j) => { if (i === 1 && j === 0) return; rect(bx[0] + 2.8, bz[0] + 2.8, bx[1] - 2.8, bz[1] - 2.8, i === 1 ? '#e6d8bd' : '#cfc7b6'); }));
-    rect(TBX[1][0] + 2.8, TBZ[0][0] + 2.8, TBX[1][1] - 2.8, TBZ[0][1] - 2.8, '#93d470'); rect(-1.4, TOWN_Z - 64, 1.4, TBZ[0][1], STONE2);   // jardín de la posada y su vereda
+    rect(...TOWN_GARDEN, '#93d470'); rect(-TOWN_PATH, TOWN_Z - 64, TOWN_PATH, TBZ[0][1], STONE2);   // jardín de la posada y su vereda
     for (const r of [-24, 24]) { rect(r - 4, TOWN_Z - 62.6, r + 4, TOWN_Z + 62.6, COB); rect(-62.6, TOWN_Z + r - 4, 62.6, TOWN_Z + r + 4, COB); }
     for (let i = 0; i < 5200; i++) { const r = [-24, 24][i % 2], a = TOWN_Z + (R() * 2 - 1) * 62, b = r + (R() * 2 - 1) * 3.8, w = 0.4 + R() * 0.5; g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.12)' : 'rgba(90,70,50,.13)';
       if (i % 4 < 2) g.fillRect(X(b), Z(a), w * K, w * K * 0.8); else g.fillRect(X(a - TOWN_Z), Z(b + TOWN_Z), w * K, w * K * 0.8); }
