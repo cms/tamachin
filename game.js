@@ -3522,13 +3522,13 @@ function togglePanel(on) {
   if (on) { syncPanel(); for (const k in keys) keys[k] = false; updMore(panelEl); }
 }
 
-// diario: cómo está Tamachin y los encargos. Se abre con los medidores (o la tecla J).
-const diaryEl = $('#diary'), bNeeds = $('#needs'), needListEl = $('#needList'), questListEl = $('#questList'), questNoteEl = $('#questNote');
+// diario: cómo está Tamachin y los encargos. Se abre con su botón, con los medidores o con la tecla J.
+const diaryEl = $('#diary'), bNeeds = $('#needs'), bDiary = $('#bDiary'), needListEl = $('#needList'), questListEl = $('#questList'), questNoteEl = $('#questNote');
 const needEls = {}; bNeeds.querySelectorAll('.need').forEach((el) => { needEls[el.dataset.k] = { el, bar: el.querySelector('b') }; });
 function toggleDiary(on) {
   if (on === undefined) on = diaryEl.hidden;
   if (on && ui.closeup) togglePanel(false);
-  diaryEl.hidden = !on; bNeeds.setAttribute('aria-expanded', String(on)); document.body.classList.toggle('diary', on);
+  diaryEl.hidden = !on; for (const b of [bNeeds, bDiary]) b.setAttribute('aria-expanded', String(on)); document.body.classList.toggle('diary', on);
   if (on) renderDiary();
 }
 const dayEl = $('#dDay');
@@ -3552,7 +3552,7 @@ function syncNeedsHud() {
   if (!diaryEl.hidden) syncDiaryNeeds();
   if ((needAriaT -= 1) <= 0) { needAriaT = 5; bNeeds.setAttribute('aria-label', 'Abrir el diario. ' + Object.keys(NEEDS).map((k) => NEEDS[k].label + ' ' + Math.round(needs[k] * 100) + ' %').join(', ')); }
 }
-bNeeds.addEventListener('click', () => toggleDiary()); $('#dClose').addEventListener('click', () => toggleDiary(false));
+bNeeds.addEventListener('click', () => toggleDiary()); bDiary.addEventListener('click', () => toggleDiary()); $('#dClose').addEventListener('click', () => toggleDiary(false));
 // paneles que se desplazan (en teléfono no cabe todo): "Más abajo" mientras quede algo por ver
 function updMore(el) { const b = el.querySelector('.pbody'); el.classList.toggle('more', !el.hidden && b.scrollHeight - b.scrollTop - b.clientHeight > 8); }
 for (const el of [panelEl, diaryEl]) el.querySelector('.pbody').addEventListener('scroll', () => updMore(el), { passive: true });

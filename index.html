@@ -64,7 +64,7 @@ button{font-family:inherit;color:inherit}
 .btn.ico svg{flex:none;width:20px;height:20px}
 #bSound .s-todo,#bSound .s-efectos,#bSound .s-no{display:none}
 #bSound[data-mode="todo"] .s-todo,#bSound[data-mode="efectos"] .s-efectos,#bSound[data-mode="no"] .s-no{display:inline}
-#bCustom[aria-expanded="true"]{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}
+.tools .btn[aria-expanded="true"]{transform:translateY(3px);box-shadow:0 1px 0 var(--ink)}   /* Diario o Personalizar abiertos: el botón queda hundido */
 
 .needs{display:flex;align-items:center;gap:8px;background:var(--paper);border:3px solid var(--ink);border-radius:999px;
   box-shadow:0 3px 0 var(--ink);padding:4px 10px 4px 6px;cursor:pointer;color:var(--ink)}
@@ -77,7 +77,6 @@ button{font-family:inherit;color:inherit}
 .need.low i{animation:needlow 1s ease-in-out infinite}
 .need.low svg{animation:needshake .9s ease-in-out infinite}
 .need.up i{box-shadow:0 0 0 3px var(--sun)}
-.nlab{font-weight:900;font-size:13.5px;margin-left:1px}
 .clock{flex:none;width:48px;height:48px;padding:0;border:3px solid var(--ink);border-radius:50%;background:var(--paper);
   box-shadow:0 3px 0 var(--ink);cursor:pointer;overflow:hidden;color:var(--ink)}
 .clock svg{display:block;width:100%;height:100%}
@@ -194,12 +193,15 @@ body.diary #touch,body.diary #help{display:none}
   .hud{flex:1 1 100%;gap:6px}
   .tools{margin-left:0;gap:6px;flex-wrap:nowrap}
   .tools .btn{position:relative;flex:none;width:44px;height:44px;padding:0;justify-content:center;box-shadow:0 3px 0 var(--ink)}
-  .tools .btn:active,#bCustom[aria-expanded="true"]{transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
+  .tools .btn:active,.tools .btn[aria-expanded="true"]{transform:translateY(2px);box-shadow:0 1px 0 var(--ink)}
   .tools .btn svg{width:26px;height:26px}
   .tools .lab{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}   /* lo leen los lectores de pantalla */
 }
-@media (max-width:370px){
-  .nlab{position:absolute;width:1px;height:1px;overflow:hidden;clip-path:inset(50%);white-space:nowrap}
+@media (max-width:400px){   /* teléfonos angostos: íconos de los medidores más chicos para que las barras no lleguen al mínimo */
+  .needs{gap:4px;padding:3px 6px 3px 4px}
+  .need{gap:2px}
+  .need svg{width:17px;height:17px}
+  #bZoom{display:none}   /* una ventana angosta con mouse: la rueda acerca */
 }
 @media (prefers-reduced-motion:reduce){
   .btn,.opt,#toast,.bubble,.need b,.nrow .bar b{transition:none}
@@ -222,7 +224,6 @@ body.diary #touch,body.diary #help{display:none}
         <span class="need n-panza" data-k="panza" title="Panza"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 6.6c-1.6-1.3-5.5-1.5-6 2.6-.4 3.4 2 7.4 4 7.4.8 0 1.2-.4 2-.4s1.2.4 2 .4c2 0 4.4-4 4-7.4-.5-4.1-4.4-3.9-6-2.6z" fill="#ff6b6b" stroke="#231d3b" stroke-width="1.6"/><path d="M10 6.6c0-2 .8-3.3 2.4-4" fill="none" stroke="#231d3b" stroke-width="1.6" stroke-linecap="round"/><path d="M11.4 4.3c1.6-1.4 3.4-1 3.8-.6-.6 1.4-2.4 1.8-3.8.6z" fill="#57c06a" stroke="#231d3b" stroke-width="1.2"/></svg><i><b></b></i></span>
         <span class="need n-energia" data-k="energia" title="Energía"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M13.6 2.8a7.4 7.4 0 1 0 3.6 11.1 6.2 6.2 0 0 1-3.6-11.1z" fill="#ffd23f" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/></svg><i><b></b></i></span>
         <span class="need n-diversion" data-k="diversion" title="Diversión"><svg viewBox="0 0 20 20" aria-hidden="true"><path d="M10 2.2l2.3 4.8 5.2.7-3.8 3.6.9 5.2L10 14l-4.6 2.5.9-5.2-3.8-3.6 5.2-.7z" fill="#ff8fb1" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/></svg><i><b></b></i></span>
-        <span class="nlab">Diario</span>
       </button>
       <button id="clock" class="clock" type="button" aria-label="Reloj">
         <svg viewBox="-32 -32 64 64" aria-hidden="true">
@@ -243,6 +244,7 @@ body.diary #touch,body.diary #help{display:none}
         </svg>
       </button>
       <div class="tools">
+        <button id="bDiary" class="btn ico" type="button" aria-expanded="false" aria-controls="diary"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.6 5.2A2.2 2.2 0 0 1 6.8 3h12.4v14.4H6.8a2.2 2.2 0 0 0-2.2 2.2z" fill="#35c9a0" stroke="#231d3b" stroke-width="1.8" stroke-linejoin="round"/><path d="M4.6 19.6a2.2 2.2 0 0 0 2.2 2.2h12.4v-4.4H6.8a2.2 2.2 0 0 0-2.2 2.2z" fill="#fffdf6" stroke="#231d3b" stroke-width="1.8" stroke-linejoin="round"/><path d="M13.4 3v7.6l2-1.6 2 1.6V3" fill="#ff6b9d" stroke="#231d3b" stroke-width="1.4" stroke-linejoin="round"/><path d="M8.6 7.4l.6 1.2 1.3.2-1 .9.3 1.3-1.2-.7-1.2.7.3-1.3-1-.9 1.3-.2z" fill="#ffc93c" stroke="#231d3b" stroke-width="1" stroke-linejoin="round"/></svg><span class="lab">Diario</span></button>
         <button id="bZoom" class="btn ico" type="button"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="10.4" cy="10.4" r="6.2" fill="#d6f0ff" stroke="#231d3b" stroke-width="1.9"/><path d="M15 15l5 5" stroke="#231d3b" stroke-width="2.6" stroke-linecap="round"/><path d="M10.4 7.8v5.2M7.8 10.4h5.2" stroke="#231d3b" stroke-width="1.8" stroke-linecap="round"/></svg><span class="lab">Acercar</span></button>
         <button id="bSound" class="btn ico" type="button" title="Música y efectos" data-mode="todo"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M2.8 9.3h3.3l4.9-4.1v13.6l-4.9-4.1H2.8z" fill="#ffc93c" stroke="#231d3b" stroke-width="1.8" stroke-linejoin="round"/><g class="s-todo"><path d="M16.2 16.2V6.6l4.8-1.4v3l-4.8 1.4" fill="#ff6b9d" stroke="#231d3b" stroke-width="1.6" stroke-linejoin="round"/><ellipse cx="14.4" cy="16.6" rx="2.3" ry="1.9" fill="#ff6b9d" stroke="#231d3b" stroke-width="1.6"/></g><g class="s-efectos" fill="none" stroke="#231d3b" stroke-width="1.9" stroke-linecap="round"><path d="M14.2 9.2a4 4 0 0 1 0 5.6"/><path d="M17 6.4a8 8 0 0 1 0 11.2"/></g><g class="s-no" stroke="#ff6b9d" stroke-width="2.6" stroke-linecap="round"><path d="M15 9.3l5.2 5.4M20.2 9.3L15 14.7"/></g></svg><span class="lab">Sonido: sí</span></button>
         <button id="bCustom" class="btn ico primary" type="button" aria-expanded="false" aria-controls="panel"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12.2 3C7 3 3 6.6 3 11.4c0 4.7 3.8 8.5 8.5 8.5 1.6 0 2.4-.9 2.4-2 0-1.3-1.2-1.7-1.2-2.9 0-1.1.8-1.8 2-1.8h2.1c2.6 0 4.3-1.7 4.3-4.1C21.1 5.6 17.4 3 12.2 3z" fill="#fffdf6" stroke="#231d3b" stroke-width="1.8" stroke-linejoin="round"/><circle cx="7.4" cy="11.5" r="1.75" fill="#ff6b9d" stroke="#231d3b" stroke-width="1.2"/><circle cx="9.4" cy="7.2" r="1.75" fill="#35c9a0" stroke="#231d3b" stroke-width="1.2"/><circle cx="14.3" cy="6.6" r="1.75" fill="#7c9cff" stroke="#231d3b" stroke-width="1.2"/><circle cx="17.9" cy="9.7" r="1.6" fill="#ff8a5c" stroke="#231d3b" stroke-width="1.2"/></svg><span class="lab">Personalizar</span></button>
@@ -291,7 +293,7 @@ body.diary #touch,body.diary #help{display:none}
 
   <div id="help">
     <p class="k"><kbd>W</kbd> <kbd>A</kbd> <kbd>S</kbd> <kbd>D</kbd> o flechas para caminar · <kbd>Shift</kbd> corre · <kbd>Espacio</kbd> salta · <kbd>E</kbd> interactúa · <kbd>J</kbd> diario.<br>Arrastra con el mouse para girar la cámara (de lado, o hacia arriba y abajo para subirla o bajarla; también <kbd>Z</kbd> <kbd>X</kbd>). Haz clic en Tamachin para un truco. Mueve el mouse en círculos a su alrededor (o haz clic muchas veces seguidas) y se marea.<br>Saltando se sube a botes, rocas y a la cama, y brinca la cerca del jardín.<br>Cuida su panza, su energía y su diversión.</p>
-    <p class="t">Camina con la palanca. Con Saltar se sube a botes, rocas y a la cama. Arrastra con un dedo para girar la cámara (hacia abajo la bajas y ves el horizonte) y pellizca para acercar. Toca a Tamachin para un truco; si lo tocas muchas veces seguidas, se marea. Toca Diario, arriba, para ver cómo está y sus encargos.</p>
+    <p class="t">Camina con la palanca. Con Saltar se sube a botes, rocas y a la cama. Arrastra con un dedo para girar la cámara (hacia abajo la bajas y ves el horizonte) y pellizca para acercar. Toca a Tamachin para un truco; si lo tocas muchas veces seguidas, se marea. Toca el libro de arriba (o los medidores) para ver su diario: cómo está y sus encargos.</p>
     <button id="helpOk" class="btn" type="button">Entendido</button>
   </div>
 

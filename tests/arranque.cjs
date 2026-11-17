@@ -31,27 +31,31 @@ module.exports = {
       const { ctx, page, errors, E } = await openGame(T, { device: PHONE, help: true, expose: 'camera, player, pScreen' });
       T.check('teléfono: sin errores', !errors.length, errors.join(' | ') || undefined);
       T.check('la barra de arriba cabe sin desplazar de lado', await E(() => document.documentElement.scrollWidth <= innerWidth));
-      T.check('el botón de los medidores dice Diario', (await page.textContent('#needs')).includes('Diario'));
-      // Sonido y Personalizar: en el teléfono son íconos redondos junto al reloj, en la misma fila (también en uno angosto, de 360)
-      const iconRow = () => E(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(), c = r('#clock'), b = [r('#bSound'), r('#bCustom')], n = r('#needs');
-        return { same: b.every((x) => Math.abs(x.top - c.top) < 4 && x.width >= 44 && x.height >= 44 && x.right <= innerWidth - 8) && c.left > n.right && b[0].left > c.right && b[1].left > b[0].right,
+      T.check('el diario tiene su botón, con ícono (y los medidores ya no dicen Diario)', (await page.textContent('#bDiary')) === 'Diario' && await E(() => !!document.querySelector('#bDiary svg')) && !(await page.textContent('#needs')).includes('Diario'));
+      // Diario, Sonido y Personalizar: en el teléfono son íconos redondos junto al reloj, en la misma fila (también en uno angosto, de 360)
+      const iconRow = () => E(() => { const r = (s) => document.querySelector(s).getBoundingClientRect(), c = r('#clock'), b = [r('#bDiary'), r('#bSound'), r('#bCustom')], n = r('#needs');
+        return { same: b.every((x, i) => Math.abs(x.top - c.top) < 4 && x.width >= 44 && x.height >= 44 && x.right <= innerWidth - 8 && x.left > (i ? b[i - 1].right : c.right)) && c.left > n.right,
           labels: [...document.querySelectorAll('.tools .lab')].map((l) => Math.round(l.getBoundingClientRect().width)), sw: document.documentElement.scrollWidth - innerWidth, bars: [...document.querySelectorAll('.need i')].map((i) => Math.round(i.getBoundingClientRect().width)) }; });
       let row = await iconRow();
-      T.check('teléfono: Sonido y Personalizar son íconos junto al reloj, en la misma fila', row.same && row.labels.every((w) => w <= 1) && row.sw <= 0 && row.bars.every((w) => w >= 20), JSON.stringify(row));
+      T.check('teléfono: Diario, Sonido y Personalizar son íconos junto al reloj, en la misma fila', row.same && row.labels.every((w) => w <= 1) && row.sw <= 0 && row.bars.every((w) => w >= 20), JSON.stringify(row));
       await page.tap('#helpOk'); await page.tap('#bSound'); await sleep(300);
       T.check('tocar el ícono de sonido dice en qué quedó', (await page.textContent('#toast')) === 'Efectos, sin música.' && (await E(() => document.querySelector('#bSound').dataset.mode)) === 'efectos', await page.textContent('#toast'));
       await page.tap('#bSound'); await page.tap('#bSound'); await sleep(200);   // nada → otra vez todo
       T.check('y da la vuelta: nada y otra vez todo', (await page.textContent('#bSound')) === 'Sonido: sí');
       await page.setViewportSize({ width: 360, height: 740 }); await E(() => window.__tamachin.go(2, -770)); await sleep(1200);   // la cima: el nombre más largo
       row = await iconRow();
-      T.check('en un teléfono angosto (360) también caben en la fila (las barras se encogen)', row.same && row.sw <= 0 && row.bars.every((w) => w >= 12), JSON.stringify(row));
+      T.check('en un teléfono angosto (360) también caben en la fila (las barras se encogen)', row.same && row.sw <= 0 && row.bars.every((w) => w >= 16), JSON.stringify(row));
       await page.setViewportSize(PHONE.viewport); await E(() => window.__tamachin.go(0, 3.5)); await sleep(800);
-      await page.tap('#needs'); await sleep(400);
+      const diaryOpen = () => E(() => ({ open: !document.querySelector('#diary').hidden, btn: document.querySelector('#bDiary').getAttribute('aria-expanded') }));
+      await page.tap('#needs'); await sleep(300);
+      const viaBars = await diaryOpen(); await page.tap('#bDiary'); await sleep(300);
+      const shut = await diaryOpen(); await page.tap('#bDiary'); await sleep(400);
       const d = await E(() => {
         const b = document.querySelector('#dHome').getBoundingClientRect(), p = document.querySelector('#diary .pbody').getBoundingClientRect();
-        return { open: !document.querySelector('#diary').hidden, home: b.top >= p.top && b.bottom <= p.bottom };
+        return { open: !document.querySelector('#diary').hidden, btn: document.querySelector('#bDiary').getAttribute('aria-expanded'), home: b.top >= p.top && b.bottom <= p.bottom };
       });
-      T.check('tocar Diario lo abre', d.open);
+      T.check('tocar los medidores también abre el diario, y su botón queda hundido', viaBars.open && viaBars.btn === 'true', JSON.stringify(viaBars));
+      T.check('el botón Diario lo cierra y lo abre', !shut.open && shut.btn === 'false' && d.open && d.btn === 'true', JSON.stringify([shut, d]));
       T.check('"Volver al inicio" se ve sin desplazar', d.home);
       await page.screenshot({ path: T.out('telefono-diario.jpg'), type: 'jpeg', quality: 70 });
       // lo que no cabe en el panel: aviso "Más abajo" mientras quede algo por ver

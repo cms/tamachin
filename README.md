@@ -73,12 +73,12 @@ Hay doce grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controle
 | Saltar | Espacio | Botón Saltar |
 | Interactuar / truco | E | Botón de acción |
 | Personalizar | C | Botón Personalizar |
-| Diario (necesidades y encargos) | J | Botón Diario (junto a los medidores) |
+| Diario (necesidades y encargos) | J, botón Diario o clic en los medidores | Botón del libro o tocar los medidores |
 | Girar la cámara | Arrastrar con el mouse de lado, o Z y X | Arrastrar con un dedo (o con dos) de lado |
 | Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
 | Zoom | Rueda del mouse o botón Acercar | Pellizcar (en pantallas táctiles no aparece el botón) |
 
-El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no». En el teléfono, Sonido y Personalizar son íconos redondos junto al reloj: la bocina con una nota es música y efectos, con ondas solo efectos y con un tache sin sonido; al tocarla, un aviso dice en qué quedó. La paleta abre Personalizar.
+El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no». En el teléfono, Diario, Sonido y Personalizar son íconos redondos junto al reloj: el libro abre el diario (también se abre tocando los medidores), la bocina con una nota es música y efectos, con ondas solo efectos y con un tache sin sonido (al tocarla, un aviso dice en qué quedó), y la paleta abre Personalizar.
 
 El reloj de arriba, junto a los medidores, marca la hora del juego; tocarlo dice la hora y cuándo amanece u oscurece.
 
