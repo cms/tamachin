@@ -86,6 +86,13 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 - **Estrellas fugaces** (`shoot`, `spawnShootingStar`, `tapShootingStar`): se ponen donde la cámara las ve (arriba de la pantalla, a 90 m), sin profundidad. `handleClick` revisa primero la estrella y las luciérnagas.
 - **El día** (`day.n`, `updateDayCount`): sube al pasar las 5 hacia adelante (también dormido). Los saltos de `setHour` hacia atrás o de más de 12 horas no cuentan, pero uno hacia adelante sí: las pruebas que saltan de hora no pueden esperar un día fijo.
 
+## El tiempo (`06-main.js`; el cielo y la luz en `applyDay`, `01-core.js`)
+
+- `weather` (`01-core.js`): `cloud` y `rain` (0 a 1, suben y bajan suave), `here` (lo que llueve donde está Tamachin: arriba de `WEATHER.top` no) y `wet` (los charcos: se llenan en ~50 s de lluvia y se secan en ~3 min). `updateWeather` los mueve hacia `weatherAt(hora)`, que sale del plan del día: `dayWeather(n)` usa `mulberry` con el número del día (el mismo día siempre igual; el primero, sol). `?clima=` lo fija (`weather.force`) y al arrancar `updateWeather(0, true)` lo pone sin esperar.
+- Nublado en `applyDay`: los colores del cielo y la luz del cielo pierden color (mismo brillo), el sol baja (sombras suaves), la neblina se acerca (`updateNorth`), las nubes se ponen grises (`cloudMat`), no hay estrellas ni luna. Con lluvia se prenden las ventanas (`day.lamps`).
+- Gotas: `rainDrops`, un `fireParts` de 900 rayitas en una caja de 30 m hacia donde mira la cámara; las pegadas a la cámara se desvanecen. Charcos: `puddles`, un InstancedMesh con lugares fijos (calles, caminos, Valle Alegre) que refleja el color de la niebla.
+- Sonido: `ambFor(…, rain)` calla pájaros y grillos; `E.amb` tiene un canal `rain` (ruido filtrado) que adentro de la casa se apaga con un filtro (`roof`) y suma gotas en el techo (`drip`).
+
 ## Capas del panel
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
@@ -96,7 +103,7 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 
 `npm test` (después de `npm install`) corre los grupos de `tests/run.cjs` en el Chrome instalado; `npm run test:largo` suma la caminata de 4 minutos. Corre `npm test` antes de cada commit que toque el juego.
 
-- `tests/lib.cjs` sirve el repo, abre el juego a mediodía (`?hora=12`; con `hora: false` manda la partida guardada, y al recargar la dirección se queda) y, con `expose`, deja variables internas de la IIFE en `window.__dbg` (reemplaza `window.__tamachin = {` en `game.js` al servirlo). `window.__tamachin` ya expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `day` y `setHour(h)`, `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar.
+- `tests/lib.cjs` sirve el repo, abre el juego a mediodía y con sol (`?hora=12&clima=sol`; con `hora: false` manda la partida guardada, y al recargar la dirección se queda; `clima: false` deja el tiempo del día) y, con `expose`, deja variables internas de la IIFE en `window.__dbg` (reemplaza `window.__tamachin = {` en `game.js` al servirlo). `window.__tamachin` ya expone `player`, `cars`, `npcs`, `ui`, `view` (el ángulo de la cámara), `day` y `setHour(h)`, `togglePanel()`, `makeDizzy()` y `go(x, z)` para teletransportar.
 - `mundo` compara lo que se genera con `tests/mundo.json`. Si falla sin que quisieras cambiar el mundo, es casi siempre una llamada de más a `rnd()`. Si el cambio es a propósito: `npm test -- mundo --actualizar`.
 - El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
 - Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.

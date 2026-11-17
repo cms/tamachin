@@ -628,7 +628,7 @@ scene.add(cityB.mesh(), gardenB.mesh(), parkB.mesh(), meadowB.mesh(), forestB.me
   const m = b.mesh(MAT_SCENERY, false); scene.add(m);
 }
 const clouds = [];
-{ const mat = dimmable(new THREE.MeshBasicMaterial({ color: 0xffffff }));   // de noche se tiñen con el cielo (01-core.js)
+{ const mat = cloudMat = dimmable(new THREE.MeshBasicMaterial({ color: 0xffffff }));   // de noche se tiñen con el cielo; nublado, grises (01-core.js)
   for (let i = 0; i < 9; i++) {
     const b = new Batch(); for (let k = 0; k < 5; k++) b.ico('#ffffff', (k - 2) * rr(4.5, 6), rr(-1, 1.5), rr(-2, 2), rr(4, 7), rr(3, 4.5), rr(4, 6), 1);
     const m = new THREE.Mesh(b.geometry(), mat); m.position.set(rr(-260, 260), rr(48, 80), rr(-420, -40)); m.scale.setScalar(rr(0.9, 1.7)); scene.add(m); clouds.push(m);

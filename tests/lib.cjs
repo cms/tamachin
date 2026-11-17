@@ -39,7 +39,8 @@ const DESKTOP = { viewport: { width: 1280, height: 800 } };
 // Abre el juego. `expose` son nombres de variables internas de la IIFE (p. ej. 'player, scene') que quedan en window.__dbg.
 // `init` corre antes de que cargue la página (para preparar localStorage). `hora`: a qué hora empieza (?hora=, por omisión 12, a pleno
 // día, para que todo se vea igual aunque cambie el ciclo); `hora: false` no la pone y manda la partida guardada (al recargar, la
-// dirección se queda igual). Devuelve { ctx, page, errors, E }.
+// dirección se queda igual). `clima`: el tiempo (?clima=, por omisión sol, para que ningún día de lluvia cambie las luces ni esconda
+// mariposas); `clima: false` deja el del día. Devuelve { ctx, page, errors, E }.
 async function openGame(T, opts = {}) {
   const ctx = opts.ctx || await T.browser.newContext(opts.device || DESKTOP);
   const page = await ctx.newPage();
@@ -55,7 +56,7 @@ async function openGame(T, opts = {}) {
     await page.route('**/game.js', (r) => r.fulfill({ body, contentType: 'application/javascript' }));
   }
   if (opts.init) await page.addInitScript(opts.init);
-  const hq = opts.hora === false ? '' : 'hora=' + (opts.hora == null ? 12 : opts.hora), q = opts.query || '';
+  const hq = [opts.hora === false ? '' : 'hora=' + (opts.hora == null ? 12 : opts.hora), opts.clima === false ? '' : 'clima=' + (opts.clima || 'sol')].filter(Boolean).join('&'), q = opts.query || '';
   await page.goto(T.url + (q && hq ? q + '&' + hq : q || (hq ? '?' + hq : '')));
   await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 });
   await sleep(opts.settle || 1200);

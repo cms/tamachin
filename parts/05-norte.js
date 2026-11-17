@@ -512,7 +512,8 @@ function updateNorth(dt) {
   farForest.visible = P.y > 60 && P.z > Z_FOREST2 + 150;
   // niebla según la altura: desde arriba se ve lejos
   const alt = Math.max(0, P.y);
-  scene.fog.far = damp(scene.fog.far, 300 + alt * 1.6, 1.5, dt); scene.fog.near = damp(scene.fog.near, 60 + alt * 0.8, 1.5, dt);
+  const wf = 1 - 0.35 * weather.cloud - 0.15 * weather.rain;   // nublado y lloviendo, la neblina se acerca
+  scene.fog.far = damp(scene.fog.far, (300 + alt * 1.6) * wf, 1.5, dt); scene.fog.near = damp(scene.fog.near, (60 + alt * 0.8) * wf, 1.5, dt);
   if (TOWN.hammockMesh) TOWN.hammockMesh.rotation.x = Math.sin(clock * 1.5) * (player.sleepSpot === 'hamaca' ? 0.1 : 0.03);
   // cimas y lugares nuevos
   for (const p of PEAKS) if (!p.reached && Math.hypot(P.x - p.x, P.z - p.z) < 24 && P.y > p.y - 30) reachSummit(p);

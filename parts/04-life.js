@@ -327,7 +327,7 @@ function makeButterfly(x, z, col) {
 function updateButterflies(dt) {
   const P = player, calm = P.idleT > 2.2 && P.state === 'normal';
   let attracted = 0;
-  const awake = day.light > 0.35;                                  // de noche las mariposas se esconden
+  const awake = day.light > 0.35 && weather.rain < 0.4;            // de noche y con lluvia las mariposas se esconden
   for (const b of butterflies) {
     b.g.visible = awake; if (!awake) continue;
     const dh = Math.hypot(P.pos.x - b.home.x, P.pos.z - b.home.z);

@@ -458,6 +458,79 @@ const musicians = [['acordeon', 'gota', '#ff8fb1', -2.1, 1.0], ['trompeta', 'bol
   creatures.push(o); interacts.push({ pos: o.pos, range: 6.2, label: 'Escuchar a la banda', act: o.interact, who: o, ok: () => !!town.band });
   return o;
 });
+// ───────────────────────── el tiempo (el cielo y la luz cambian en applyDay, 01-core.js) ─────────────────────────
+// Cada día, según su número: 1 de cada 5 llueve (un chubasco de 2 a 4 horas, entre las 9 y las 21), 1 de cada 4 está nublado y los
+// demás hace sol; el primero siempre hace sol. ?clima=lluvia, nublado o sol lo fija para probar (no se guarda).
+const WEATHER = { rain: 0.2, cloudy: 0.25, top: 180 };       // top: arriba de 180 m (los cerros) no llueve (ahí, en el paso 2, nieva)
+function dayWeather(n) {
+  if (n <= 1) return { kind: 'sol' };
+  const R = mulberry(n * 7919 + 13), r = R();
+  if (r < WEATHER.rain) { const from = 9 + R() * 8; return { kind: 'lluvia', from, to: from + 2 + R() * 2 }; }
+  return { kind: r < WEATHER.rain + WEATHER.cloudy ? 'nublado' : 'sol' };
+}
+let wPlan = null;
+function weatherAt(h) {                                          // { cloud, rain } que tocan a esta hora
+  const f = weather.force;
+  if (f) return f === 'lluvia' ? { cloud: 1, rain: 1 } : { cloud: f === 'nublado' ? 0.85 : 0, rain: 0 };
+  if (!wPlan || wPlan.n !== day.n) { wPlan = dayWeather(day.n); wPlan.n = day.n; }
+  weather.kind = wPlan.kind;
+  if (wPlan.kind === 'nublado') return { cloud: 0.85, rain: 0 };
+  if (wPlan.kind !== 'lluvia') return { cloud: 0, rain: 0 };
+  const { from, to } = wPlan, up = smooth(from - 1.5, from - 0.3, h) * (1 - smooth(to + 0.3, to + 1.6, h));   // se nubla antes y despeja después
+  return { cloud: 0.2 + 0.8 * up, rain: smooth(from, from + 0.3, h) * (1 - smooth(to - 0.3, to, h)) };
+}
+function updateWeather(dt, snap) {
+  const W = weather, tg = weatherAt(day.h), P = player;
+  if (W.force) W.kind = W.force;
+  W.cloud = snap ? tg.cloud : damp(W.cloud, tg.cloud, 0.5, dt); W.rain = snap ? tg.rain : damp(W.rain, tg.rain, 0.7, dt);
+  W.wet = snap ? (tg.rain > 0.5 ? 0.7 : 0) : clamp(W.wet + (W.rain > 0.3 ? dt / 50 * W.rain : -dt / 200), 0, 1);   // se llenan en ~50 s, se secan en ~3 min
+  W.here = W.rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y));
+  updateRain(dt); updatePuddles();
+}
+// La lluvia: gotas (rayitas) que caen en una caja de 32 m alrededor de lo que se ve, con el mismo shader que la fogata (una llamada).
+// Adentro de la casa no caen (se oyen en el techo, 01-core.js).
+const rainDrops = (() => {
+  const tex = canvasTex(16, 64, (g) => { const gr = g.createLinearGradient(0, 0, 0, 64); gr.addColorStop(0, 'rgba(255,255,255,0)'); gr.addColorStop(1, 'rgba(255,255,255,.95)'); g.fillStyle = gr; g.fillRect(7, 0, 2, 64); });
+  const S = fireParts(900, tex, THREE.NormalBlending); S.pts.visible = false; S.pts.renderOrder = 3; return S;
+})();
+const RAIN = { half: 15, speed: 13, wind: 1.2 };
+function updateRain(dt) {
+  const S = rainDrops, P = player, k = P.inHouse ? 0 : weather.here; S.pts.visible = k > 0.01;
+  if (!S.pts.visible) { for (const p of S.list) p.born = false; return; }
+  const c = camView.c, s = camView.s, cx = P.pos.x - s * 6, cz = P.pos.z - c * 6, top = P.pos.y + 14, floor = P.pos.y - 2, H = RAIN.half, C = camera.position;
+  const n = Math.round(S.list.length * k), lum = 0.3 + 0.65 * day.light, a = S.a;
+  S.list.forEach((p, i) => {
+    if (!p.born || p.y < floor) { p.x = cx + rand(-H, H); p.z = cz + rand(-H, H); p.y = p.born ? top + rand(0, 2) : rand(floor, top); p.born = true; p.sp = 0.09; }
+    if (p.x < cx - H) p.x += 2 * H; else if (p.x > cx + H) p.x -= 2 * H;
+    if (p.z < cz - H) p.z += 2 * H; else if (p.z > cz + H) p.z -= 2 * H;
+    p.y -= RAIN.speed * dt; p.x += RAIN.wind * dt;
+    const near = smooth(3, 7, Math.hypot(p.x - C.x, p.y - C.y, p.z - C.z));   // pegadas a la cámara se verían como barras enormes
+    a.position.setXYZ(i, p.x, p.y, p.z); a.size.setX(i, 0.6); a.alpha.setX(i, i < n ? 0.55 * near : 0); a.tint.setXYZ(i, 0.78 * lum, 0.85 * lum, 0.98 * lum); a.spin.setX(i, p.sp);
+  });
+  for (const key in a) a[key].needsUpdate = true;
+}
+// charcos: en las calles, el camino del jardín, el camino al bosque y las calles de Valle Alegre (con su propia semilla). Uno solo
+// InstancedMesh; reflejan el color del cielo (la niebla) y aparecen y se secan con `wet`.
+const puddles = (() => {
+  const R = mulberry(8080), r2 = (a, b) => a + (b - a) * R(), pts = [];
+  for (const sx of [-24, 24]) for (let k = 0; k < 7; k++) { pts.push([sx + r2(-2.5, 2.5), r2(-56, 56)]); pts.push([r2(-56, 56), sx + r2(-2.5, 2.5)]); }
+  for (const z of [6.5, 12, 17]) pts.push([r2(-0.4, 0.4), z]);
+  for (let k = 0; k < 9; k++) { const z = r2(-155, -70); pts.push([pathX(z) + r2(-0.8, 0.8), z]); }
+  for (let k = 0; k < 7; k++) { let z = r2(-262, -165); if (Math.abs(z + 205) < 14) z -= 30; pts.push([pathX(z) + r2(-0.8, 0.8), z]); }
+  for (const sx of [-24, 24]) for (let k = 0; k < 4; k++) { pts.push([sx + r2(-2.5, 2.5), TOWN_Z + r2(-56, 56)]); pts.push([r2(-56, 56), TOWN_Z + sx + r2(-2.5, 2.5)]); }
+  const tex = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,.95)'); gr.addColorStop(0.7, 'rgba(255,255,255,.85)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64);
+    g.fillStyle = 'rgba(255,255,255,.35)'; g.beginPath(); g.ellipse(24, 24, 9, 4, -0.5, 0, TAU); g.fill(); });
+  const m = new THREE.InstancedMesh(new THREE.CircleGeometry(1, 20).rotateX(-Math.PI / 2), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: 0, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -5, polygonOffsetUnits: -5 }), pts.length);
+  const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), e = new THREE.Euler(), v = new THREE.Vector3(), sc = new THREE.Vector3();
+  pts.forEach(([x, z], i) => m.setMatrixAt(i, m4.compose(v.set(x, groundY(x, z) + 0.06, z), q.setFromEuler(e.set(0, R() * TAU, 0)), sc.set(r2(0.7, 1.5), 1, r2(0.45, 0.9)))));
+  m.frustumCulled = false; m.visible = false; m.raycast = () => {}; scene.add(m); m.pts = pts; return m;
+})();
+const PUDDLE_DARK = new THREE.Color(0x283240);
+function updatePuddles() {
+  const m = puddles, w = weather.wet; m.visible = w > 0.01; if (!m.visible) return;
+  m.material.opacity = 0.7 * Math.min(1, w * 1.6); m.material.color.copy(scene.fog.color).lerp(PUDDLE_DARK, 0.45);   // reflejan el cielo
+}
+
 // el día que es: sube cada mañana, al pasar las 5 (también dormido); los saltos de setHour hacia atrás o de más de 12 horas no cuentan
 let lastHour = DAY.start;
 function updateDayCount() {
@@ -731,10 +804,11 @@ function updateMusic(dt) {
   const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
   if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
   const night = 1 - day.light, band = town.band && k === 'pueblo' ? clamp(1.4 - Math.hypot(P.pos.x, P.pos.z - TOWN_Z) / 60, 0, 1) : 0;   // la banda del kiosco
-  mus.ambient(ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night), now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
+  const amb = ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night, weather.rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y))); amb.roof = !!P.inHouse;
+  mus.ambient(amb, now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(night * (1 - band), now); mus.param.band = band;
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * weather.rain), now); mus.param.band = band;
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -1122,7 +1196,7 @@ const fireflies = (() => {
   return { pts, pos, col, flies, k: 0 };
 })();
 function updateFireflies(dt) {
-  const P = player, F = fireflies, want = smooth(0.4, 0.1, day.light) * (FIREFLY_ZONES[musicZone()] || 0) * (P.pos.y < 120 ? 1 : 0);
+  const P = player, F = fireflies, want = smooth(0.4, 0.1, day.light) * (FIREFLY_ZONES[musicZone()] || 0) * (P.pos.y < 120 ? 1 : 0) * (1 - weather.rain);
   F.k = damp(F.k, want, 1.5, dt); F.pts.visible = F.k > 0.02; if (!F.pts.visible) { for (const f of F.flies) f.born = false; return; }
   const n = Math.round(F.flies.length * Math.min(1, F.k * 1.2));
   F.flies.forEach((f, i) => {
@@ -1276,7 +1350,7 @@ function frame(now) {
   requestAnimationFrame(frame);
   const raw = Math.max(0.001, (now - last) / 1000), dt = Math.min(0.05, raw); last = now;
   if (document.hidden) return;
-  resize(); clock += dt; updateDay(dt); updateDayCount(); updateTownHours(dt);
+  resize(); clock += dt; updateDay(dt); updateDayCount(); updateWeather(dt); updateTownHours(dt);
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
   if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
@@ -1309,6 +1383,7 @@ function boot(data) {
   if (s.helpSeen === true) helpEl.hidden = true;
   const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
   if (Number.isInteger(s.dia) && s.dia > 0) day.n = s.dia; lastHour = day.h;
+  const qc = /[?&]clima=(lluvia|nublado|sol)\b/.exec(location.search); weather.force = qc ? qc[1] : null; updateWeather(0, true);   // el tiempo de hoy, sin esperar a que entre
   if (Number.isInteger(s.flies) && s.flies >= 0) fliesCaught = Math.min(10, s.flies); jar.visible = quests.luciernagas === 2;
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);

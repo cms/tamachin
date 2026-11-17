@@ -71,7 +71,12 @@ const SUN_OFF = new THREE.Vector3(38, 58, 42);              // de Tamachin hacia
 // La luna alumbra con la misma luz que el sol: se cambian cuando las dos pasan por cero, en el crepúsculo. Nunca se agrega ni se quita
 // una luz con sombra (en r128 eso recompila todos los materiales y el juego se traba).
 const DAY = { rise: 5, set: 20, start: 8, rate: 1 / 60 };   // rate: horas de juego por segundo
-const day = { h: DAY.start, n: 1, light: 1, warm: 0, stars: 0, lamps: 0 };   // n: qué día es (sube cada mañana, a las 5; 06-main.js)   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
+const day = { h: DAY.start, n: 1, light: 1, warm: 0, stars: 0, lamps: 0 };   // n: qué día es (sube cada mañana, a las 5; 06-main.js)
+// El tiempo: cada día tiene el suyo según su número (al recargar es el mismo; dayWeather, 06-main.js). cloud: qué tan nublado (0 a 1),
+// rain: cuánto llueve, here: cuánto llueve donde está Tamachin (arriba de los cerros no; adentro de la casa suena, no cae), wet: los
+// charcos (se llenan con la lluvia y se secan despacio). Lo mueve updateWeather; aquí cambia el cielo y la luz.
+const weather = { kind: 'sol', cloud: 0, rain: 0, here: 0, wet: 0, force: null };
+let cloudMat = null;                                         // el de las nubes (03-world.js): se ponen grises   // light: 1 de día, 0 de noche; warm: cuánto amanecer o atardecer; lamps: luces prendidas
 // hora, cielo arriba, cielo medio, horizonte (y niebla), luz del cielo, luz del suelo, su intensidad, tinte de lo que no recibe luz, light, warm
 const SKY_NIGHT = [0x0b1440, 0x1c2a63, 0x34477f, 0x7486ff, 0x2a3060, 0.6, 0x5c6a9c, 0, 0];
 const SKY_DAY = [0x3f9ef5, 0x9bd6ff, 0xd6f0ff, 0xf2f9ff, 0xb6c296, 0.58, 0xffffff, 1, 0];
@@ -139,7 +144,7 @@ const skySun = skySprite(canvasTex(128, 128, (g) => {
 function arcDir(out, f, maxE, az0, az1) { const az = lerp(az0, az1, f) * DEG, e = maxE * DEG * Math.sin(Math.PI * f); return out.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)); }
 const _sunD = new THREE.Vector3(), _moonD = new THREE.Vector3(), _moonL = new THREE.Vector3(), _skc = new THREE.Color();
 const _dc = [0, 1, 2, 3, 4].map(() => new THREE.Color()), _tint = new THREE.Color(), _lc = new THREE.Color();
-let skyAt = -1;
+let skyAt = -1, skyCl = 0;
 function paintSky(top, mid, hor, glow) {
   const P = skyMesh.geometry.attributes.position, C = skyMesh.geometry.attributes.color, a = C.array, c = _skc;
   for (let i = 0; i < P.count; i++) {
@@ -157,7 +162,10 @@ function applyDay(force) {
   const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));
   for (let k = 0; k < 5; k++) _dc[k].copy(A.c[k]).lerp(B.c[k], t);
   _tint.copy(A.tint).lerp(B.tint, t); day.light = lerp(A.light, B.light, t); day.warm = lerp(A.warm, B.warm, t);
-  day.stars = smooth(0.45, 0.05, day.light);
+  // nublado: el cielo se vuelve gris (con el mismo brillo), el sol pega menos (sombras suaves) y la luz del cielo un poco más
+  const cl = weather.cloud;
+  if (cl > 0.001) for (let k = 0; k < 3; k++) { const c = _dc[k], l = (0.3 * c.r + 0.59 * c.g + 0.11 * c.b) * 0.94; c.lerp(_skc.setRGB(l, l, l * 1.05), 0.72 * cl); }
+  day.stars = smooth(0.45, 0.05, day.light) * (1 - smooth(0.3, 0.8, weather.cloud));   // nublado no se ven
   // dónde van el sol y la luna (la luna sale a las 8 de la noche y se pone a las 5)
   arcDir(_sunD, (h - DAY.rise) / (DAY.set - DAY.rise), 46, 20, 85);
   // de día g pasa de 1 (se puso) a 24/night (vuelve a salir): a la mitad del día se cuenta hacia atrás desde 0, así siempre queda bajo el horizonte
@@ -168,18 +176,20 @@ function applyDay(force) {
   else { sun.color.copy(MOON_COL); sun.intensity = 0.45 * moonAmt; }
   const az = Math.atan2(D.z, D.x), e = Math.max(LIGHT_MIN_E, Math.asin(clamp(D.y, -1, 1)));
   SUN_OFF.set(Math.cos(e) * Math.cos(az), Math.sin(e), Math.cos(e) * Math.sin(az)).multiplyScalar(LIGHT_D);
-  hemi.color.copy(_dc[3]); hemi.groundColor.copy(_dc[4]); hemi.intensity = lerp(A.c[5], B.c[5], t);
+  hemi.color.copy(_dc[3]); hemi.groundColor.copy(_dc[4]); hemi.intensity = lerp(A.c[5], B.c[5], t) + 0.05 * cl - 0.06 * weather.rain; sun.intensity *= 1 - 0.75 * cl;
+  if (cl > 0.001) { const l = 0.3 * hemi.color.r + 0.59 * hemi.color.g + 0.11 * hemi.color.b; hemi.color.lerp(_skc.setRGB(l, l, l * 1.04), 0.5 * cl); }   // luz pareja y sin color
   scene.fog.color.copy(_dc[2]); scene.background.copy(_dc[2]);
   for (const u of UNLIT) u.mat.color.copy(u.base).multiply(_tint);
-  day.lamps = smooth(0.62, 0.22, day.light);
+  if (cloudMat) cloudMat.color.lerp(_skc.setRGB(0.6, 0.63, 0.68).multiply(_tint), 0.65 * cl);
+  day.lamps = Math.max(smooth(0.62, 0.22, day.light), 0.55 * weather.rain);   // con lluvia también se prenden las ventanas
   for (const n of NIGHT_LIT) { n.mat.opacity = n.max * day.lamps; n.mat.visible = day.lamps > 0.01; }
   for (const m of LIT_WALLS) m.emissive.copy(WARM_WIN).multiplyScalar(0.85 * day.lamps);
   // en el cielo
   for (const s of skyStars) s.material.opacity = day.stars;
-  skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light); skyMoon.visible = skyMoon.material.opacity > 0.01;
-  skySun.position.copy(_sunD).multiplyScalar(470); skySun.material.opacity = smooth(-0.07, 0.03, _sunD.y); skySun.visible = skySun.material.opacity > 0.01;
+  skyMoon.position.copy(_moonD).multiplyScalar(470); skyMoon.material.opacity = smooth(-0.03, 0.03, _moonD.y) * (1 - 0.75 * day.light) * (1 - 0.85 * cl); skyMoon.visible = skyMoon.material.opacity > 0.01;
+  skySun.position.copy(_sunD).multiplyScalar(470); skySun.material.opacity = smooth(-0.07, 0.03, _sunD.y) * (1 - 0.9 * cl); skySun.visible = skySun.material.opacity > 0.01;
   skySun.material.color.copy(SUN_DISC_LOW).lerp(SUN_DISC, smooth(0, 0.4, _sunD.y));
-  if (force || Math.abs(h - skyAt) > 0.004) { skyAt = h; paintSky(_dc[0], _dc[1], _dc[2], 0.85 * smooth(-0.25, 0, _sunD.y) * (1 - smooth(0.05, 0.35, _sunD.y))); }
+  if (force || Math.abs(h - skyAt) > 0.004 || Math.abs(cl - skyCl) > 0.01) { skyAt = h; skyCl = cl; paintSky(_dc[0], _dc[1], _dc[2], 0.85 * smooth(-0.25, 0, _sunD.y) * (1 - smooth(0.05, 0.35, _sunD.y)) * (1 - cl)); }
 }
 applyDay(true);
 
@@ -682,11 +692,14 @@ const MUSIC_ZONES = {
 // `night` (0 a 1, de 01-core.js: 1 − day.light): de noche los pájaros duermen y cantan los grillos (donde hay pájaros, y algo en la ciudad);
 // en el camino y los bosques ulula un búho.
 const OWL_ZONES = { camino: 0.6, bosque: 1, sinfin: 1 };
-function ambFor(key, near, alt, night) {
-  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0, n = night || 0, low = Math.max(0, 1 - up * 1.6);
-  return { birds: (a.birds || 0) * low * (1 - n), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75),
-    crickets: a.birds ? n * Math.min(1, a.birds + 0.4) * low : 0, owls: n * (OWL_ZONES[key] || 0) };
+// `rain` (0 a 1): lloviendo callan los pájaros y casi todos los grillos, y suena la lluvia.
+function ambFor(key, near, alt, night, rain) {
+  const a = (MUSIC_ZONES[key] || {}).amb || {}, up = key === 'montes' ? alt : 0, n = night || 0, low = Math.max(0, 1 - up * 1.6), r = rain || 0;
+  return { birds: (a.birds || 0) * low * (1 - n) * (1 - r), river: (a.river || 0) * near, wind: Math.min(1, (a.wind || 0) + up * 0.75),
+    crickets: a.birds ? n * Math.min(1, a.birds + 0.4) * low * (1 - 0.8 * r) : 0, owls: n * (OWL_ZONES[key] || 0) * (1 - r), rain: r };
 }
+// gota en el techo (lloviendo, adentro de la casa): un tic corto
+function drip(E, d, t) { noiseHit(E, d, t, rand(0.4, 1), 'bandpass', rand(2200, 3400), 3, 0.02); }
 // grillo: tres o cuatro pulsos agudos muy cortos; cada uno de un lado y a su tono
 function cricket(E, d, t) {
   const c = E.ctx, g = c.createGain(), f = rand(4100, 5200), n = 2 + Math.floor(Math.random() * 3);
@@ -714,7 +727,7 @@ function bird(E, d, t) {
   else if (kind === 1) { chirp(t, 2500 * f, 2700 * f, 0.16, 0.9); chirp(t + 0.22, 2000 * f, 1950 * f, 0.28, 0.8); }
   else { const o = osc(c, 'sine', 3300 * f, t, t + 0.45), lfo = osc(c, 'sine', 28, t, t + 0.45), lg = c.createGain(), e = c.createGain(); lg.gain.value = 420 * f; lfo.connect(lg); lg.connect(o.frequency); env(e, t, 0.7, 0.02, 0.45); o.connect(e); e.connect(g); }
 }
-const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03, crickets: 0.012, owls: 0.035 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
+const AMB_VOL = { river: 0.019, wind: 0.06, birds: 0.03, crickets: 0.012, owls: 0.035, rain: 0.014, drips: 0.025 }, RUN_VOL = 0.1, FX_VOL = 0.03;   // el río en la orilla: RMS ≈ 0.006, debajo de la música
 function makeMusic(ctx, dest) {
   const sr = ctx.sampleRate, E = { ctx, cur: null, key: null, vol: 1, players: {}, steps: 0, param: { alt: 0, near: 1, run: false }, low: false, night: false, nightLv: 0, mixNow: {}, runLv: 0, runHits: 0, fanfares: 0 };
   E.noise = ctx.createBuffer(1, sr, sr); const nz = E.noise.getChannelData(0); for (let i = 0; i < sr; i++) nz[i] = Math.random() * 2 - 1;
@@ -739,15 +752,19 @@ function makeMusic(ctx, dest) {
   const glide = (prm, v, t, tc) => { prm.cancelScheduledValues(t); prm.setTargetAtTime(v, t, tc); };
   // Lo de fondo va aparte de la música (sigue con «Solo efectos»): río y viento son ruido filtrado que se mueve solo, siempre corriendo
   // con volumen 0 donde no hay; los pájaros se agendan al azar.
-  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), cric: ctx.createGain(), owl: ctx.createGain(), g: {}, lv: { river: 0, wind: 0 }, birds: 0, next: 0, calls: 0,
-    crickets: 0, cnext: 0, chirps: 0, owls: 0, onext: 0, hoots: 0 };
+  const A = E.amb = { out: ctx.createGain(), bird: ctx.createGain(), cric: ctx.createGain(), owl: ctx.createGain(), drip: ctx.createGain(), g: {}, lv: { river: 0, wind: 0, rain: 0 }, birds: 0, next: 0, calls: 0,
+    crickets: 0, cnext: 0, chirps: 0, owls: 0, onext: 0, hoots: 0, roof: false, dnext: 0, drips: 0 };
+  A.drip.gain.value = AMB_VOL.drips; A.drip.connect(A.out);
   A.out.connect(dest); A.bird.gain.value = AMB_VOL.birds; A.bird.connect(A.out);
   A.cric.gain.value = AMB_VOL.crickets; A.cric.connect(A.out); A.owl.gain.value = AMB_VOL.owls; A.owl.connect(A.out);
   const long = ctx.createBuffer(1, sr * 4, sr), ld = long.getChannelData(0); for (let i = 0; i < ld.length; i++) ld[i] = Math.random() * 2 - 1;
   const src = (off) => { const s = ctx.createBufferSource(); s.buffer = long; s.loop = true; s.start(0, off); return s; };
   const biq = (type, f, q) => { const b = ctx.createBiquadFilter(); b.type = type; b.frequency.value = f; b.Q.value = q; return b; };
   const wobble = (prm, f, depth) => { const o = ctx.createOscillator(), g = ctx.createGain(); o.frequency.value = f; g.gain.value = depth; o.connect(g); g.connect(prm); o.start(0); };
-  for (const k of ['river', 'wind']) { A.g[k] = ctx.createGain(); A.g[k].gain.value = 0; A.g[k].connect(A.out); }
+  for (const k of ['river', 'wind', 'rain']) { A.g[k] = ctx.createGain(); A.g[k].gain.value = 0; A.g[k].connect(A.out); }
+  { const s = src(2.9), hp = biq('highpass', 500, 0.5), pat = biq('bandpass', 3600, 0.7), pg = ctx.createGain();   // lluvia: siseo parejo y un golpeteo
+    A.rainLP = biq('lowpass', Math.min(9000, sr / 2), 0.5); pg.gain.value = 0.5; wobble(pg.gain, 3.1, 0.15);
+    s.connect(hp); hp.connect(A.rainLP); s.connect(pat); pat.connect(pg); pg.connect(A.rainLP); A.rainLP.connect(A.g.rain); }
   { const s = src(0), hp = biq('highpass', 250, 0.5), lp = biq('lowpass', 1600, 0.4), bab = biq('bandpass', 1100, 4), bg = ctx.createGain();   // río: rumor y gorgoteo
     bg.gain.value = 0.6; wobble(bab.frequency, 0.7, 450); wobble(bab.frequency, 0.23, 300);
     s.connect(hp); hp.connect(lp); lp.connect(A.g.river); s.connect(bab); bab.connect(bg); bg.connect(A.g.river); }
@@ -755,7 +772,9 @@ function makeMusic(ctx, dest) {
     wobble(bp.frequency, 0.07, 220); wobble(bp.frequency, 0.19, 90); gust.gain.value = 0.7; wobble(gust.gain, 0.11, 0.3);
     s.connect(bp); bp.connect(gust); gust.connect(A.g.wind); }
   E.ambient = (a, t) => {
-    for (const k of ['river', 'wind']) { const v = a[k] || 0; if (Math.abs(v - A.lv[k]) > 0.01 || (v === 0 && A.lv[k] !== 0)) { A.lv[k] = v; glide(A.g[k].gain, v * AMB_VOL[k], t, 0.8); } }
+    const roof = !!a.roof; if (roof !== A.roof) { A.roof = roof; glide(A.rainLP.frequency, roof ? 650 : Math.min(9000, sr / 2), t, 0.3); }   // adentro, la lluvia se oye apagada
+    A.rainK = a.rain || 0;
+    for (const k of ['river', 'wind', 'rain']) { const v = a[k] || 0; if (Math.abs(v - A.lv[k]) > 0.01 || (v === 0 && A.lv[k] !== 0)) { A.lv[k] = v; glide(A.g[k].gain, v * AMB_VOL[k], t, 0.8); } }
     A.birds = a.birds || 0; A.crickets = a.crickets || 0; A.owls = a.owls || 0;
   };
   E.pumpAmb = (now, until) => {
@@ -763,6 +782,8 @@ function makeMusic(ctx, dest) {
     while (A.next < until) { if (Math.random() < A.birds) { bird(E, A.bird, A.next); A.calls++; } A.next += rand(1.1, 3.4); }
     if (A.cnext < now) A.cnext = now + rand(0.1, 0.5);
     while (A.cnext < until) { if (Math.random() < A.crickets) { cricket(E, A.cric, A.cnext); A.chirps++; } A.cnext += rand(0.18, 0.6); }
+    if (A.dnext < now) A.dnext = now + rand(0.05, 0.3);
+    while (A.dnext < until) { if (A.roof && Math.random() < A.rainK) { drip(E, A.drip, A.dnext); A.drips++; } A.dnext += rand(0.08, 0.35); }   // gotas en el techo
     if (A.onext < now) A.onext = now + rand(2, 6);
     while (A.onext < until) { if (Math.random() < A.owls * 0.55) { owl(E, A.owl, A.onext); A.hoots++; } A.onext += rand(6, 12); }
   };

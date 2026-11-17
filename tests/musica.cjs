@@ -21,7 +21,7 @@ const RENDER = async ({ plan, secs, sr, wav, sfx, amb, music = true }) => {
     if (music) { M.zone(key, t0); M.setNight(o.night || 0, t0); }
     if (o.fanfare) M.fanfare(t0 + 0.1, o.tune || 1);
     if (o.owl) D.owl(M, M.amb.owl, t0 + 2);   // después del segundo y medio que no se mide
-    if (amb) M.ambient(D.ambFor(key, M.param.near, M.param.alt, o.night || 0), t0);
+    if (amb) { const a = D.ambFor(key, M.param.near, M.param.alt, o.night || 0, o.rain || 0); a.roof = !!o.roof; M.ambient(a, t0); }
     for (let u = t0; u < t1; u += 0.25) { if (music) M.pump(u, Math.min(t1, u + 0.45)); if (amb) M.pumpAmb(u, Math.min(t1, u + 0.45)); }
   }
   const tone = (f0, f1, dur, type, vol, t) => {   // la misma envolvente que tone() en 01-core.js
@@ -43,7 +43,7 @@ const RENDER = async ({ plan, secs, sr, wav, sfx, amb, music = true }) => {
     for (let i = 0, o = 44; i < n; i++, o += 4) { dv.setInt16(o, Math.max(-1, Math.min(1, L[i])) * 32767, true); dv.setInt16(o + 2, Math.max(-1, Math.min(1, R[i])) * 32767, true); }
     const u8 = new Uint8Array(ab); let s = ''; for (let i = 0; i < u8.length; i += 0x8000) s += String.fromCharCode.apply(null, u8.subarray(i, i + 0x8000)); b64 = btoa(s);
   }
-  return { peak, rms: Math.sqrt(sum / cnt), quiet, nan, steps: M.steps, calls: M.amb.calls, chirps: M.amb.chirps, hoots: M.amb.hoots, runHits: M.runHits, drums: M.drumHits || 0, b64 };
+  return { peak, rms: Math.sqrt(sum / cnt), quiet, nan, steps: M.steps, calls: M.amb.calls, chirps: M.amb.chirps, hoots: M.amb.hoots, drips: M.amb.drips, runHits: M.runHits, drums: M.drumHits || 0, b64 };
 };
 
 module.exports = {
@@ -155,6 +155,10 @@ module.exports = {
     T.check('los pájaros del bosque sin fin: seguido y bajito', brd.calls >= 8 && brd.peak < 0.06, brd.calls + ' cantos, pico ' + brd.peak.toFixed(3));
     const ngt = await E(RENDER, { plan: [[0, 'bosque', { night: 1, near: 0.2 }]], secs: 30, sr: 22050, amb: true });
     T.check('de noche en el bosque: suena más suave, sin saturar, con grillos', !ngt.nan && ngt.rms > 0.003 && ngt.rms < 0.02 && ngt.peak < 0.15 && ngt.chirps > 25 && ngt.calls === 0, JSON.stringify({ ...ngt, b64: undefined }));
+    const rn = await E(RENDER, { plan: [[0, 'jardin', { rain: 1 }]], secs: 12, sr: 22050, amb: true, music: false });
+    const rr = await E(RENDER, { plan: [[0, 'casa', { rain: 1, roof: true }]], secs: 12, sr: 22050, amb: true, music: false });
+    T.check('la lluvia: un siseo parejo, debajo de la música, sin pájaros (RMS ' + rn.rms.toFixed(4) + ')', !rn.nan && rn.rms > 0.003 && rn.rms < 0.012 && rn.peak < 0.06 && rn.calls === 0, JSON.stringify({ ...rn, b64: undefined }));
+    T.check('adentro de la casa se oye apagada, con gotas en el techo (RMS ' + rr.rms.toFixed(4) + ')', !rr.nan && rr.rms < rn.rms * 0.8 && rr.drips > 10 && rr.peak < 0.06, JSON.stringify({ ...rr, b64: undefined }));
     const bnd = await E(RENDER, { plan: [[0, 'pueblo', { near: 1, band: 1 }]], secs: 30, sr: 22050 });
     T.check('la banda del kiosco (trompeta y tambor: bum, cha, cha): suena, sin saturar', !bnd.nan && bnd.drums > 50 && bnd.peak < 0.15 && bnd.rms > 0.005 && bnd.rms < 0.022, JSON.stringify({ ...bnd, b64: undefined }));
     const nob = await E(RENDER, { plan: [[0, 'pueblo', { near: 1 }]], secs: 6, sr: 22050 });
@@ -167,6 +171,7 @@ module.exports = {
         bosque: { plan: [[0, 'bosque', { near: 0.15 }], [50, 'bosque', { near: 0.8 }]], secs: 101 }, montes: { plan: [[0, 'montes', { alt: 0.1 }], [32, 'montes', { alt: 0.95 }]], secs: 64 },
         pueblo: { plan: [[0, 'pueblo', { near: 1 }]], secs: 58 }, sinfin: { plan: [[0, 'sinfin']], secs: 90 }, cuna: { plan: [[0, 'cuna']], secs: 69 },
         reacciones: { plan: [[0, 'jardin'], [8, 'jardin', { run: true }], [16, 'jardin'], [22, 'jardin', { low: true }], [32, 'jardin'], [36, 'montes', { fanfare: true, tune: Math.pow(2, 2 / 12) }], [46, 'cuna']], secs: 72 },
+        lluvia: { plan: [[0, 'jardin'], [8, 'jardin', { rain: 1 }], [26, 'casa', { rain: 1, roof: true }], [40, 'jardin', { rain: 0.3 }]], secs: 50 },
         banda: { plan: [[0, 'pueblo', { near: 1, band: 1 }]], secs: 40 },
         noche: { plan: [[0, 'jardin'], [10, 'jardin', { night: 0.5 }], [18, 'jardin', { night: 1 }], [34, 'bosque', { night: 1, near: 0.3 }], [48, 'bosque', { night: 1, near: 0.3, owl: true }], [62, 'sinfin', { night: 1 }]], secs: 84 },
         'recorrido-norte': { plan: [[0, 'camino'], [15, 'bosque', { near: 0.1 }], [27, 'bosque', { near: 1 }], [40, 'montes', { alt: 0.3 }], [55, 'montes', { alt: 0.95 }], [70, 'pueblo', { near: 1 }], [90, 'sinfin']], secs: 110 } };

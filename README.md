@@ -62,7 +62,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay diez grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia` y `caminata`. Todas abren el juego a mediodía (`?hora=12`), salvo las que revisan la hora. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
+Hay once grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima` y `caminata`. Todas abren el juego a mediodía (`?hora=12`), salvo las que revisan la hora. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas.
 
 ## Controles
 
@@ -106,6 +106,15 @@ Un día dura 24 minutos: una hora del juego es un minuto. Amanece a las 5 y oscu
 - El diario dice qué día es («Día 3»): sube cada mañana, a las 5.
 - El reloj es analógico: la manecilla larga da una vuelta por minuto. De noche la carátula se pone azul y sale la luna.
 - Para probar una hora: `?hora=21` o `?hora=21:30` en la dirección (por ejemplo `https://tamachin.matteo.games/?hora=21`). Desde ahí sigue corriendo y se guarda.
+
+## El tiempo
+
+Cada día tiene su tiempo, según su número (al recargar es el mismo): 1 de cada 5 días llueve, en un chubasco de 2 a 4 horas entre las 9 de la mañana y las 9 de la noche; 1 de cada 4 está nublado; los demás hace sol. El primer día siempre hace sol.
+
+- Nublado: el cielo y la luz se ponen grises, las sombras se suavizan, la neblina se acerca y de noche no se ven estrellas ni luna.
+- Con lluvia caen gotas alrededor de Tamachin (adentro de la casa no), se prenden las ventanas, se forman charcos en las calles y los caminos que se secan despacio cuando deja de llover, se oye la lluvia (apagada y con gotas en el techo adentro de la casa) y se callan los pájaros. Las mariposas y las luciérnagas se esconden.
+- Arriba de los cerros (más de 180 m) no llueve.
+- Para probar: `?clima=lluvia`, `?clima=nublado` o `?clima=sol` en la dirección (no se guarda).
 
 ## Música
 
