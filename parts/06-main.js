@@ -1557,6 +1557,18 @@ document.addEventListener('visibilitychange', () => {
   if (document.hidden) save();
   const c = snd.ctx; if (c && snd.on) (document.hidden ? c.suspend() : c.resume()).catch(() => {});   // la música se detiene con la pestaña oculta y sigue donde iba
 });
+// Sin internet y como app instalada (manifest.webmanifest): sw.js guarda una copia del juego. Al terminar de cargar, la página le
+// dice qué usó de afuera (Three.js, las fuentes): en la primera visita todo eso cargó antes de que él existiera.
+function offline() {
+  try {
+    const sw = navigator.serviceWorker; if (!sw || !window.isSecureContext) return;
+    const go = () => sw.register('sw.js').then(() => sw.ready).then((reg) => {
+      if (reg && reg.active) reg.active.postMessage({ type: 'loaded', urls: performance.getEntriesByType('resource').map((r) => r.name) });
+    }).catch(() => {});
+    if (document.readyState === 'complete') go(); else window.addEventListener('load', go, { once: true });
+  } catch (e) { /* sin copia: el juego funciona igual con red */ }
+}
+offline();
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
 window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, advance, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };

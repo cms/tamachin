@@ -13,7 +13,7 @@ python3 -m http.server 8000
 # http://localhost:8000
 ```
 
-Necesita conexión a internet para cargar Three.js y las fuentes de Google Fonts.
+La primera vez necesita internet para cargar Three.js y las fuentes de Google Fonts; después abre también sin red (con `http://localhost` o `https`, no abriendo el archivo directo: ver [Como app](#como-app-y-sin-internet)).
 
 ## Estructura
 
@@ -28,6 +28,9 @@ parts/
   05-norte.js     Montañas, Valle Alegre y el bosque sin fin (terreno, límites, vegetación por sectores y por casillas)
   06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
 build.sh          Concatena parts/ en game.js
+manifest.webmanifest  La app instalable: nombre, colores, íconos
+sw.js             Service worker: la copia para jugar sin internet
+iconos/           Íconos de la app (PNG) y de dónde salen (icono.svg, hacer.cjs)
 tests/            Pruebas en Chrome sin interfaz (npm test)
 ```
 
@@ -51,6 +54,26 @@ git config core.hooksPath .githooks
 
 Agrega `?stats` a la dirección (por ejemplo `https://tamachin.matteo.games/?stats`) y aparece un recuadro con los cuadros por segundo, el cuadro más lento, cuántos tardaron más de 50 ms (ahí el juego va en cámara lenta), las llamadas de dibujo y los triángulos. Sirve para probar en un teléfono de verdad.
 
+## Como app y sin internet
+
+Tamachin se puede instalar como app, con su ícono y sin las barras del navegador:
+
+- **iPhone o iPad** (Safari): botón Compartir → «Agregar a pantalla de inicio».
+- **Android** (Chrome): menú ⋮ → «Instalar app» (o «Agregar a la pantalla principal»).
+- **Computadora** (Chrome o Edge): el ícono de instalar al final de la barra de direcciones.
+
+Después de la primera visita abre también sin internet, instalado o en el navegador. Lo hace `sw.js`, un service worker:
+
+- **En línea, siempre lo último.** La página y `game.js` se piden primero a la red, así que al recargar después de publicar ya está lo nuevo.
+- **Sin red, la copia.** Se usa la copia guardada sin red, o si la página tarda más de 4 s. En ese caso todo lo de esa página sale de la copia, para no mezclar una página vieja con un `game.js` nuevo. La copia de la página, `game.js` y el manifiesto se guarda completa y de una vez, y se pone al día cada vez que el juego termina de cargar.
+- **Three.js y las fuentes** se guardan la primera vez y después salen de la copia.
+
+En iPhone la app instalada guarda su propia partida, aparte de la de Safari: al instalarla Tamachin empieza de nuevo. Una app abierta sigue con la versión que tenía; para ver lo recién publicado hay que cerrarla (deslizarla hacia arriba en el selector de apps) y volver a abrirla.
+
+En iPhone el juego llega hasta las orillas de la pantalla (`viewport-fit=cover`, barra de estado translúcida) y la barra de arriba, la palanca, los botones y los paneles se apartan de la muesca y de la rayita de abajo (`env(safe-area-inset-*)`, a través de las variables `--sa-*` de `index.html`).
+
+Los íconos salen de `iconos/icono.svg`; si lo cambias, `node iconos/hacer.cjs` vuelve a armar los PNG con el Chrome instalado. `wrangler deploy` publica el manifiesto, `sw.js` y los PNG junto con el juego.
+
 ## Pruebas
 
 Corren el juego en el Chrome instalado, sin interfaz, y lo juegan: caminan con la palanca, abren el refri, cumplen encargos, giran la cámara con el mouse y con los dedos, y revisan que nada tape a Tamachin. El juego en sí no necesita instalar nada; las pruebas sí:
@@ -62,7 +85,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay trece grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos`, `trafico` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
+Hay catorce grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos`, `trafico`, `pwa` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
 
 ## Controles
 

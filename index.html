@@ -2,11 +2,18 @@
 <html lang="es">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no, viewport-fit=cover">
 <title>Tamachin</title>
 <meta name="description" content="Tamachin es una criatura de ojos grandes que puedes personalizar y pasear por su casa, la ciudad, el parque y el bosque. Juego 3D en el navegador.">
 <link rel="canonical" href="https://tamachin.matteo.games/">
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Ccircle cx='32' cy='34' r='27' fill='%23ffc93c' stroke='%23231d3b' stroke-width='4'/%3E%3Ccircle cx='22' cy='30' r='9.5' fill='%23fff' stroke='%23231d3b' stroke-width='3'/%3E%3Ccircle cx='42' cy='30' r='9.5' fill='%23fff' stroke='%23231d3b' stroke-width='3'/%3E%3Ccircle cx='24' cy='32' r='4.5' fill='%23231d3b'/%3E%3Ccircle cx='40' cy='32' r='4.5' fill='%23231d3b'/%3E%3Cpath d='M26 45q6 5 12 0' fill='none' stroke='%23231d3b' stroke-width='3' stroke-linecap='round'/%3E%3C/svg%3E">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#d6f0ff">
+<link rel="apple-touch-icon" href="iconos/apple-touch-icon.png">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Tamachin">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta property="og:type" content="website">
 <meta property="og:site_name" content="Tamachin">
 <meta property="og:title" content="Tamachin">
@@ -18,9 +25,9 @@
 <meta property="og:image:height" content="630">
 <meta property="og:image:alt" content="Tamachin y seis vecinos de distintas formas y colores saludan frente a una casa de techo rojo.">
 <meta name="twitter:card" content="summary_large_image">
-<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.googleapis.com" crossorigin>
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Bagel+Fat+One&family=Nunito:wght@700;800;900&display=swap" rel="stylesheet" crossorigin>
 <style>
 :root{
   /* Layout: full-bleed 3D stage; sticker-style HUD pinned to the corners;
@@ -34,11 +41,19 @@
   --font-display:'Bagel Fat One','Arial Rounded MT Bold','Trebuchet MS',system-ui,sans-serif;
   --font-body:'Nunito','Trebuchet MS',system-ui,sans-serif;
   color-scheme:light;
+  /* lo que tapan la muesca, la barra de estado y la rayita de abajo (iPhone, sobre todo como app instalada). Las pruebas los cambian
+     para simular un iPhone: úsalos siempre a través de estas variables, no con env() directo */
+  --sa-t:env(safe-area-inset-top,0px);
+  --sa-r:env(safe-area-inset-right,0px);
+  --sa-b:env(safe-area-inset-bottom,0px);
+  --sa-l:env(safe-area-inset-left,0px);
 }
 *{box-sizing:border-box}
 html,body{height:100%;margin:0;overflow:hidden;background:var(--sky);color:var(--ink);font-family:var(--font-body);
   -webkit-user-select:none;user-select:none;-webkit-tap-highlight-color:transparent;overscroll-behavior:none}
 #app{position:fixed;inset:0;overflow:hidden;background:var(--sky)}
+#app::after{content:"";position:absolute;left:0;right:0;top:0;height:var(--sa-t);pointer-events:none;
+  background:linear-gradient(rgba(35,29,59,.42),rgba(35,29,59,0))}   /* como app en iPhone: la hora y la batería (en blanco) se leen sobre el cielo claro */
 #c{position:absolute;inset:0;width:100%;height:100%;display:block;touch-action:none;outline:none}
 
 button{font-family:inherit;color:inherit}
@@ -50,7 +65,7 @@ button{font-family:inherit;color:inherit}
 .btn:focus-visible,.opt:focus-visible,.sw:focus-visible{outline:3px solid var(--rose);outline-offset:2px}
 
 .top{position:absolute;left:0;right:0;top:0;display:flex;justify-content:space-between;align-items:flex-start;
-  gap:10px 12px;padding:12px 16px;pointer-events:none;flex-wrap:wrap}
+  gap:10px 12px;padding:calc(12px + var(--sa-t)) calc(16px + var(--sa-r)) 12px calc(16px + var(--sa-l));pointer-events:none;flex-wrap:wrap}
 .top>*{pointer-events:auto}
 .brand{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
 .brand h1{font-family:var(--font-display);font-weight:400;font-size:clamp(28px,4.4vw,42px);line-height:1;margin:0;
@@ -85,7 +100,7 @@ button{font-family:inherit;color:inherit}
 @keyframes needlow{50%{background:#ffd0d0}}
 @keyframes needshake{25%{transform:rotate(-14deg)}75%{transform:rotate(14deg)}}
 
-#panel,#diary{position:absolute;right:16px;top:74px;bottom:16px;width:332px;display:flex;flex-direction:column;background:var(--paper);
+#panel,#diary{position:absolute;right:calc(16px + var(--sa-r));top:calc(74px + var(--sa-t));bottom:calc(16px + var(--sa-b));width:332px;display:flex;flex-direction:column;background:var(--paper);
   border:3px solid var(--ink);border-radius:22px;box-shadow:0 6px 0 var(--ink);padding:14px 0 14px}
 #panel[hidden],#diary[hidden]{display:none}
 .nrow{display:grid;grid-template-columns:22px 1fr auto;gap:5px 8px;align-items:center;margin-bottom:12px}
@@ -129,7 +144,7 @@ button{font-family:inherit;color:inherit}
 .pick input{width:44px;height:32px;border:3px solid var(--ink);border-radius:10px;padding:0;background:#fff;cursor:pointer}
 .hint{font-size:13px;font-weight:700;line-height:1.4;margin:12px 0 0;opacity:.8}
 
-.prompt{position:absolute;left:50%;bottom:26px;transform:translateX(-50%);display:flex;align-items:center;gap:8px;
+.prompt{position:absolute;left:50%;bottom:calc(26px + var(--sa-b));transform:translateX(-50%);display:flex;align-items:center;gap:8px;
   background:var(--paper);border:3px solid var(--ink);border-radius:999px;box-shadow:0 4px 0 var(--ink);
   padding:7px 14px 7px 8px;font-weight:800;font-size:15px;white-space:nowrap;pointer-events:none}
 .prompt[hidden]{display:none}
@@ -140,17 +155,17 @@ kbd{display:inline-block;min-width:26px;text-align:center;font-family:var(--font
   color:var(--paper);font-weight:800;font-size:14.5px;line-height:1.35;padding:10px 16px;border-radius:16px;text-align:center;
   opacity:0;pointer-events:none;transition:opacity .2s,transform .2s}
 #toast.on{opacity:1;transform:translate(-50%,0)}
-#stats{position:absolute;right:8px;top:calc(var(--hud-h,62px) + 6px);background:rgba(35,29,59,.85);color:#fff;border-radius:8px;
+#stats{position:absolute;right:calc(8px + var(--sa-r));top:calc(var(--hud-h,62px) + 6px);background:rgba(35,29,59,.85);color:#fff;border-radius:8px;
   font:700 11.5px/1.45 ui-monospace,Menlo,Consolas,monospace;padding:5px 8px;white-space:pre;pointer-events:none}
 
-#help{position:absolute;left:16px;bottom:16px;max-width:340px;background:var(--paper);border:3px solid var(--ink);
+#help{position:absolute;left:calc(16px + var(--sa-l));bottom:calc(16px + var(--sa-b));max-width:340px;background:var(--paper);border:3px solid var(--ink);
   border-radius:18px;box-shadow:0 5px 0 var(--ink);padding:12px 14px;font-size:13.5px;font-weight:700;line-height:1.75}
 #help[hidden]{display:none}
 #help p{margin:0 0 8px}
 #help .t{display:none}
 body.touch #help .k{display:none}
 body.touch #help .t{display:block}
-body.touch #help{bottom:auto;top:calc(var(--hud-h,62px) + 10px);left:12px;right:12px;max-width:none;line-height:1.45}
+body.touch #help{bottom:auto;top:calc(var(--hud-h,62px) + 10px);left:calc(12px + var(--sa-l));right:calc(12px + var(--sa-r));max-width:none;line-height:1.45}
 
 #bubbles{position:absolute;inset:0;pointer-events:none;overflow:hidden}
 .bubble{position:absolute;left:0;top:0;max-width:230px;width:max-content;padding:7px 12px;background:var(--paper);
@@ -164,11 +179,11 @@ body.touch #help{bottom:auto;top:calc(var(--hud-h,62px) + 10px);left:12px;right:
 body.touch #touch{display:block}
 body.touch .prompt{display:none}
 body.touch #bZoom{display:none}
-#joy{position:absolute;left:18px;bottom:22px;width:132px;height:132px;border-radius:50%;background:rgba(255,253,246,.5);
+#joy{position:absolute;left:calc(18px + var(--sa-l));bottom:calc(22px + var(--sa-b));width:132px;height:132px;border-radius:50%;background:rgba(255,253,246,.5);
   border:3px solid var(--ink);touch-action:none}
 #knob{position:absolute;left:50%;top:50%;width:58px;height:58px;border-radius:50%;background:var(--sun);
   border:3px solid var(--ink);box-shadow:0 4px 0 var(--ink);transform:translate(-50%,-50%);pointer-events:none}
-.tbtns{position:absolute;right:16px;bottom:24px;display:flex;flex-direction:column;align-items:flex-end;gap:14px}
+.tbtns{position:absolute;right:calc(16px + var(--sa-r));bottom:calc(24px + var(--sa-b));display:flex;flex-direction:column;align-items:flex-end;gap:14px}
 .tbtns .btn{touch-action:none;font-size:15px}
 #tJump{width:84px;height:84px;border-radius:50%;background:var(--sun);padding:0;font-size:16px}
 #tAct{background:var(--mint);padding:13px 18px;max-width:46vw;overflow:hidden;text-overflow:ellipsis}
@@ -176,16 +191,16 @@ body.touch #bZoom{display:none}
 body.custom #touch,body.custom #help,body.custom .prompt{display:none}
 body.diary #touch,body.diary #help{display:none}
 
-#fail{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:24px;background:var(--sky)}
+#fail{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;padding:calc(24px + var(--sa-t)) calc(24px + var(--sa-r)) calc(24px + var(--sa-b)) calc(24px + var(--sa-l));background:var(--sky)}
 #fail[hidden]{display:none}
 #fail div{max-width:420px;background:var(--paper);border:3px solid var(--ink);border-radius:20px;box-shadow:0 6px 0 var(--ink);padding:20px}
 #fail h2{font-family:var(--font-display);font-weight:400;margin:0 0 8px}
 #fail p{margin:0;font-weight:700;line-height:1.5}
 
 @media (max-width:760px){
-  .top{padding:10px 12px}
+  .top{padding:calc(10px + var(--sa-t)) calc(12px + var(--sa-r)) 10px calc(12px + var(--sa-l))}
   .btn{font-size:13px;padding:8px 11px}
-  #panel,#diary{left:8px;right:8px;top:auto;bottom:8px;width:auto;max-height:47%}
+  #panel,#diary{left:calc(8px + var(--sa-l));right:calc(8px + var(--sa-r));top:auto;bottom:calc(8px + var(--sa-b));width:auto;max-height:47%}
   .needs{gap:6px;padding:3px 8px 3px 5px;flex:0 1 auto;min-width:0}
   .need{min-width:0}
   .need i{width:26px;flex:0 1 26px;min-width:12px}   /* en pantallas angostas las barras se encogen: todo cabe en una fila */

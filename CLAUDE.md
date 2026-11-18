@@ -108,6 +108,22 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 
 `.top` tiene dos partes: `.brand` (el nombre y el lugar) y `.hud` (medidores, reloj y `.tools`: Diario, Acercar, Sonido y Personalizar). El diario se abre con su botón (`bDiary`) y también tocando los medidores (`bNeeds`); `toggleDiary` pone `aria-expanded` en los dos, y un botón de `.tools` con `aria-expanded="true"` se ve hundido. Los botones de `.tools` llevan un ícono y su texto en `.lab`: cambia el texto con `boton.querySelector('.lab').textContent`, no con `textContent` del botón (borraría el ícono). Hasta 760 px de ancho (`ICONS_ONLY` en `06-main.js` usa la misma medida que el CSS) son íconos redondos de 44 px junto al reloj y el texto queda solo para lectores de pantalla; el de sonido cambia de ícono con `data-mode` y al tocarlo avisa en qué quedó. Para que todo quepa en una fila, las barras de los medidores se encogen (hasta 12 px) y abajo de 400 px los íconos de los medidores se achican (las barras quedan en 18 px a 360) y se esconde Acercar (solo aparece con mouse; la rueda acerca). `arranque` lo revisa a 390 y 360 px.
 
+## App instalable y sin internet (`manifest.webmanifest`, `sw.js`)
+
+- **El service worker** (`sw.js`, lo registra `offline()` al final de `06-main.js`, después de `load`) solo toca tres cosas y deja pasar todo lo demás. Si algo suyo falla, la petición va a la red.
+  - **La página** (`/` con cualquier `?…`, o `/index.html`) va primero a la red. Sin red, o si tarda más de `NAV_WAIT` (4 s), sale la copia `./`. Entonces esa página queda en `fromCopy` y su `game.js` también sale de la copia: una página vieja con un `game.js` nuevo se rompería.
+  - **`game.js` y el manifiesto** (`SHELL`) van primero a la red y, sin red, salen de la copia.
+  - **Three.js y los archivos de las fuentes** (`FIXED`) salen de la copia, y solo la primera vez de la red. La hoja de las fuentes (`FONT_CSS`) sale de la copia y se renueva por detrás. Se piden con CORS: una respuesta opaca no se puede revisar.
+- **La copia se guarda completa y de una vez** (`saveShell`), nunca un archivo suelto. Pasa al instalarse y cada vez que una página termina de cargar: le manda `{ type: 'loaded', urls }` con lo que usó de afuera (en la primera visita eso cargó antes de que existiera el service worker). Usa `cache: 'no-cache'`, así que casi siempre el servidor contesta "no cambió". La hoja de Google Fonts lleva `crossorigin`: sin eso, Chrome no anota en `performance` los archivos de fuente que pide, la página no puede decir cuáles usó y sin red salen otras fuentes.
+- **Si el juego necesita un archivo nuevo al abrir** (otro script, una imagen o un sonido), agrégalo a `SHELL` y al comando de `wrangler.jsonc`, que solo publica lo que copia a `dist/`. `pwa` revisa que se publique lo que nombran el manifiesto y `<head>`. Sube el número de `CACHE` solo si cambia la forma de guardar: al activarse borra las copias con otro nombre.
+- **Al publicar, en línea llega lo nuevo al recargar.** No hace falta tocar `sw.js`. Si `sw.js` cambia, el navegador lo nota en la siguiente visita y el nuevo toma el control enseguida (`skipWaiting`, `clients.claim`).
+- **Muesca y rayita de iPhone.** Con `viewport-fit=cover` y la barra de estado translúcida, el juego llega a las orillas. Lo que va pegado a una orilla suma su margen con `--sa-t`, `--sa-r`, `--sa-b` y `--sa-l` (en `:root`, son `env(safe-area-inset-*)`). Usa siempre las variables, nunca `env()` directo: así `pwa` las cambia para simular un iPhone de pie (47 y 34 px) y acostado (47 a los lados y 21 abajo). `#app::after` oscurece un poco el alto de la barra de estado, porque la hora y la batería van en blanco.
+- **Íconos.** Salen de `iconos/icono.svg`, y `node iconos/hacer.cjs` arma los PNG:
+  - `icono-*` («any»): cuadro redondeado;
+  - `mascara-*` («maskable»): a todo el cuadro, con la cara dentro del círculo central del 80 %;
+  - `apple-touch-icon.png`: 180 px, sin transparencia.
+  El ícono de la pestaña sigue siendo el SVG dentro de `index.html`.
+
 ## Capas del panel
 
 El área con scroll del panel (`.pbody`) es una caja interior sin esquinas redondeadas a propósito: un contenedor con `overflow:auto` y `border-radius` produjo un rectángulo negro sobre el canvas en pruebas con Chrome sin interfaz.
@@ -123,6 +139,7 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 - El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
 - Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.
 - Para no esperar en tiempo real: `window.__tamachin.advance(seg)` corre el juego `seg` segundos de golpe (`step(dt)` repetido, sin dibujar, y dibuja una vez al final para que las matrices queden al día). `vista` lo usa en cada lugar (de 7 minutos a 5 s). Lo que depende del reloj del audio o de eventos reales (la palanca con `setInterval`, la música en vivo) no se puede adelantar así.
+- `openGame` bloquea el service worker (`serviceWorkers: 'block'`). Si no, al recargar sería él quien sirve `game.js` y no pasaría por la ruta de `expose`. Con `sw: true` lo deja instalarse y pone las rutas en el contexto. `lib.cjs` pone `PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1`: sin eso, lo que pide el service worker no pasa por `ctx.route` y `setOffline` no lo corta. `before(page, ctx)` corre antes de abrir la página, para agregar rutas. Las rutas de Three.js y de las fuentes contestan aunque esté `setOffline`: para probar sin red de verdad, `pwa` las corta y además apaga la caché del navegador (`Network.setCacheDisabled`, también la de memoria, que guarda las fuentes al recargar).
 - `run.cjs` corre 3 grupos a la vez (`--paralelo=N`) e imprime cada uno al terminar; los que llevan `solo: true` (`cuidados`, `musica`, `caminata`) van solos al final porque con la máquina ocupada su tiempo real se atrasa. Three.js lo sirve `lib.cjs` desde `tests/.cache/` (se baja la primera vez).
 
 ## Rendimiento
@@ -136,4 +153,13 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
 - Cómo suenan la música, los efectos y los pasos (se sintetizan con WebAudio). Los pasos van al ritmo de la animación y la percusión de correr al de la música: corriendo, los dos ritmos no coinciden. Las pruebas miden volumen y tiempo; las notas se revisaron a mano en espectrogramas (`sox archivo.wav -n spectrogram`). La música no se ha medido en un teléfono (la reverberación, el río y el viento corren todo el tiempo).
 - Que en iPhone el interruptor de silencio calle el juego (así suele hacer Safari con WebAudio).
 - Los semáforos de peatones en un teléfono: cómo suenan el pitido del monito verde y el rechinido de las llantas, y cuánto cuestan las cinco llamadas de dibujo de más en la ciudad (dos Points, las franjas, los postes y su sombra).
+- La app instalada en un teléfono de verdad, porque Chrome sin interfaz no tiene muesca y `pwa` la simula. Falta ver:
+  - cómo se lee la barra de estado translúcida sobre el juego, con la sombra de `#app::after`;
+  - que las orillas reales coincidan con la simulación;
+  - que en iPhone abra en modo avión;
+  - que la partida de la app vaya aparte de la de Safari (así lo hace iOS con las apps de la pantalla de inicio);
+  - cómo se instala en Android.
+- Dos cosas de `sw.js` solo se probaron en Chrome:
+  - **`resultingClientId`.** Sin él no se anota `fromCopy`. En un Safari que no lo dé, con red lenta justo después de publicar, la página de la copia podría cargar el `game.js` nuevo.
+  - **Las fuentes en `performance`.** Que con `crossorigin` aparezcan ahí los archivos de fuente. Si Safari no los anota, las fuentes se guardan desde la segunda visita, no desde la primera.
 - Cómo se ve la noche en un teléfono (brillo de pantalla, al aire libre), y cuánto cuestan en uno el farolito (una luz más para cada material) y las luces de noche. `dia` mide que a medianoche la imagen conserve al menos 42 % del brillo de mediodía y Tamachin 60 %.

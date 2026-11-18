@@ -7,6 +7,8 @@ const crypto = require('crypto');
 
 const REPO = path.resolve(__dirname, '..');
 const OUT = path.join(__dirname, 'out');                 // capturas de pantalla (no se versiona)
+// Sin esto, lo que pide el service worker (sw.js) no pasa por `ctx.route` y `setOffline` no lo corta (Playwright 1.56, Chromium)
+process.env.PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS = '1';
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 function playwright() {
@@ -17,7 +19,8 @@ function playwright() {
 
 // Sirve la raíz del repo en un puerto libre de 127.0.0.1.
 function serve() {
-  const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.jpg': 'image/jpeg', '.png': 'image/png', '.json': 'application/json' };
+  const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.jpg': 'image/jpeg', '.png': 'image/png', '.json': 'application/json',
+    '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
     const file = path.join(REPO, rel);
@@ -66,10 +69,13 @@ const DESKTOP = { viewport: { width: 1280, height: 800 } };
 // `init` corre antes de que cargue la página (para preparar localStorage). `hora`: a qué hora empieza (?hora=, por omisión 12, a pleno
 // día, para que todo se vea igual aunque cambie el ciclo); `hora: false` no la pone y manda la partida guardada (al recargar, la
 // dirección se queda igual). `clima`: el tiempo (?clima=, por omisión sol, para que ningún día de lluvia cambie las luces ni esconda
-// mariposas); `clima: false` deja el del día. Devuelve { ctx, page, errors, E }.
+// mariposas); `clima: false` deja el del día. El service worker (sw.js) no se instala, salvo con `sw: true`: si no, al recargar
+// sería él quien sirve game.js y no pasaría por la ruta de `expose`. Con `sw: true` las rutas van en el contexto, para que también
+// pasen por ahí las peticiones del service worker. `before(page, ctx)` corre antes de abrir la página (para agregar rutas).
+// Devuelve { ctx, page, errors, E }.
 async function openGame(T, opts = {}) {
-  const ctx = opts.ctx || await T.browser.newContext(opts.device || DESKTOP);
-  const page = await ctx.newPage();
+  const ctx = opts.ctx || await T.browser.newContext({ ...(opts.device || DESKTOP), serviceWorkers: opts.sw ? 'allow' : 'block' });
+  const page = await ctx.newPage(), R = opts.sw ? ctx : page;
   const errors = [];
   page.on('pageerror', (e) => errors.push('error: ' + e.message));
   page.on('response', (r) => { if (r.status() >= 400) errors.push('http ' + r.status() + ' ' + r.url()); });
@@ -80,11 +86,12 @@ async function openGame(T, opts = {}) {
     const hook = 'window.__dbg = { ' + opts.expose + ' };\nwindow.__tamachin = {';
     if (!src.includes('window.__tamachin = {')) throw new Error('game.js ya no tiene "window.__tamachin = {"');
     const body = src.replace('window.__tamachin = {', hook);
-    await page.route('**/game.js', (r) => r.fulfill({ body, contentType: 'application/javascript' }));
+    await R.route('**/game.js', (r) => r.fulfill({ body, contentType: 'application/javascript' }));
   }
-  const src3 = await three(); await page.route(THREE_URL, (r) => r.fulfill({ body: src3, contentType: 'application/javascript' }));
-  await page.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, fontRoute);
+  const src3 = await three(); await R.route(THREE_URL, (r) => r.fulfill({ body: src3, contentType: 'application/javascript', headers: { 'access-control-allow-origin': '*' } }));
+  await R.route(/^https:\/\/fonts\.(googleapis|gstatic)\.com\//, fontRoute);
   if (opts.init) await page.addInitScript(opts.init);
+  if (opts.before) await opts.before(page, ctx);
   const hq = [opts.hora === false ? '' : 'hora=' + (opts.hora == null ? 12 : opts.hora), opts.clima === false ? '' : 'clima=' + (opts.clima || 'sol')].filter(Boolean).join('&'), q = opts.query || '';
   await page.goto(T.url + (q && hq ? q + '&' + hq : q || (hq ? '?' + hq : '')));
   await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 });
