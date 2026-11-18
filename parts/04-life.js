@@ -32,6 +32,34 @@ lanes.forEach((L, i) => {
   const n = i % 3 === 0 ? 1 : 2;
   for (let k = 0; k < n; k++) addCar(L, -62 + k * 58 + rr(0, 26), (i === 2 || i === 5) && k === 0 ? 'bus' : (i === 0 || i === 7) ? 'taxi' : 'auto', (i === 0 || i === 7) ? '#ffcf33' : (i === 2 || i === 5) && k === 0 ? pick(['#ff8a5c', '#4fc3a1']) : pick(PAINTS));
 });
+// Luces de los autos: de noche (y con lluvia, como las ventanas: day.lamps) se prenden los faros y las calaveras, y los faros alumbran el
+// piso de enfrente. Sin luces de verdad: las mismas bolitas del auto otra vez, un poco más grandes y de luz propia (nightMat), y una mancha
+// que suma luz en el piso. Un InstancedMesh para las de los autos, otro para las del autobús y otro para las manchas; siguen a cada auto
+// (updateCarLights) solo mientras están prendidas.
+const carLights = (() => {
+  const geo = (bus) => {
+    const b = new Batch(), zf = bus ? 4.02 : 2.1, xf = bus ? 0.8 : 0.6, xr = bus ? 0.8 : 0.62, yf = bus ? 0.85 : 0.68, yr = bus ? 0.9 : 0.7; b.ao = false;
+    for (const sx of [-1, 1]) b.sph('#fff4c8', sx * xf, yf, zf, 0.21, 0.16, 0.08).sph('#ff2a1f', sx * xr, yr, -zf, 0.19, 0.14, 0.08);
+    return b.geometry();
+  };
+  const mat = nightMat(0xffffff, 1, { vertexColors: true }), buses = cars.filter((c) => c.half > 3), autos = cars.filter((c) => c.half <= 3);
+  const beamTex = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 8, 2, 32, 22, 44); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.5, 'rgba(255,255,255,.45)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+  const L = { auto: new THREE.InstancedMesh(geo(false), mat, autos.length), bus: new THREE.InstancedMesh(geo(true), mat, buses.length),
+    beam: new THREE.InstancedMesh(new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), nightMat(0xffe7a8, 0.34, { map: beamTex, blending: THREE.AdditiveBlending, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), cars.length) };
+  autos.forEach((c, i) => { c.li = i; c.lm = L.auto; }); buses.forEach((c, i) => { c.li = i; c.lm = L.bus; });
+  for (const k in L) { L[k].frustumCulled = false; L[k].raycast = () => {}; scene.add(L[k]); }
+  return L;
+})();
+const _clm = new THREE.Matrix4(), _clq = new THREE.Quaternion(), _clv = new THREE.Vector3(), _cls = new THREE.Vector3(), _clUp = new THREE.Vector3(0, 1, 0);
+function updateCarLights() {
+  if (day.lamps < 0.01) return;                                     // apagadas: nightMat ni las dibuja
+  cars.forEach((c, i) => {
+    const ry = c.mesh.rotation.y, fx = Math.sin(ry), fz = Math.cos(ry); _clq.setFromAxisAngle(_clUp, ry);
+    c.lm.setMatrixAt(c.li, _clm.compose(c.mesh.position, _clq, _cls.set(1, 1, 1)));
+    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6, 1, 6.5)));   // 6.5 m enfrente
+  });
+  for (const k in carLights) carLights[k].instanceMatrix.needsUpdate = true;
+}
 const carBox = { x0: 0, x1: 0, z0: 0, z1: 0 };
 function carRect(c, pad) {
   const a = c.L.axis === 'x';
@@ -82,6 +110,7 @@ function updateCars(dt, t) {
     c.honkT -= dt;
     if (honk && c.v < 3.5 && c.honkT <= 0) { c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Muévete, porfa!']), 1.4); SFX.honk(); }
   }
+  updateCarLights();
 }
 
 // ───────────────────────── pasos de cebra y semáforos de peatones ─────────────────────────
@@ -111,8 +140,9 @@ function zebraAt(x, z, m) {
   for (const Z of ZEBRAS) { const w = zebraW(Z, x, z); if (w > Z.w0 - m && w < Z.w1 + m && Math.abs(zebraU(Z, x, z)) < RW + 0.3) return Z; }
   return null;
 }
-// Postes sólidos y delgados, en su propia malla sin raycast (no cuentan como estorbo de la cámara en las pruebas). Las luces son dos
-// Points que siempre miran a la cámara, así se leen desde cualquier ángulo: el monito verde caminando y el rojo parado; cada punta muestra uno.
+// Postes sólidos y delgados, en su propia malla sin raycast (no cuentan como estorbo de la cámara en las pruebas). Arriba, una caja con el
+// monito en sus dos caras, que miran a lo largo de su paso, como los de dos caras de la calle de verdad: de frente, o desde la otra punta,
+// se ve el monito; de lado, la caja oscura. Así también se sabe de qué paso es. Las caras tienen luz propia (de noche se ven igual).
 const pedB = new Batch();
 for (const p of PED_SIGNS) { pedB.cyl('#3b4252', p.x, 1.2, p.z, 0.06, 0.08, 2.4, 8); solidCircle(p.x, p.z, 0.14); }
 const pedPosts = pedB.mesh(); pedPosts.raycast = () => {}; scene.add(pedPosts);
@@ -131,31 +161,61 @@ function pedIcon(walk) {
     }
   });
 }
-const PED_Y = 2.72, PED_SIZE = 0.6;   // el disco, arriba del poste (de 2.4 m)
-const pedLit = { walk: fireParts(PED_SIGNS.length, pedIcon(true), THREE.NormalBlending), stop: fireParts(PED_SIGNS.length, pedIcon(false), THREE.NormalBlending) };
-for (const S of [pedLit.walk, pedLit.stop]) { S.pts.renderOrder = 2.5; for (const p of PED_SIGNS) { S.a.position.setXYZ(p.i, p.x, PED_Y, p.z); S.a.size.setX(p.i, PED_SIZE); S.a.tint.setXYZ(p.i, 1, 1, 1); } }
+const PED_Y = 2.72, PED_BOX = [0.46, 0.54, 0.24], PED_SIZE = 0.5;   // la caja, arriba del poste (de 2.4 m): ancho, alto y fondo (a lo largo del paso)
+// Caja y caras se desvanecen si quedan entre la cámara y Tamachin (signFade): un valor por instancia (`aFade`) que multiplica la opacidad.
+function pedFadeMat(mat) {
+  mat.transparent = true;
+  mat.onBeforeCompile = (sh) => {
+    sh.vertexShader = 'attribute float aFade;\nvarying float vFade;\n' + sh.vertexShader.replace('#include <begin_vertex>', '#include <begin_vertex>\nvFade = aFade;');
+    sh.fragmentShader = 'varying float vFade;\n' + sh.fragmentShader.replace('#include <tonemapping_fragment>', 'gl_FragColor.a *= vFade;\n#include <tonemapping_fragment>');
+  };
+  mat.customProgramCacheKey = () => 'monito'; return mat;
+}
+// box: una por poste; walk y stop: dos caras por poste (2·i al frente, 2·i + 1 atrás). fade: los `aFade` de cada una.
+const pedHeads = (() => {
+  const n = PED_SIGNS.length, m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), v = new THREE.Vector3(), one = new THREE.Vector3(1, 1, 1), up = new THREE.Vector3(0, 1, 0), white = new THREE.Color(1, 1, 1);
+  const fade = (geo, count) => { const a = new THREE.InstancedBufferAttribute(new Float32Array(count).fill(1), 1); a.setUsage(THREE.DynamicDrawUsage); geo.setAttribute('aFade', a); return a; };
+  const boxGeo = new THREE.BoxGeometry(...PED_BOX), walkGeo = new THREE.PlaneGeometry(0.42, 0.42), stopGeo = walkGeo.clone();
+  const F = { box: fade(boxGeo, n), walk: fade(walkGeo, 2 * n), stop: fade(stopGeo, 2 * n) };
+  const box = new THREE.InstancedMesh(boxGeo, pedFadeMat(new THREE.MeshLambertMaterial({ color: 0x2a2840 })), n);
+  const face = (geo, walk) => new THREE.InstancedMesh(geo, pedFadeMat(new THREE.MeshBasicMaterial({ map: pedIcon(walk), depthWrite: false, polygonOffset: true, polygonOffsetFactor: -2, polygonOffsetUnits: -2 })), 2 * n);
+  const walk = face(walkGeo, true), stop = face(stopGeo, false);
+  for (const p of PED_SIGNS) {
+    const ry = p.Z.along === 'z' ? 0 : Math.PI / 2, d = PED_BOX[2] / 2 + 0.004;
+    box.setMatrixAt(p.i, m4.compose(v.set(p.x, PED_Y, p.z), q.setFromAxisAngle(up, ry), one));
+    for (const k of [0, 1]) {
+      const a = ry + k * Math.PI; m4.compose(v.set(p.x + Math.sin(a) * d, PED_Y, p.z + Math.cos(a) * d), q.setFromAxisAngle(up, a), one);
+      walk.setMatrixAt(2 * p.i + k, m4); stop.setMatrixAt(2 * p.i + k, m4); walk.setColorAt(2 * p.i + k, white);
+    }
+  }
+  box.castShadow = true; box.receiveShadow = true; box.renderOrder = 2.4; walk.renderOrder = stop.renderOrder = 2.5;   // la caja, antes que sus caras
+  for (const m of [box, walk, stop]) { m.frustumCulled = false; m.raycast = () => {}; scene.add(m); }
+  return { box, walk, stop, fade: F };
+})();
 // después del halo del farolito y de la fogata (si no, de noche un brillo aditivo pintaba encima del disco), antes que la lluvia (3)
-// Un disco que queda entre la cámara y Tamachin lo taparía: se desvanece. d es la distancia del disco a la línea
-// cámara→Tamachin; el cono de su cuerpo mide 0.65·t ahí (t: qué tan cerca de él está el disco, de 0 en la cámara a 1 en él).
+// Una caja que queda entre la cámara y Tamachin lo taparía: se desvanece. d es la distancia de la caja a la línea
+// cámara→Tamachin; el cono de su cuerpo mide 0.65·t ahí (t: qué tan cerca de él está la caja, de 0 en la cámara a 1 en él).
 function signFade(p, P) {
   const c = camera.position, dx = P.pos.x - c.x, dy = P.pos.y + 0.75 * P.T.scale - c.y, dz = P.pos.z - c.z, sx = p.x - c.x, sy = PED_Y - c.y, sz = p.z - c.z;
   const t = (sx * dx + sy * dy + sz * dz) / (dx * dx + dy * dy + dz * dz); if (t <= 0 || t >= 1) return 1;
   const d = Math.hypot(sx - t * dx, sy - t * dy, sz - t * dz), touch = PED_SIZE / 2 + 0.65 * t;
   return clamp((d - touch + 0.3) / 0.5, 0.15, 1);
 }
+const _pk = new THREE.Color();
 function updatePedSigns(t) {
-  const P = player, on = P.pos.z > -70, blink = (t * 2.5) % 1 < 0.6; let chirp = false;
-  pedLit.walk.pts.visible = pedLit.stop.pts.visible = on;
+  const P = player, H = pedHeads, on = P.pos.z > -70, blink = (t * 2.5) % 1 < 0.6; let chirp = false;
+  H.box.visible = H.walk.visible = H.stop.visible = on;
   for (const Z of ZEBRAS) {
     const s = pedState(Z, t), mid = (Z.w0 + Z.w1) / 2;
     if (s === 'walk' && Z.state === 'stop' && on && [-1, 1].some((e) => Math.hypot(P.pos.x - (Z.along === 'z' ? mid : Z.c + e * (RW + 0.8)), P.pos.z - (Z.along === 'z' ? Z.c + e * (RW + 0.8) : mid)) < 2.5)) chirp = true;   // esperando en una de sus bocas
     Z.state = s; if (!on) continue;
     const k = s === 'flash' && !blink ? 0.25 : 1;                    // parpadeando: se apaga a ratos
     for (const p of Z.signs) {
-      const f = signFade(p, P); pedLit.walk.a.alpha.setX(p.i, s === 'stop' ? 0 : f); pedLit.walk.a.tint.setXYZ(p.i, k, k, k); pedLit.stop.a.alpha.setX(p.i, s === 'stop' ? f : 0);
+      const f = signFade(p, P); H.fade.box.setX(p.i, f);
+      for (const j of [2 * p.i, 2 * p.i + 1]) { H.fade.walk.setX(j, s === 'stop' ? 0 : f); H.fade.stop.setX(j, s === 'stop' ? f : 0); H.walk.setColorAt(j, _pk.setRGB(k, k, k)); }
     }
   }
-  if (on) for (const S of [pedLit.walk, pedLit.stop]) { S.a.alpha.needsUpdate = true; S.a.tint.needsUpdate = true; }
+  if (on) { for (const a of [H.fade.box, H.fade.walk, H.fade.stop]) a.needsUpdate = true; H.walk.instanceColor.needsUpdate = true; }
   if (chirp) SFX.walkSign();
 }
 

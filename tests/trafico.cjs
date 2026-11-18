@@ -3,7 +3,7 @@
 // sola punta y uno por esquina; cruzar con el monito verde da diversión. Todo con advance(): no depende del tiempo real.
 const { openGame, sleep } = require('./lib.cjs');
 
-const EXPOSE = 'ZEBRAS, PED_SIGNS, pedState, lightState, cars, updateCars, carRect, traffic, keys, player, needs, needGate, circles, boxes, RW, screech, pedLit';
+const EXPOSE = 'ZEBRAS, PED_SIGNS, pedState, lightState, cars, updateCars, carRect, traffic, keys, player, needs, needGate, circles, boxes, RW, screech, pedHeads, carLights, day';
 
 module.exports = {
   titulo: 'tráfico: semáforos de peatones, los autos frenan y pitan sin atropellar, cruzar con el monito verde',
@@ -63,19 +63,30 @@ module.exports = {
     // las luces dicen lo mismo que el semáforo
     await E(() => { window.__tamachin.go(18.3, 30.5); window.__tamachin.advance(0.2); });
     const lit = await E(() => {
-      const D = window.__dbg, wA = D.pedLit.walk.a.alpha, sA = D.pedLit.stop.a.alpha, bad = [];
-      for (const p of D.PED_SIGNS) {
+      const D = window.__dbg, wA = D.pedHeads.fade.walk, sA = D.pedHeads.fade.stop, bad = [];
+      for (const p of D.PED_SIGNS) for (const j of [2 * p.i, 2 * p.i + 1]) {
         const s = p.Z.state;
-        if ((wA.getX(p.i) > 0) !== (s !== 'stop') || (sA.getX(p.i) > 0) !== (s === 'stop')) bad.push(p.i + ':' + s);
+        if ((wA.getX(j) > 0) !== (s !== 'stop') || (sA.getX(j) > 0) !== (s === 'stop')) bad.push(j + ':' + s);
       }
       return { bad, states: D.ZEBRAS.map((Z) => Z.state[0]).join('') };
     });
-    T.check('cada poste muestra el monito de su paso', !lit.bad.length && /s/.test(lit.states), JSON.stringify(lit));
+    T.check('cada poste muestra el monito de su paso, en sus dos caras', !lit.bad.length && /s/.test(lit.states), JSON.stringify(lit));
+    // la caja tiene lado: sus dos caras miran a lo largo de su paso, una hacia cada punta (no hacia la cámara)
+    const faces = await E(() => {
+      const D = window.__dbg, m = new THREE.Matrix4(), bad = [];
+      for (const p of D.PED_SIGNS) {
+        const n = [0, 1].map((k) => { D.pedHeads.walk.getMatrixAt(2 * p.i + k, m); const e = m.elements; return [e[8], e[10]]; });   // hacia dónde mira cada cara (su z)
+        const ax = p.Z.along === 'z' ? 1 : 0, ok = n.every((v) => Math.abs(v[ax]) > 0.99) && n[0][ax] * n[1][ax] < 0;
+        if (!ok) bad.push(p.i + ' ' + p.Z.along + ' ' + JSON.stringify(n.map((v) => v.map((x) => +x.toFixed(2)))));
+      }
+      return bad;
+    });
+    T.check('cada caja mira a lo largo de su paso, con una cara hacia cada punta: de lado se ve la caja', !faces.length, faces.join(' | ') || undefined);
 
     // un disco entre la cámara y Tamachin lo taparía: se desvanece; los demás no (con cuadros de verdad: la cámara se mueve en frame)
     await E(() => window.__tamachin.go(19.4, 28.2)); await sleep(1200);
     const fade = await E(() => {
-      const D = window.__dbg, a = (p) => D.pedLit.walk.a.alpha.getX(p.i) + D.pedLit.stop.a.alpha.getX(p.i), at = (x, z) => D.PED_SIGNS.find((p) => Math.abs(p.x - x) < 0.01 && Math.abs(p.z - z) < 0.01);
+      const D = window.__dbg, a = (p) => D.pedHeads.fade.walk.getX(2 * p.i) + D.pedHeads.fade.stop.getX(2 * p.i), at = (x, z) => D.PED_SIGNS.find((p) => Math.abs(p.x - x) < 0.01 && Math.abs(p.z - z) < 0.01);
       return { front: +a(at(19.4, 31.3)).toFixed(2), far: +a(at(16.7, 19.4)).toFixed(2) };
     });
     T.check('el semáforo que queda entre la cámara y Tamachin se desvanece; los demás no', fade.front < 0.3 && fade.far === 1, JSON.stringify(fade));
@@ -137,8 +148,22 @@ module.exports = {
     T.check('cruzar con el monito rojo no da nada', bad.crossed === 0 && bad.fun < 0.51 && bad.at[1] > 28.3, JSON.stringify(bad));
 
     // lejos de la ciudad no se dibujan
-    const away = await E(() => { window.__tamachin.go(0, -300); window.__tamachin.advance(0.1); const D = window.__dbg; return [D.pedLit.walk.pts.visible, D.pedLit.stop.pts.visible]; });
-    T.check('fuera de la ciudad, las luces no se dibujan', away.every((v) => !v), JSON.stringify(away));
+    const away = await E(() => { window.__tamachin.go(0, -300); window.__tamachin.advance(0.1); const D = window.__dbg; return [D.pedHeads.walk.visible, D.pedHeads.stop.visible, D.pedHeads.box.visible]; });
+    T.check('fuera de la ciudad, los semáforos de peatones no se dibujan', away.every((v) => !v), JSON.stringify(away));
+
+    // los autos de noche: faros y calaveras prendidos, y la mancha de luz enfrente de cada uno; de día, apagados
+    const lamps = await E(() => {
+      const T = window.__tamachin, D = window.__dbg, m = new THREE.Matrix4(), v = new THREE.Vector3(), L = D.carLights;
+      T.go(30, 10); T.setHour(12); T.advance(0.5); const noon = [L.auto.material.visible, L.beam.material.visible];
+      T.setHour(22); T.advance(1.5); const night = [L.auto.material.visible, L.bus.material.visible, L.beam.material.visible, +L.auto.material.opacity.toFixed(2)];
+      let worst = 0; D.cars.forEach((c, i) => {   // cada mancha, 3.2 m enfrente de su auto; cada par de luces, en su auto
+        L.beam.getMatrixAt(i, m); v.setFromMatrixPosition(m); const ry = c.mesh.rotation.y;
+        worst = Math.max(worst, Math.hypot(v.x - (c.x + Math.sin(ry) * (c.half + 3.2)), v.z - (c.z + Math.cos(ry) * (c.half + 3.2))));
+        c.lm.getMatrixAt(c.li, m); v.setFromMatrixPosition(m); worst = Math.max(worst, Math.hypot(v.x - c.x, v.z - c.z));
+      });
+      T.setHour(12); return { noon, night, worst: +worst.toFixed(3) };
+    });
+    T.check('de noche los autos llevan faros y calaveras prendidos, y alumbran el piso enfrente; de día, no', lamps.noon.every((x) => !x) && lamps.night.slice(0, 3).every(Boolean) && lamps.night[3] > 0.9 && lamps.worst < 0.05, JSON.stringify(lamps));
 
     // las llantas que rechinan: entre los efectos (picos de 0.02 a 0.08), unas 0.4 s
     const sq = await E(async () => {

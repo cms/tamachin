@@ -132,7 +132,7 @@ module.exports = {
     T.check('después de alejarse un poco, el túnel lo lleva otra vez a la luna', again.world === 'luna', JSON.stringify(again));
     const bunny = () => E(() => {
       const D = window.__dbg, r = D.rabbit, P = window.__tamachin.player, W = D.W, drawn = (o) => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
-      return { world: r.world || 'tierra', root: r.mesh.parent.userData.world, drawn: drawn(r.mesh), follow: +r.follow.toFixed(1), d: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(2),
+      return { world: r.world || 'tierra', root: r.mesh.parent.userData.world, drawn: drawn(r.mesh), follow: +r.follow.toFixed(1), d: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(2), x: +r.pos.x.toFixed(2), z: +r.pos.z.toFixed(2),
         here: W.interacts.some((i) => i.who === r), onEarth: D.EARTH.interacts.some((i) => i.who === r), feet: +(r.pos.y - W.ground(r.pos.x, r.pos.z)).toFixed(2) };
     });
     const b0 = await bunny();
@@ -146,8 +146,9 @@ module.exports = {
     // y vuelve con él por el túnel; en la Tierra lo sigue otra vez
     await walk(['KeyW'], 3.6); await walk([], 1.2);
     const b2 = await E(() => window.__tamachin.world()), b3 = await bunny(); await walk(['KeyS'], 2); await walk([], 2.5); const b4 = await bunny();
+    // lo sigue: se movió con él (cada conejo va de un lado al azar, `side`, y a veces rodea el poste o la loma del túnel)
     T.check('vuelve con él a la Tierra (y su «Acariciar» también), y lo sigue otra vez', b2 === 'tierra' && b3.world === 'tierra' && b3.root === 'tierra' && b3.drawn && b3.here && b3.d < 5
-      && b4.follow > 0 && b4.d < 4, JSON.stringify({ back: b3, walked: b4 }));
+      && b4.follow > 0 && b4.d < 8 && Math.hypot(b4.x - b3.x, b4.z - b3.z) > 3, JSON.stringify({ back: b3, walked: b4 }));
     await E(() => { const D = window.__dbg, T = window.__tamachin, P = T.player, r = D.rabbit; r.pos.set(P.pos.x + 1, 0, P.pos.z + 1); r.follow = 30; T.setWorld('luna', 0, -30); T.advance(0.3); });
 
     // «Volver al inicio» desde la luna: dos toques (está lejos) y queda frente a su casa, en la Tierra
