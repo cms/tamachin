@@ -146,6 +146,7 @@ function doAction() {
   if (P.state !== 'normal') return;
   if (!ui.closeup && curInteract) curInteract.act(); else playerTrick();
 }
+// Ya no se usa: con el tráfico amable los autos no lo atropellan (resolvePlayer). Queda por si se quiere volver a los atropellos.
 function knock(c) {
   const P = player, L = c.L, k = Math.max(6, c.v * 0.9);
   P.state = 'fly'; P.vy = 7.6; P.onGround = false; P.flySpin = 0; clearTemp();
@@ -886,7 +887,7 @@ function resolvePlayer() {
   const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02;
   for (let it = 0; it < 2; it++) { for (const b of boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
   if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
-    if (pos.y < c.h * 0.8 && pushOutBox(pos, r * 0.8, carRect(c, 0)) && c.v > 2.2 && P.state === 'normal' && P.inv <= 0) knock(c);
+    if (pos.y < c.h * 0.8) pushOutBox(pos, r * 0.8, carRect(c, 0));   // un choque solo lo empuja (antes: knock(c) si el auto iba a más de 2.2 m/s)
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
   northCollide(pos, r); keepInWorld(pos);                           // árboles del norte y límites por franja (05-norte.js)
@@ -901,6 +902,35 @@ function perchUnder(x, z, y0) {
     if (s.r != null ? (x - s.x) * (x - s.x) + (z - s.z) * (z - s.z) <= R * R : x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) best = s;
   }
   return best;
+}
+// ───────────────────────── tráfico amable ─────────────────────────
+// Los autos nunca lo atropellan: frenan en seco (updateCars). Si uno tiene que frenar por él fuera del monito verde, pita y Tamachin se
+// asusta; la primera vez, un aviso dice cómo cruzar. Cruzar por el paso de cebra con el monito verde (se juzga al bajar de la banqueta:
+// parpadeando ya no cuenta) y llegar a la otra orilla da diversión.
+const traffic = { startles: 0, crossed: 0, hinted: false, at: -9, Z: null, from: 0, ok: false };
+function startle(c, hard) {
+  const P = player; if (hard) SFX.screech();
+  c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Uy, perdón!']), 1.4); SFX.honk();
+  if (P.state !== 'normal' || ui.closeup || clock - traffic.at < 2.5) return;
+  traffic.at = clock; traffic.startles++;
+  P.T.doTrick('hop'); if (!P.tempMood) setTemp('asombrado', 1.3); say(P, choose(['¡Uy!', '¡Ay, un auto!', '¡Uf, qué susto!']), 1.4);
+  if (!traffic.hinted) { traffic.hinted = true; toast('¡Cuidado con los autos! Cruza por el paso de cebra cuando el monito del semáforo esté verde.', 5); }
+}
+function updateCrossing() {
+  const P = player, T = traffic, x = P.pos.x, z = P.pos.z;
+  if (z < -66 || P.state !== 'normal') { T.Z = null; return; }
+  if (!T.Z) {
+    const Z = zebraAt(x, z, 0.3), u = Z ? zebraU(Z, x, z) : 0; if (!Z || Math.abs(u) > RW) return;   // todavía en la banqueta
+    T.Z = Z; T.from = Math.sign(u); T.ok = Z.state === 'walk' && Math.abs(u) > RW - 1.5; return;     // desde la orilla y con el monito fijo
+  }
+  const Z = T.Z, u = zebraU(Z, x, z), w = zebraW(Z, x, z);
+  if (w < Z.w0 - 0.8 || w > Z.w1 + 0.8) { T.Z = null; return; }                                       // se salió de las rayas
+  if (Math.abs(u) < RW + 0.3) return;
+  if (Math.sign(u) !== T.from && T.ok) {
+    T.crossed++;
+    if (gain('diversion', 0.08, 'cruce', 20)) { say(P, choose(['¡Crucé con el monito verde!', '¡Crucé bien!', '¡Al otro lado!']), 1.8); SFX.nice(); P.T.doTrick('wave'); }
+  }
+  T.Z = null;
 }
 // ───────────────────────── pasos ─────────────────────────
 // Suenan cuando un pie toca el suelo en la animación: cada pie baja cuando su fase pasa por π/2, y los dos van medio ciclo
@@ -1479,7 +1509,7 @@ function step(dt) {
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
   if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
-  updateLights(clock); updateCars(dt, clock); updatePlayer(dt); updateNPCs(dt);
+  updateLights(clock); updatePedSigns(clock); updateCars(dt, clock); updatePlayer(dt); updateCrossing(); updateNPCs(dt);
   for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
   updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
   updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateShootingStar(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);

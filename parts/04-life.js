@@ -39,7 +39,7 @@ function carRect(c, pad) {
 }
 function updateCars(dt, t) {
   for (const c of cars) { c.x = c.L.axis === 'x' ? c.s : c.L.fixed; c.z = c.L.axis === 'x' ? c.L.fixed : c.s; }
-  const P = player, inCity = P.pos.z > -66;
+  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = !!pz && pz.state !== 'stop';   // cruza con el monito verde
   for (const c of cars) {
     const L = c.L, dir = L.dir, ax = L.axis === 'x'; let gap = 999, cross = false, honk = false;
     const front = c.s + dir * c.half;
@@ -56,13 +56,22 @@ function updateCars(dt, t) {
         const g = fwd - c.half - (same ? o.half : o.hw) - 1.6; if (g < gap) gap = g; if (!same && g < 1.5) cross = true;
       }
     }
+    let pg = 999;                                                    // qué tan lejos va Tamachin delante, en su carril
     if (inCity && P.state !== 'fly') {
       const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = (ax ? dx : dz) * dir, lat = Math.abs(ax ? dz : dx);
-      if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { gap = Math.min(gap, g); honk = true; } }
+      if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
     }
     let target = c.vmax; if (c.pause > 0) { c.pause -= dt; target = 0; }
     if (gap < 999) target = Math.min(target, Math.sqrt(Math.max(0, 18 * gap)));
     c.v = c.v < target ? Math.min(target, c.v + 4.5 * dt) : Math.max(target, c.v - 13 * dt);
+    // Tráfico amable: nunca lo atropella. Si Tamachin se le pone enfrente de golpe frena en seco (hasta 40 m/s²) y para antes de tocarlo
+    // (con g = 0 el defensa queda a 1.3 m de su centro; lo tocaría en g ≈ −0.9). Si venía rápido pita y Tamachin se asusta, una vez por
+    // acercamiento (startle, 06-main.js); si cruza por el paso de cebra con el monito verde, el auto solo espera.
+    if (pg < 999) {
+      const vMax = Math.sqrt(80 * Math.max(0, pg + 0.9));
+      if (!polite && !c.scared && pg < 3 && c.v > 2.5) { c.scared = true; startle(c, c.v - vMax > 2.5); }
+      c.v = Math.min(c.v, vMax);
+    } else c.scared = false;
     c.stuck = cross && c.v < 0.3 ? c.stuck + dt : Math.max(0, c.stuck - dt * 3);
     c.s += dir * c.v * dt; if (c.s * dir > 74) c.s -= dir * 148;
     c.x = ax ? c.s : L.fixed; c.z = ax ? L.fixed : c.s;
@@ -72,9 +81,98 @@ function updateCars(dt, t) {
   }
 }
 
+// ───────────────────────── pasos de cebra y semáforos de peatones ─────────────────────────
+// Cuatro pasos de cebra por cruce (las rayas las pinta cityTex, 03-world.js). Cada uno cruza la calle de un eje (`ax`: los autos que pasan
+// por él); `along` es hacia dónde camina el que cruza, `c` el centro de esa calle y `w0..w1` el ancho de las rayas. Un poste por punta,
+// del lado de afuera de las rayas (lejos del semáforo de los autos, que está en la esquina), así cada uno queda junto a su paso.
+const ZEBRAS = [], PED_SIGNS = [];
+for (const I of INTERS) for (const [ax, along, s] of [['EW', 'z', -1], ['EW', 'z', 1], ['NS', 'x', -1], ['NS', 'x', 1]]) {
+  const o0 = s < 0 ? -6.9 : 4.5, o1 = s < 0 ? -4.5 : 6.9, out = s * 7.3;
+  const Z = along === 'z' ? { I, ax, along, c: I.z, w0: I.x + o0, w1: I.x + o1, state: 'stop' } : { I, ax, along, c: I.x, w0: I.z + o0, w1: I.z + o1, state: 'stop' };
+  Z.signs = [-1, 1].map((e) => { const p = along === 'z' ? { x: I.x + out, z: I.z + e * 4.6 } : { x: I.x + e * 4.6, z: I.z + out }; p.i = PED_SIGNS.length; p.Z = Z; PED_SIGNS.push(p); return p; });
+  ZEBRAS.push(Z);
+}
+// El monito sale de lightState (un solo reloj): verde 3.5 s después del rojo de sus autos (medido: el último que pasó en amarillo tarda
+// hasta 2.6 s en dejar las rayas, un autobús 3.1), parpadea desde 2 s antes de que les toque verde y se pone rojo 0.5 s antes.
+const carsRed = (I, ax, t) => lightState(I, ax, t) === 'r';
+function pedState(Z, t) {
+  if (!carsRed(Z.I, Z.ax, t) || !carsRed(Z.I, Z.ax, t - 3.5)) return 'stop';
+  return carsRed(Z.I, Z.ax, t + 2) ? 'walk' : carsRed(Z.I, Z.ax, t + 0.5) ? 'flash' : 'stop';
+}
+// u: a lo largo del cruce, desde el centro de la calle; w: a lo ancho de las rayas. zebraAt: el paso donde está (x, z), sobre la calle o
+// en la orilla, con `m` de holgura a los lados de las rayas.
+const zebraU = (Z, x, z) => Z.along === 'z' ? z - Z.c : x - Z.c, zebraW = (Z, x, z) => Z.along === 'z' ? x : z;
+function zebraAt(x, z, m) {
+  for (const Z of ZEBRAS) { const w = zebraW(Z, x, z); if (w > Z.w0 - m && w < Z.w1 + m && Math.abs(zebraU(Z, x, z)) < RW + 0.3) return Z; }
+  return null;
+}
+// Postes sólidos y delgados, en su propia malla sin raycast (no cuentan como estorbo de la cámara en las pruebas). Las luces son dos
+// Points que siempre miran a la cámara, así se leen desde cualquier ángulo: el monito verde caminando y el rojo parado; cada punta muestra uno.
+const pedB = new Batch();
+for (const p of PED_SIGNS) { pedB.cyl('#3b4252', p.x, 1.2, p.z, 0.06, 0.08, 2.4, 8); solidCircle(p.x, p.z, 0.14); }
+const pedPosts = pedB.mesh(); pedPosts.raycast = () => {}; scene.add(pedPosts);
+function pedIcon(walk) {
+  return canvasTex(128, 128, (g) => {
+    g.fillStyle = '#231d3b'; g.beginPath(); g.arc(64, 64, 62, 0, TAU); g.fill();
+    g.strokeStyle = '#fffdf6'; g.lineWidth = 5; g.beginPath(); g.arc(64, 64, 57, 0, TAU); g.stroke();
+    g.fillStyle = g.strokeStyle = walk ? '#3ef07f' : '#ff4b3e'; g.lineCap = g.lineJoin = 'round'; g.lineWidth = 12;
+    const line = (...q) => { g.beginPath(); g.moveTo(q[0], q[1]); for (let i = 2; i < q.length; i += 2) g.lineTo(q[i], q[i + 1]); g.stroke(); };
+    if (walk) {                                                     // caminando hacia la derecha
+      g.beginPath(); g.arc(70, 29, 11, 0, TAU); g.fill();
+      line(66, 47, 59, 75); line(59, 75, 72, 87, 72, 104); line(59, 75, 51, 91, 39, 99); line(64, 53, 77, 64, 87, 61); line(64, 53, 51, 63, 45, 74);
+    } else {                                                        // parado, quieto
+      g.beginPath(); g.arc(64, 28, 11, 0, TAU); g.fill();
+      line(64, 47, 64, 77); line(64, 77, 56, 104); line(64, 77, 72, 104); line(64, 52, 52, 76); line(64, 52, 76, 76);
+    }
+  });
+}
+const PED_Y = 2.85, PED_SIZE = 0.85;
+const pedLit = { walk: fireParts(PED_SIGNS.length, pedIcon(true), THREE.NormalBlending), stop: fireParts(PED_SIGNS.length, pedIcon(false), THREE.NormalBlending) };
+for (const S of [pedLit.walk, pedLit.stop]) { S.pts.renderOrder = 2.5; for (const p of PED_SIGNS) { S.a.position.setXYZ(p.i, p.x, PED_Y, p.z); S.a.size.setX(p.i, PED_SIZE); S.a.tint.setXYZ(p.i, 1, 1, 1); } }
+// después del halo del farolito y de la fogata (si no, de noche un brillo aditivo pintaba encima del disco), antes que la lluvia (3)
+// Un disco que queda entre la cámara y Tamachin lo taparía (mide lo que él): se desvanece. d es la distancia del disco a la línea
+// cámara→Tamachin; el cono de su cuerpo mide 0.65·t ahí (t: qué tan cerca de él está el disco, de 0 en la cámara a 1 en él).
+function signFade(p, P) {
+  const c = camera.position, dx = P.pos.x - c.x, dy = P.pos.y + 0.75 * P.T.scale - c.y, dz = P.pos.z - c.z, sx = p.x - c.x, sy = PED_Y - c.y, sz = p.z - c.z;
+  const t = (sx * dx + sy * dy + sz * dz) / (dx * dx + dy * dy + dz * dz); if (t <= 0 || t >= 1) return 1;
+  const d = Math.hypot(sx - t * dx, sy - t * dy, sz - t * dz), touch = PED_SIZE / 2 + 0.65 * t;
+  return clamp((d - touch + 0.3) / 0.5, 0.15, 1);
+}
+// En el suelo, una franja del color del monito a lo largo de la orilla, en cada boca del paso (de la base del poste al otro lado de las
+// rayas): desde arriba se ve qué paso tiene verde aunque en la esquina haya dos postes con colores distintos. Sin luz: de noche brilla.
+const pedStrips = (() => {
+  const n = PED_SIGNS.length, pos = new Float32Array(n * 12), idx = [];
+  for (const p of PED_SIGNS) {
+    const Z = p.Z, s = Math.sign(Z.along === 'z' ? p.z - Z.c : p.x - Z.c), at = (w, u) => Z.along === 'z' ? [w, 0.045, Z.c + u] : [Z.c + u, 0.045, w];
+    [at(Z.w0, s * (RW + 0.36)), at(Z.w1, s * (RW + 0.36)), at(Z.w1, s * (RW + 0.72)), at(Z.w0, s * (RW + 0.72))].forEach((v, k) => pos.set(v, p.i * 12 + k * 3));
+    const b = p.i * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 12), 3)); g.setIndex(idx);
+  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
+  m.raycast = () => {}; scene.add(m);
+  return { m, col: g.attributes.color };
+})();
+const PED_RGB = { walk: new THREE.Color('#3ef07f'), off: new THREE.Color('#2f6b47'), stop: new THREE.Color('#ff4b3e') };
+function updatePedSigns(t) {
+  const P = player, on = P.pos.z > -70, blink = (t * 2.5) % 1 < 0.6; let chirp = false;
+  pedLit.walk.pts.visible = pedLit.stop.pts.visible = pedStrips.m.visible = on;
+  for (const Z of ZEBRAS) {
+    const s = pedState(Z, t), mid = (Z.w0 + Z.w1) / 2;
+    if (s === 'walk' && Z.state === 'stop' && on && [-1, 1].some((e) => Math.hypot(P.pos.x - (Z.along === 'z' ? mid : Z.c + e * (RW + 0.8)), P.pos.z - (Z.along === 'z' ? Z.c + e * (RW + 0.8) : mid)) < 2.5)) chirp = true;   // esperando en una de sus bocas
+    Z.state = s; if (!on) continue;
+    const dark = s === 'flash' && !blink, k = dark ? 0.25 : 1, rgb = s === 'stop' ? PED_RGB.stop : dark ? PED_RGB.off : PED_RGB.walk;
+    for (const p of Z.signs) {
+      const f = signFade(p, P); pedLit.walk.a.alpha.setX(p.i, s === 'stop' ? 0 : f); pedLit.walk.a.tint.setXYZ(p.i, k, k, k); pedLit.stop.a.alpha.setX(p.i, s === 'stop' ? f : 0);
+      for (let v = 0; v < 4; v++) pedStrips.col.setXYZ(p.i * 4 + v, rgb.r, rgb.g, rgb.b);
+    }
+  }
+  if (on) { for (const S of [pedLit.walk, pedLit.stop]) { S.a.alpha.needsUpdate = true; S.a.tint.needsUpdate = true; } pedStrips.col.needsUpdate = true; }
+  if (chirp) SFX.walkSign();
+}
+
 // ───────────────────────── vecinos (otros tamachines) ─────────────────────────
 const LINES = {
-  contento: ['¡Hola! ¡Qué lindo día para pasear!', '¿Ya fuiste al bosque? Sal por el portón del parque.', 'Dicen que el búho del bosque lo sabe todo.', '¡Me gustan tus ojotes!', 'Cruza cuando los autos tengan rojo, ¿sí?'],
+  contento: ['¡Hola! ¡Qué lindo día para pasear!', '¿Ya fuiste al bosque? Sal por el portón del parque.', 'Dicen que el búho del bosque lo sabe todo.', '¡Me gustan tus ojotes!', 'Cruza cuando el monito del semáforo esté verde, ¿sí?'],
   triste: ['Se me cayó el helado…', 'Hoy nadie me ha saludado…', 'Extraño a mi amigo el conejo.'],
   enojado: ['¡Un auto casi me aplasta! ¡Grr!', '¡Alguien pisó mis flores!', '¡Hmpf! Ese semáforo tarda una eternidad.'],
   asombrado: ['¡Oh! ¿Viste eso? ¡Cambió el semáforo!', '¡Guau! ¿Vienes desde tu casa?', '¡Increíble! Pasó un autobús enorme.'],
@@ -302,7 +400,7 @@ function makeOwl() {
     .box('#5a3a22', -0.12, 0.585, 0.3, 0.15, 0.022, 0.02).box('#5a3a22', 0.12, 0.585, 0.3, 0.15, 0.022, 0.02).mesh(MAT_SOFT, false);
   mesh.add(lids);
   const o = { kind: 'búho', mesh, lids, pos: mesh.position, heading: 0, li: 0, hop: 0, clickR: 0.7, zzz: 0 };
-  const wisdom = ['Uuh, uuh. Quien cruza con el semáforo en rojo, cruza tranquilo.', 'Uuh. El río nace en las montañas y nunca tiene prisa.', 'Uuh, uuh. Si te mareas, quédate quieto y respira.', 'Uuh. Los conejos confían en quien camina despacio.', 'Uuh, uuh. Tu casa queda al sur, siguiendo el camino.'];
+  const wisdom = ['Uuh, uuh. Quien espera al monito verde, cruza tranquilo.', 'Uuh. El río nace en las montañas y nunca tiene prisa.', 'Uuh, uuh. Si te mareas, quédate quieto y respira.', 'Uuh. Los conejos confían en quien camina despacio.', 'Uuh, uuh. Tu casa queda al sur, siguiendo el camino.'];
   o.bubblePos = (v) => v.set(o.pos.x, o.pos.y + 1.4, o.pos.z);
   o.update = (dt) => {
     const d = nearPlayer(o), awake = owlAwake(); lids.visible = !awake;

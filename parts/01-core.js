@@ -470,6 +470,8 @@ const SFX = {   // los que tienen tono van por snd.tune (k): suenan en la tonali
   munch: () => { tone(rand(230, 320), 120, 0.06, 'square', 0.028); tone(rand(260, 360), 140, 0.05, 'square', 0.022, 0.08); },
   yay: (k = snd.tune) => [523, 659, 784, 1046].forEach((f, i) => tone(f * k, f * k, i === 3 ? 0.3 : 0.12, 'triangle', 0.05, i * 0.1)),
   low: (k = snd.tune) => { tone(420 * k, 330 * k, 0.22, 'sine', 0.045); tone(330 * k, 260 * k, 0.3, 'sine', 0.04, 0.2); },
+  walkSign: () => { tone(1480, 1480, 0.05, 'sine', 0.022); tone(1480, 1480, 0.05, 'sine', 0.022, 0.13); },   // el semáforo de peatones se pone verde cerca de Tamachin
+  screech: () => { const c = snd.ctx; if (!c || !snd.on || c.state !== 'running') return; try { screech(c, c.destination, c.currentTime + 0.005); } catch (e) { /* sin sonido */ } },
 };
 
 // ───────────────────────── pasos ─────────────────────────
@@ -507,6 +509,17 @@ const STEPS = {   // (contexto, destino, tiempo, fuerza, variación)
 function footstep(c, d, t, kind, v, wet) {
   const f = STEPS[kind]; if (!f) return; const r = 0.92 + Math.random() * 0.16;
   f(c, d, t, v, r); if (wet) swish(c, d, t + 0.012, 0.05 * v, 'bandpass', 1500 * r, 1.6, 0.07, 800);   // el suelo mojado chapotea un poco
+}
+// llantas que rechinan (un auto que frena en seco por Tamachin): ruido en dos bandas angostas que bajan un poco
+// (sostenido: con la envolvente de swish, que cae en exponencial, duraba 0.16 s y casi no se oía)
+function screech(c, d, t) {
+  const len = 0.42;
+  for (const [f0, f1, q, v] of [[2300, 1750, 9, 0.11], [3500, 2800, 11, 0.06]]) {
+    const s = c.createBufferSource(), fl = c.createBiquadFilter(), g = c.createGain();
+    s.buffer = stepNoise(c); fl.type = 'bandpass'; fl.Q.value = q; fl.frequency.setValueAtTime(f0, t); fl.frequency.exponentialRampToValueAtTime(f1, t + len);
+    g.gain.value = 0; g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(v, t + 0.03); g.gain.setValueAtTime(v, t + len * 0.6); g.gain.linearRampToValueAtTime(0, t + len);
+    s.connect(fl); fl.connect(g); g.connect(d); s.start(t, Math.random() * 0.5); s.stop(t + len + 0.02);
+  }
 }
 
 // ───────────────────────── música (sintetizada, sin archivos) ─────────────────────────

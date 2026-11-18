@@ -24,7 +24,7 @@ parts/
   01-core.js      Render, luces, geometría compartida, Batch, colisiones, partículas, globos, sonido y música
   02-tamachin.js  Formas, cara, ánimos y animación de la criatura (makeTamachin)
   03-world.js     Suelo, ciudad, casa, parque, camino, bosque, río, instancias
-  04-life.js      Autos y semáforos, vecinos, animales del bosque
+  04-life.js      Autos, semáforos y pasos de cebra, vecinos, animales del bosque
   05-norte.js     Montañas, Valle Alegre y el bosque sin fin (terreno, límites, vegetación por sectores y por casillas)
   06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
 build.sh          Concatena parts/ en game.js
@@ -62,7 +62,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay doce grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
+Hay trece grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos`, `trafico` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
 
 ## Controles
 
@@ -83,6 +83,8 @@ El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Sol
 El reloj de arriba, junto a los medidores, marca la hora del juego; tocarlo dice la hora y cuándo amanece u oscurece.
 
 Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
+
+En la ciudad, cada paso de cebra tiene su semáforo de peatones: un monito verde caminando o uno rojo parado, y una franja del mismo color en la orilla. El monito se pone verde un rato después de que los autos de esa calle tienen rojo y parpadea antes de que vuelvan a pasar. Cruzar por el paso de cebra con el monito verde da diversión. Los autos nunca atropellan a Tamachin: si se les pone enfrente, frenan (en seco si hace falta), pitan y él se lleva un susto; con el monito verde solo esperan.
 
 Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
 
