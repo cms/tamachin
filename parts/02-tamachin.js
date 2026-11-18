@@ -95,6 +95,7 @@ const M_WHITE = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2
   M_MOUTH = new THREE.MeshBasicMaterial({ color: 0x3a1830 }), M_TONGUE = new THREE.MeshBasicMaterial({ color: 0xff7c9c }),
   M_PINK = new THREE.MeshStandardMaterial({ color: 0xff9db8, roughness: 0.7 }), M_CREAM = new THREE.MeshStandardMaterial({ color: 0xfff1d6, roughness: 0.5 }),
   M_SPOT = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+for (const m of [M_PINK, M_CREAM, M_SPOT]) fxPatch(m, { rim: true });   // el borde de luz (01-core.js): orejas, panza, manchas
 const CREAM = new THREE.Color(0xfff1d6);
 const G_MOUTH = {
   open: new THREE.CircleGeometry(0.145, 22, Math.PI, Math.PI), tongue: new THREE.CircleGeometry(0.06, 14),
@@ -124,6 +125,7 @@ function makeTamachin(o) {
   root.scale.setScalar(T.scale); T.group = root; T.pos = root.position;
   const mats = { body: new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.02 }), alt: new THREE.MeshStandardMaterial({ roughness: 0.5 }), cream: M_CREAM, white: M_SPOT, pink: M_PINK };
   const lidMat = new THREE.MeshStandardMaterial({ roughness: 0.42 });
+  for (const m of [mats.body, mats.alt, lidMat]) fxPatch(m, { rim: true });   // sus orillas brillan con la luz del cielo, como un juguete de vinil
   const specMat = new THREE.MeshBasicMaterial({ map: TEX_SPIRAL, transparent: true, depthWrite: false });
   const eyes = [makeEye(lidMat, specMat), makeEye(lidMat, specMat)]; eyes.forEach((e) => faceG.add(e.g));
   const mouthG = new THREE.Group(); faceG.add(mouthG);

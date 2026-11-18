@@ -131,7 +131,8 @@ const SKIND = {
   bush: { geo: new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), shadow: true },
   tuft: { geo: new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry() },
 };
-for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); if (d.duck) duckify(d.mat); d.list = []; }
+const SKIND_SWAY = { pine: SWAY.tree[0], oak: SWAY.tree[1], bush: SWAY.bush, tuft: SWAY.tuft };   // se mecen como los de casa
+for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); if (d.duck) duckify(d.mat); fxPatch(d.mat, { wind: SKIND_SWAY[k] }); d.list = []; }
 function addStatic(kind, x, y, z, s, ry, tint) { SKIND[kind].list.push({ x, y, z, s, ry, tint: tint || 1 }); }
 function buildStatic() {                                           // un InstancedMesh por tipo y por sector de 120 m
   for (const k in SKIND) {

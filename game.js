@@ -313,7 +313,7 @@ class Batch {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.ao === false ? this.c : bakeAO(this.p, this.n, this.c), 3));
     g.computeBoundingSphere(); return g;
   }
   mesh(mat, shadow) {
@@ -321,6 +321,19 @@ class Batch {
     if (shadow !== false) { m.castShadow = true; m.receiveShadow = true; }
     return m;
   }
+}
+// Sombra de rincón, horneada en el color al armar (no cuesta nada al jugar): lo que queda cerca del suelo (la base de las paredes, los
+// troncos, los setos, las banquetas) y lo que mira hacia abajo (el lado de abajo de las copas, de los toldos, de los autos) recibe menos
+// luz del cielo. La altura es la de la pieza: lo que se arma en su lugar (la ciudad, la casa) o con la base en 0 (árboles, autos,
+// animales) queda bien; lo que mira hacia arriba (pisos, techos) no cambia. `batch.ao = false` la quita.
+function bakeAO(p, n, c) {
+  const out = new Array(c.length);
+  for (let i = 0; i < c.length; i += 3) {
+    const ny = n[i + 1], up = Math.max(ny, 0), low = 1 - smooth(0, 1.2, p[i + 1]);
+    const k = (1 - 0.36 * low * (1 - up * up)) * (1 - 0.22 * Math.max(-ny, 0));
+    out[i] = c[i] * k; out[i + 1] = c[i + 1] * k; out[i + 2] = c[i + 2] * k;
+  }
+  return out;
 }
 const MAT_SCENERY = new THREE.MeshLambertMaterial({ vertexColors: true });
 const MAT_SOFT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0 });
@@ -330,6 +343,72 @@ function canvasTex(w, h, draw) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.anisotropy = MAX_ANISO; return t;
 }
+
+// ───────────────────────── luz de más: viento, nubes que pasan y un borde de luz ─────────────────────────
+// Sin luces nuevas: se agregan al shader de cada material (onBeforeCompile), con uniformes compartidos que mueve updateFx (06-main.js).
+// - Nubes: la luz del sol (la directa) se apaga un poco donde pasa la sombra de una nube; una textura suave en el mundo que avanza con
+//   el viento. Van en todo lo que recibe luz (fxAll al terminar de armar, y en cada mundo nuevo); de noche, nublado o en la luna, nada.
+// - Viento (`wind`: [fuerza, altura donde empieza, rapidez]): árboles, arbustos, hierba y flores se mecen, más arriba más; cada planta a su
+//   paso (según dónde está). La sombra no se mece: no se nota con tan poco.
+// - Borde (`rim`): las orillas de Tamachin y los vecinos brillan con la luz del cielo, como un juguete de vinil.
+// Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (duckify) y qué se agregó.
+const cloudTex = canvasTex(256, 256, (g) => {
+  const R = mulberry(5150); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 11; i++) {                                  // manchas de 6 a 12 m de radio (la textura cubre 100 m): se ven varias, con orilla
+    const x = R() * 256, y = R() * 256, r = 16 + R() * 14;
+    for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {   // se repite sin costura
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(0.62, 'rgba(255,255,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)');   // llena, con la orilla suave
+      g.fillStyle = gr; g.fillRect(x + ox - r, y + oy - r, 2 * r, 2 * r);
+    }
+  }
+});
+cloudTex.wrapS = cloudTex.wrapT = THREE.RepeatWrapping;
+cloudTex.generateMipmaps = false; cloudTex.minFilter = THREE.LinearFilter;   // con mipmaps, a lo lejos se promediaban en un gris parejo que oscurecía todo
+const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) } };
+const FX_WIND = `{
+#ifdef USE_INSTANCING
+  vec2 fxO = instanceMatrix[3].xz;
+#else
+  vec2 fxO = modelMatrix[3].xz;
+#endif
+  float fxH = max(transformed.y - uFxWind.y, 0.0), fxT = uFxTime * uFxWind.z + fxO.x * 0.21 + fxO.y * 0.17, fxG = 0.7 + 0.3 * sin(uFxTime * 0.23 + fxO.x * 0.013);
+  transformed.xz += vec2(sin(fxT) + 0.35 * sin(fxT * 2.3 + 1.7), 0.6 * cos(fxT * 0.8 + 0.4)) * uFxWind.x * fxH * fxH * fxG;
+}
+#include <morphtarget_vertex>`;
+const FX_WORLD = `#include <project_vertex>
+{ vec4 fxP = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  fxP = instanceMatrix * fxP;
+#endif
+  vFxW = (modelMatrix * fxP).xyz; }`;
+const FX_CLOUD = `uniform sampler2D uFxCloudTex;
+uniform vec4 uFxCloud;
+uniform vec3 uFxRim;
+varying vec3 vFxW;
+float fxCloud() { if (uFxCloud.z < 0.001) return 1.0; return 1.0 - uFxCloud.z * texture2D(uFxCloudTex, vFxW.xz * uFxCloud.w + uFxCloud.xy).r; }
+`;
+const FX_RIM = `{ float fxR = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0); gl_FragColor.rgb += uFxRim * pow(fxR, 2.5); }
+#include <tonemapping_fragment>`;
+function fxPatch(mat, o) {
+  if (mat.userData.fx || !(mat.isMeshLambertMaterial || mat.isMeshStandardMaterial)) return mat;
+  o = o || {}; mat.userData.fx = true;
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
+  mat.customProgramCacheKey = () => key;
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, { uFxTime: FX.time, uFxCloud: FX.cloud, uFxCloudTex: FX.cloudTex, uFxRim: FX.rim, uFxWind: wind });
+    let v = 'uniform float uFxTime;\nuniform vec3 uFxWind;\nvarying vec3 vFxW;\n' + sh.vertexShader, f = FX_CLOUD + sh.fragmentShader;
+    if (o.wind) v = v.replace('#include <morphtarget_vertex>', FX_WIND);
+    v = v.replace('#include <project_vertex>', FX_WORLD);
+    if (mat.isMeshLambertMaterial) f = f.replace('* getShadowMask();', '* getShadowMask() * fxCloud();');
+    else f = f.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float fxC = fxCloud(); reflectedLight.directDiffuse *= fxC; reflectedLight.directSpecular *= fxC; }');
+    if (o.rim) f = f.replace('#include <tonemapping_fragment>', FX_RIM);
+    sh.vertexShader = v; sh.fragmentShader = f;
+  };
+  return mat;
+}
+// todo lo que recibe luz debajo de `root` (los materiales compartidos, una vez)
+function fxAll(root) { root.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) fxPatch(m); }); }
 
 // ───────────────────────── colisiones ─────────────────────────
 // Lo bajo lleva `top` (la altura de arriba, solo en suelo plano): Tamachin lo libra saltando y, salvo `stand` falso (una cerca),
@@ -1015,6 +1094,7 @@ const M_WHITE = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.2
   M_MOUTH = new THREE.MeshBasicMaterial({ color: 0x3a1830 }), M_TONGUE = new THREE.MeshBasicMaterial({ color: 0xff7c9c }),
   M_PINK = new THREE.MeshStandardMaterial({ color: 0xff9db8, roughness: 0.7 }), M_CREAM = new THREE.MeshStandardMaterial({ color: 0xfff1d6, roughness: 0.5 }),
   M_SPOT = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.5 });
+for (const m of [M_PINK, M_CREAM, M_SPOT]) fxPatch(m, { rim: true });   // el borde de luz (01-core.js): orejas, panza, manchas
 const CREAM = new THREE.Color(0xfff1d6);
 const G_MOUTH = {
   open: new THREE.CircleGeometry(0.145, 22, Math.PI, Math.PI), tongue: new THREE.CircleGeometry(0.06, 14),
@@ -1044,6 +1124,7 @@ function makeTamachin(o) {
   root.scale.setScalar(T.scale); T.group = root; T.pos = root.position;
   const mats = { body: new THREE.MeshStandardMaterial({ roughness: 0.42, metalness: 0.02 }), alt: new THREE.MeshStandardMaterial({ roughness: 0.5 }), cream: M_CREAM, white: M_SPOT, pink: M_PINK };
   const lidMat = new THREE.MeshStandardMaterial({ roughness: 0.42 });
+  for (const m of [mats.body, mats.alt, lidMat]) fxPatch(m, { rim: true });   // sus orillas brillan con la luz del cielo, como un juguete de vinil
   const specMat = new THREE.MeshBasicMaterial({ map: TEX_SPIRAL, transparent: true, depthWrite: false });
   const eyes = [makeEye(lidMat, specMat), makeEye(lidMat, specMat)]; eyes.forEach((e) => faceG.add(e.g));
   const mouthG = new THREE.Group(); faceG.add(mouthG);
@@ -1831,8 +1912,10 @@ const TREE_GEO = [
   new Batch().cyl(TRUNK, 0, 1.2, 0, 0.24, 0.34, 2.4, 7).ico('#5cc46a', 0, 3.7, 0, 1.75, 1.6, 1.75).ico('#4fb85f', 0.95, 3.1, 0.3, 1.15).ico('#69cf76', -0.85, 3.3, -0.35, 1.1).geometry(),
 ];
 const TREE_H = [5.5, 5.3], TREE_R = [1.5, 1.9];
+// viento (fxPatch, 01-core.js): [fuerza, desde qué altura, rapidez]; más arriba se mece más (las copas unos 10 cm, la hierba 3)
+const SWAY = { tree: [[0.006, 1.5, 1.3], [0.007, 2.2, 1.2]], bush: [0.03, 0.15, 1.7], tuft: [0.3, 0, 2.2], flower: [0.17, 0, 2] };
 const treeMesh = [0, 1].map((type) => {
-  const list = trees.filter((t) => t.type === type), m = new THREE.InstancedMesh(TREE_GEO[type], new THREE.MeshLambertMaterial({ vertexColors: true }), list.length);
+  const list = trees.filter((t) => t.type === type), m = new THREE.InstancedMesh(TREE_GEO[type], fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind: SWAY.tree[type] }), list.length);
   list.forEach((t, i) => { t.idx = i; m.setColorAt(i, _ic.setRGB(t.tint, t.tint, t.tint * 0.96)); });
   m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m;
 });
@@ -1841,19 +1924,19 @@ function setTreeMatrix(t) {
   treeMesh[t.type].setMatrixAt(t.idx, _im);
 }
 trees.forEach(setTreeMatrix);
-function instanced(geo, list, fn, shadow, tint) {
-  const m = new THREE.InstancedMesh(geo, new THREE.MeshLambertMaterial({ vertexColors: true }), list.length);
+function instanced(geo, list, fn, shadow, tint, wind) {
+  const m = new THREE.InstancedMesh(geo, fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind }), list.length);
   list.forEach((it, i) => { fn(it); m.setMatrixAt(i, _im); m.setColorAt(i, _ic.set(tint && it.color ? it.color : '#ffffff')); });
   m.frustumCulled = false; m.castShadow = !!shadow; m.receiveShadow = true; scene.add(m); return m;
 }
 const flowersOk = flowers.filter((f) => !(f.x > HOUSE.x0 - 1 && f.x < HOUSE.x1 + 1 && f.z > HOUSE.z0 - 1 && f.z < HOUSE.z1 - 0.2) && !(Math.abs(f.x) < 1.4 && f.z > -4 && f.z < 18) && Math.hypot(f.x - 10.5, f.z - 5) > 2.8);
-instanced(new Batch().cyl('#4aa35a', 0, 0.2, 0, 0.02, 0.028, 0.4, 5).geometry(), flowersOk, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.identity(), _is.set(f.s, f.s, f.s)));
-instanced(new Batch().ico('#ffffff', 0, 0.44, 0, 0.14, 0.095, 0.14, 0).geometry(), flowersOk, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.identity(), _is.set(f.s, f.s, f.s)), false, true);
-instanced(new Batch().ico('#ffb81f', 0, 0.51, 0, 0.06, 0.05, 0.06, 0).geometry(), flowersOk, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.identity(), _is.set(f.s, f.s, f.s)));
+instanced(new Batch().cyl('#4aa35a', 0, 0.2, 0, 0.02, 0.028, 0.4, 5).geometry(), flowersOk, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.identity(), _is.set(f.s, f.s, f.s)), false, false, SWAY.flower);
+instanced(new Batch().ico('#ffffff', 0, 0.44, 0, 0.14, 0.095, 0.14, 0).geometry(), flowersOk, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.identity(), _is.set(f.s, f.s, f.s)), false, true, SWAY.flower);   // la flor, con su tallo
+instanced(new Batch().ico('#ffb81f', 0, 0.51, 0, 0.06, 0.05, 0.06, 0).geometry(), flowersOk, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.identity(), _is.set(f.s, f.s, f.s)), false, false, SWAY.flower);
 instanced(new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry(), tufts,
-  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 7, 0)), _is.set(f.s, f.s, f.s)));
+  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 7, 0)), _is.set(f.s, f.s, f.s)), false, false, SWAY.tuft);
 instanced(new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), bushes,
-  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 3, 0)), _is.set(f.s, f.s, f.s)), true);
+  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 3, 0)), _is.set(f.s, f.s, f.s)), true, false, SWAY.bush);
 bushes.forEach((f) => solidCircle(f.x, f.z, 0.6 * f.s));
 instanced(new Batch().rock('#b3ada1', 0, 0.35, 0, 1, 0.7, 0.85).geometry(), rocks, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 5, 0)), _is.set(f.s, f.s, f.s)), true);
 
@@ -2457,7 +2540,8 @@ const SKIND = {
   bush: { geo: new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), shadow: true },
   tuft: { geo: new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry() },
 };
-for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); if (d.duck) duckify(d.mat); d.list = []; }
+const SKIND_SWAY = { pine: SWAY.tree[0], oak: SWAY.tree[1], bush: SWAY.bush, tuft: SWAY.tuft };   // se mecen como los de casa
+for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); if (d.duck) duckify(d.mat); fxPatch(d.mat, { wind: SKIND_SWAY[k] }); d.list = []; }
 function addStatic(kind, x, y, z, s, ry, tint) { SKIND[kind].list.push({ x, y, z, s, ry, tint: tint || 1 }); }
 function buildStatic() {                                           // un InstancedMesh por tipo y por sector de 120 m
   for (const k in SKIND) {
@@ -4591,6 +4675,43 @@ function frame(now) {
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
+// ───────────────────────── sombras de contacto ─────────────────────────
+// Una mancha suave justo debajo de lo que está en el suelo. La sombra del sol cae de lado, y por debajo quedaba claro: las cosas parecían
+// pegadas encima del suelo. Las de los árboles y arbustos de la Tierra son fijas (se barren a EARTH.root como todo lo de allá); las de
+// Tamachin, los vecinos, los autos y los animales se mueven con ellos (updateBlobs, fuera de la raíz: también en la luna), y se achican al
+// saltar. Negras con transparencia y con niebla (de lejos se pierden con el suelo); sin raycast (las pruebas de `vista` no las ven).
+const BLOB_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), BLOB_UP = 0.08;   // arriba del piso de la ciudad (0.03) y de los senderos (0.04): si no, rayas
+const BLOB_TEX = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+function blobMesh(n, opacity) {
+  const m = new THREE.InstancedMesh(BLOB_GEO, new THREE.MeshBasicMaterial({ color: 0x000000, map: BLOB_TEX, transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), n);
+  m.frustumCulled = false; m.raycast = () => {}; m.renderOrder = -1; scene.add(m); return m;   // lo primero de lo transparente: está en el suelo
+}
+const blobFixed = (() => {
+  const list = trees.map((t) => [t.x, t.z, (t.type ? 2.3 : 1.9) * t.s]).concat(bushes.map((b) => [b.x, b.z, 1.6 * b.s])), m = blobMesh(list.length, 0.3);
+  list.forEach(([x, z, r], i) => { _im.compose(_ip.set(x, groundY(x, z) + BLOB_UP, z), _iq.identity(), _is.set(r, 1, r)); m.setMatrixAt(i, _im); });
+  return m;
+})();
+const BLOB_MAX = 90, blobLive = blobMesh(BLOB_MAX, 0.36), _yAxis = new THREE.Vector3(0, 1, 0), BLOB_SIZE = { conejo: 0.9, rana: 0.7, venado: 1.7 };
+function updateBlobs() {
+  const P = player, m = blobLive; let n = 0;
+  const put = (x, y, z, w, d, ry) => { if (n < BLOB_MAX) { _im.compose(_ip.set(x, y + BLOB_UP, z), _iq.setFromAxisAngle(_yAxis, ry || 0), _is.set(w, 1, d)); m.setMatrixAt(n++, _im); } };
+  const near = (x, z) => Math.abs(x - P.pos.x) < 70 && Math.abs(z - P.pos.z) < 70;
+  if (P.state !== 'sleep') {                                        // sobre el suelo o sobre lo que tiene debajo; más alto, más chica
+    const g = world.ground(P.pos.x, P.pos.z), pr = perchUnder(P.pos.x, P.pos.z, P.pos.y), base = pr ? Math.max(g, pr.top) : g, k = clamp(1 - (P.pos.y - base) / 4, 0.35, 1), s = 1.55 * P.T.scale * k;
+    put(P.pos.x, base, P.pos.z, s, s);
+  }
+  if (world === EARTH) {
+    for (const v of npcs) if (v.T.group.visible && near(v.pos.x, v.pos.z)) put(v.pos.x, v.pos.y, v.pos.z, 1.4 * v.T.scale, 1.4 * v.T.scale);
+    for (const c of cars) if (near(c.x, c.z)) { const ax = c.L.axis === 'x', l = c.half * 2.15, w = c.hw * 2.3; put(c.x, 0, c.z, ax ? l : w, ax ? w : l); }
+  }
+  for (const c of creatures) {
+    const size = BLOB_SIZE[c.kind]; if (!size || (c.world || EARTH.name) !== world.name || !near(c.pos.x, c.pos.z) || (c.mesh && !c.mesh.visible)) continue;
+    const g = c.world ? world.ground(c.pos.x, c.pos.z) : groundY(c.pos.x, c.pos.z), k = clamp(1 - (c.pos.y - g) / 2.5, 0.4, 1);
+    put(c.pos.x, g, c.pos.z, size * k, size * k * (c.kind === 'venado' ? 1.6 : 1), c.heading || 0);
+  }
+  m.count = n; m.instanceMatrix.needsUpdate = true;
+}
+
 // ───────────────────────── mundos ─────────────────────────
 // La Tierra: todo lo de siempre. Cada gancho es lo que el juego ya hacía, movido aquí. Lo que se pregunta "¿dónde estoy?" (el suelo,
 // el agua, la casa, la cámara, el nombre del lugar, la música, los pasos) se lo pregunta al mundo de ahora (`world`), nunca a x y z
@@ -4632,8 +4753,9 @@ const WORLD_BASE = {
 // Lo de la Tierra va en EARTH.root: escondido, no se dibuja nada de adentro (ni su sombra) aunque sus sistemas prendan o apaguen
 // cosas. Afuera se quedan Tamachin, las tres luces, el cielo, el farolito y las partículas: no se esconden nunca (quitar una luz
 // recompilaría todos los materiales). Lo que se agrega después (makeTamachin, la fruta que vuela) se barre al cambiar de mundo.
-const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, ...particles.map((p) => p.s)]);
+const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, blobLive, ...particles.map((p) => p.s)]);
 function sweepEarth() { for (const o of scene.children.slice()) if (!KEEP.has(o) && !o.userData.world) EARTH.root.add(o); }
+fxAll(scene);                                                       // nubes que pasan en todo lo que recibe luz (01-core.js)
 EARTH.root.userData.world = EARTH.name; scene.add(EARTH.root); sweepEarth();
 function worldNamed(name) {
   if (name === EARTH.name) return EARTH;
@@ -4642,7 +4764,7 @@ function worldNamed(name) {
     for (const k in WORLD_BASE) if (!(k in M)) M[k] = WORLD_BASE[k];
     M.interacts = M.interacts || [];                                // los suyos (build puede ponerlos); un conejo de viaje agrega el suyo
     M.root = new THREE.Group(); M.root.userData.world = name; M.root.visible = false; M.solids = solids();
-    M.build(M); scene.add(M.root);
+    M.build(M); fxAll(M.root); scene.add(M.root);
   }
   return M;
 }
@@ -4694,13 +4816,20 @@ function enterWorld(name, o) {
   return true;
 }
 
+// las nubes avanzan con el viento (como las de 03-world.js, hacia +x) y su sombra pesa con el sol alto; en la luna y de noche no hay. El
+// borde de Tamachin toma el color de la luz del cielo.
+function updateFx(dt) {
+  const C = FX.cloud.value, sky = world.weather ? smooth(0.45, 0.85, day.light) * (1 - 0.75 * weather.cloud) : 0;
+  FX.time.value = clock; C.x = (C.x - dt * 1.2 * C.w) % 1; C.y = (C.y + dt * 0.35 * C.w) % 1; C.z = 0.32 * sky;
+  FX.rim.value.copy(hemi.color).multiplyScalar(0.42);
+}
 // todo lo que pasa en un cuadro, sin dibujar (las pruebas lo repiten con `advance` para adelantar el juego sin esperar)
 function step(dt) {
   clock += dt; updateDay(dt); updateDayCount();
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   world.pre(dt); updatePlayer(dt); world.mid(dt);
   if (world !== EARTH) for (const c of creatures) if (c.world === world.name) c.update(dt);   // quien vino con él (un conejo)
-  updateNeeds(dt);
+  updateNeeds(dt); updateBlobs(); updateFx(dt);
   updateCamera(dt); updateLantern(dt); world.post(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
 }

@@ -313,7 +313,7 @@ class Batch {
     const g = new THREE.BufferGeometry();
     g.setAttribute('position', new THREE.Float32BufferAttribute(this.p, 3));
     g.setAttribute('normal', new THREE.Float32BufferAttribute(this.n, 3));
-    g.setAttribute('color', new THREE.Float32BufferAttribute(this.c, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(this.ao === false ? this.c : bakeAO(this.p, this.n, this.c), 3));
     g.computeBoundingSphere(); return g;
   }
   mesh(mat, shadow) {
@@ -321,6 +321,19 @@ class Batch {
     if (shadow !== false) { m.castShadow = true; m.receiveShadow = true; }
     return m;
   }
+}
+// Sombra de rincón, horneada en el color al armar (no cuesta nada al jugar): lo que queda cerca del suelo (la base de las paredes, los
+// troncos, los setos, las banquetas) y lo que mira hacia abajo (el lado de abajo de las copas, de los toldos, de los autos) recibe menos
+// luz del cielo. La altura es la de la pieza: lo que se arma en su lugar (la ciudad, la casa) o con la base en 0 (árboles, autos,
+// animales) queda bien; lo que mira hacia arriba (pisos, techos) no cambia. `batch.ao = false` la quita.
+function bakeAO(p, n, c) {
+  const out = new Array(c.length);
+  for (let i = 0; i < c.length; i += 3) {
+    const ny = n[i + 1], up = Math.max(ny, 0), low = 1 - smooth(0, 1.2, p[i + 1]);
+    const k = (1 - 0.36 * low * (1 - up * up)) * (1 - 0.22 * Math.max(-ny, 0));
+    out[i] = c[i] * k; out[i + 1] = c[i + 1] * k; out[i + 2] = c[i + 2] * k;
+  }
+  return out;
 }
 const MAT_SCENERY = new THREE.MeshLambertMaterial({ vertexColors: true });
 const MAT_SOFT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.75, metalness: 0 });
@@ -330,6 +343,72 @@ function canvasTex(w, h, draw) {
   const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h);
   const t = new THREE.CanvasTexture(c); t.anisotropy = MAX_ANISO; return t;
 }
+
+// ───────────────────────── luz de más: viento, nubes que pasan y un borde de luz ─────────────────────────
+// Sin luces nuevas: se agregan al shader de cada material (onBeforeCompile), con uniformes compartidos que mueve updateFx (06-main.js).
+// - Nubes: la luz del sol (la directa) se apaga un poco donde pasa la sombra de una nube; una textura suave en el mundo que avanza con
+//   el viento. Van en todo lo que recibe luz (fxAll al terminar de armar, y en cada mundo nuevo); de noche, nublado o en la luna, nada.
+// - Viento (`wind`: [fuerza, altura donde empieza, rapidez]): árboles, arbustos, hierba y flores se mecen, más arriba más; cada planta a su
+//   paso (según dónde está). La sombra no se mece: no se nota con tan poco.
+// - Borde (`rim`): las orillas de Tamachin y los vecinos brillan con la luz del cielo, como un juguete de vinil.
+// Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (duckify) y qué se agregó.
+const cloudTex = canvasTex(256, 256, (g) => {
+  const R = mulberry(5150); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.globalCompositeOperation = 'lighter';
+  for (let i = 0; i < 11; i++) {                                  // manchas de 6 a 12 m de radio (la textura cubre 100 m): se ven varias, con orilla
+    const x = R() * 256, y = R() * 256, r = 16 + R() * 14;
+    for (const ox of [-256, 0, 256]) for (const oy of [-256, 0, 256]) {   // se repite sin costura
+      const gr = g.createRadialGradient(x + ox, y + oy, 0, x + ox, y + oy, r); gr.addColorStop(0, 'rgba(255,255,255,.9)'); gr.addColorStop(0.62, 'rgba(255,255,255,.8)'); gr.addColorStop(1, 'rgba(255,255,255,0)');   // llena, con la orilla suave
+      g.fillStyle = gr; g.fillRect(x + ox - r, y + oy - r, 2 * r, 2 * r);
+    }
+  }
+});
+cloudTex.wrapS = cloudTex.wrapT = THREE.RepeatWrapping;
+cloudTex.generateMipmaps = false; cloudTex.minFilter = THREE.LinearFilter;   // con mipmaps, a lo lejos se promediaban en un gris parejo que oscurecía todo
+const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) } };
+const FX_WIND = `{
+#ifdef USE_INSTANCING
+  vec2 fxO = instanceMatrix[3].xz;
+#else
+  vec2 fxO = modelMatrix[3].xz;
+#endif
+  float fxH = max(transformed.y - uFxWind.y, 0.0), fxT = uFxTime * uFxWind.z + fxO.x * 0.21 + fxO.y * 0.17, fxG = 0.7 + 0.3 * sin(uFxTime * 0.23 + fxO.x * 0.013);
+  transformed.xz += vec2(sin(fxT) + 0.35 * sin(fxT * 2.3 + 1.7), 0.6 * cos(fxT * 0.8 + 0.4)) * uFxWind.x * fxH * fxH * fxG;
+}
+#include <morphtarget_vertex>`;
+const FX_WORLD = `#include <project_vertex>
+{ vec4 fxP = vec4(transformed, 1.0);
+#ifdef USE_INSTANCING
+  fxP = instanceMatrix * fxP;
+#endif
+  vFxW = (modelMatrix * fxP).xyz; }`;
+const FX_CLOUD = `uniform sampler2D uFxCloudTex;
+uniform vec4 uFxCloud;
+uniform vec3 uFxRim;
+varying vec3 vFxW;
+float fxCloud() { if (uFxCloud.z < 0.001) return 1.0; return 1.0 - uFxCloud.z * texture2D(uFxCloudTex, vFxW.xz * uFxCloud.w + uFxCloud.xy).r; }
+`;
+const FX_RIM = `{ float fxR = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0); gl_FragColor.rgb += uFxRim * pow(fxR, 2.5); }
+#include <tonemapping_fragment>`;
+function fxPatch(mat, o) {
+  if (mat.userData.fx || !(mat.isMeshLambertMaterial || mat.isMeshStandardMaterial)) return mat;
+  o = o || {}; mat.userData.fx = true;
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
+  mat.customProgramCacheKey = () => key;
+  mat.onBeforeCompile = (sh, r) => {
+    prev.call(mat, sh, r);
+    Object.assign(sh.uniforms, { uFxTime: FX.time, uFxCloud: FX.cloud, uFxCloudTex: FX.cloudTex, uFxRim: FX.rim, uFxWind: wind });
+    let v = 'uniform float uFxTime;\nuniform vec3 uFxWind;\nvarying vec3 vFxW;\n' + sh.vertexShader, f = FX_CLOUD + sh.fragmentShader;
+    if (o.wind) v = v.replace('#include <morphtarget_vertex>', FX_WIND);
+    v = v.replace('#include <project_vertex>', FX_WORLD);
+    if (mat.isMeshLambertMaterial) f = f.replace('* getShadowMask();', '* getShadowMask() * fxCloud();');
+    else f = f.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float fxC = fxCloud(); reflectedLight.directDiffuse *= fxC; reflectedLight.directSpecular *= fxC; }');
+    if (o.rim) f = f.replace('#include <tonemapping_fragment>', FX_RIM);
+    sh.vertexShader = v; sh.fragmentShader = f;
+  };
+  return mat;
+}
+// todo lo que recibe luz debajo de `root` (los materiales compartidos, una vez)
+function fxAll(root) { root.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) fxPatch(m); }); }
 
 // ───────────────────────── colisiones ─────────────────────────
 // Lo bajo lleva `top` (la altura de arriba, solo en suelo plano): Tamachin lo libra saltando y, salvo `stand` falso (una cerca),

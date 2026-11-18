@@ -175,6 +175,10 @@ Los pasos de Tamachin suenan según lo que pisa: pasto, tierra (senderos y camin
 
 De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». De noche cantan grillos en vez de pájaros, ulula un búho en el camino y los bosques, y la música se oye más suave. Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 
+## Cómo se ve
+
+Todo es de colores lisos, como juguetes. Para que no parezca pegado encima del suelo, la base de las paredes, los troncos y los setos es un poco más oscura (se calcula al armar el mundo), y debajo de Tamachin, los vecinos, los autos, los animales, los árboles y los arbustos hay una mancha de sombra suave (la de Tamachin se achica cuando salta). Los árboles, los arbustos, la hierba y las flores se mecen con el viento, de día pasan sombras de nubes por el suelo, y las orillas de Tamachin y los vecinos brillan con la luz del cielo.
+
 ## Mapa (unidades en metros)
 
 - Al empezar, la cámara mira al norte (−Z); se puede girar. La puerta de la casa mira al sur (+Z).

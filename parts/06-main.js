@@ -1534,6 +1534,43 @@ function frame(now) {
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
+// ───────────────────────── sombras de contacto ─────────────────────────
+// Una mancha suave justo debajo de lo que está en el suelo. La sombra del sol cae de lado, y por debajo quedaba claro: las cosas parecían
+// pegadas encima del suelo. Las de los árboles y arbustos de la Tierra son fijas (se barren a EARTH.root como todo lo de allá); las de
+// Tamachin, los vecinos, los autos y los animales se mueven con ellos (updateBlobs, fuera de la raíz: también en la luna), y se achican al
+// saltar. Negras con transparencia y con niebla (de lejos se pierden con el suelo); sin raycast (las pruebas de `vista` no las ven).
+const BLOB_GEO = new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), BLOB_UP = 0.08;   // arriba del piso de la ciudad (0.03) y de los senderos (0.04): si no, rayas
+const BLOB_TEX = canvasTex(64, 64, (g) => { const gr = g.createRadialGradient(32, 32, 0, 32, 32, 32); gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(0.45, 'rgba(255,255,255,.6)'); gr.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = gr; g.fillRect(0, 0, 64, 64); });
+function blobMesh(n, opacity) {
+  const m = new THREE.InstancedMesh(BLOB_GEO, new THREE.MeshBasicMaterial({ color: 0x000000, map: BLOB_TEX, transparent: true, opacity, depthWrite: false, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }), n);
+  m.frustumCulled = false; m.raycast = () => {}; m.renderOrder = -1; scene.add(m); return m;   // lo primero de lo transparente: está en el suelo
+}
+const blobFixed = (() => {
+  const list = trees.map((t) => [t.x, t.z, (t.type ? 2.3 : 1.9) * t.s]).concat(bushes.map((b) => [b.x, b.z, 1.6 * b.s])), m = blobMesh(list.length, 0.3);
+  list.forEach(([x, z, r], i) => { _im.compose(_ip.set(x, groundY(x, z) + BLOB_UP, z), _iq.identity(), _is.set(r, 1, r)); m.setMatrixAt(i, _im); });
+  return m;
+})();
+const BLOB_MAX = 90, blobLive = blobMesh(BLOB_MAX, 0.36), _yAxis = new THREE.Vector3(0, 1, 0), BLOB_SIZE = { conejo: 0.9, rana: 0.7, venado: 1.7 };
+function updateBlobs() {
+  const P = player, m = blobLive; let n = 0;
+  const put = (x, y, z, w, d, ry) => { if (n < BLOB_MAX) { _im.compose(_ip.set(x, y + BLOB_UP, z), _iq.setFromAxisAngle(_yAxis, ry || 0), _is.set(w, 1, d)); m.setMatrixAt(n++, _im); } };
+  const near = (x, z) => Math.abs(x - P.pos.x) < 70 && Math.abs(z - P.pos.z) < 70;
+  if (P.state !== 'sleep') {                                        // sobre el suelo o sobre lo que tiene debajo; más alto, más chica
+    const g = world.ground(P.pos.x, P.pos.z), pr = perchUnder(P.pos.x, P.pos.z, P.pos.y), base = pr ? Math.max(g, pr.top) : g, k = clamp(1 - (P.pos.y - base) / 4, 0.35, 1), s = 1.55 * P.T.scale * k;
+    put(P.pos.x, base, P.pos.z, s, s);
+  }
+  if (world === EARTH) {
+    for (const v of npcs) if (v.T.group.visible && near(v.pos.x, v.pos.z)) put(v.pos.x, v.pos.y, v.pos.z, 1.4 * v.T.scale, 1.4 * v.T.scale);
+    for (const c of cars) if (near(c.x, c.z)) { const ax = c.L.axis === 'x', l = c.half * 2.15, w = c.hw * 2.3; put(c.x, 0, c.z, ax ? l : w, ax ? w : l); }
+  }
+  for (const c of creatures) {
+    const size = BLOB_SIZE[c.kind]; if (!size || (c.world || EARTH.name) !== world.name || !near(c.pos.x, c.pos.z) || (c.mesh && !c.mesh.visible)) continue;
+    const g = c.world ? world.ground(c.pos.x, c.pos.z) : groundY(c.pos.x, c.pos.z), k = clamp(1 - (c.pos.y - g) / 2.5, 0.4, 1);
+    put(c.pos.x, g, c.pos.z, size * k, size * k * (c.kind === 'venado' ? 1.6 : 1), c.heading || 0);
+  }
+  m.count = n; m.instanceMatrix.needsUpdate = true;
+}
+
 // ───────────────────────── mundos ─────────────────────────
 // La Tierra: todo lo de siempre. Cada gancho es lo que el juego ya hacía, movido aquí. Lo que se pregunta "¿dónde estoy?" (el suelo,
 // el agua, la casa, la cámara, el nombre del lugar, la música, los pasos) se lo pregunta al mundo de ahora (`world`), nunca a x y z
@@ -1575,8 +1612,9 @@ const WORLD_BASE = {
 // Lo de la Tierra va en EARTH.root: escondido, no se dibuja nada de adentro (ni su sombra) aunque sus sistemas prendan o apaguen
 // cosas. Afuera se quedan Tamachin, las tres luces, el cielo, el farolito y las partículas: no se esconden nunca (quitar una luz
 // recompilaría todos los materiales). Lo que se agrega después (makeTamachin, la fruta que vuela) se barre al cambiar de mundo.
-const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, ...particles.map((p) => p.s)]);
+const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, blobLive, ...particles.map((p) => p.s)]);
 function sweepEarth() { for (const o of scene.children.slice()) if (!KEEP.has(o) && !o.userData.world) EARTH.root.add(o); }
+fxAll(scene);                                                       // nubes que pasan en todo lo que recibe luz (01-core.js)
 EARTH.root.userData.world = EARTH.name; scene.add(EARTH.root); sweepEarth();
 function worldNamed(name) {
   if (name === EARTH.name) return EARTH;
@@ -1585,7 +1623,7 @@ function worldNamed(name) {
     for (const k in WORLD_BASE) if (!(k in M)) M[k] = WORLD_BASE[k];
     M.interacts = M.interacts || [];                                // los suyos (build puede ponerlos); un conejo de viaje agrega el suyo
     M.root = new THREE.Group(); M.root.userData.world = name; M.root.visible = false; M.solids = solids();
-    M.build(M); scene.add(M.root);
+    M.build(M); fxAll(M.root); scene.add(M.root);
   }
   return M;
 }
@@ -1637,13 +1675,20 @@ function enterWorld(name, o) {
   return true;
 }
 
+// las nubes avanzan con el viento (como las de 03-world.js, hacia +x) y su sombra pesa con el sol alto; en la luna y de noche no hay. El
+// borde de Tamachin toma el color de la luz del cielo.
+function updateFx(dt) {
+  const C = FX.cloud.value, sky = world.weather ? smooth(0.45, 0.85, day.light) * (1 - 0.75 * weather.cloud) : 0;
+  FX.time.value = clock; C.x = (C.x - dt * 1.2 * C.w) % 1; C.y = (C.y + dt * 0.35 * C.w) % 1; C.z = 0.32 * sky;
+  FX.rim.value.copy(hemi.color).multiplyScalar(0.42);
+}
 // todo lo que pasa en un cuadro, sin dibujar (las pruebas lo repiten con `advance` para adelantar el juego sin esperar)
 function step(dt) {
   clock += dt; updateDay(dt); updateDayCount();
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   world.pre(dt); updatePlayer(dt); world.mid(dt);
   if (world !== EARTH) for (const c of creatures) if (c.world === world.name) c.update(dt);   // quien vino con él (un conejo)
-  updateNeeds(dt);
+  updateNeeds(dt); updateBlobs(); updateFx(dt);
   updateCamera(dt); updateLantern(dt); world.post(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
 }

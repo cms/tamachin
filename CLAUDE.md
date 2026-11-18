@@ -90,6 +90,18 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
   - **El conejo, allá** (`makeRabbit`, 04-life.js, con `M` = su mundo): pisa `lunaY` y choca con lo de la luna (`resolveAgent` con `M.solids`), no busca agua, y cada brinco dura 0.8 s y sube 1.3 m (en la Tierra, 0.36 s y 0.4 m), con polvito al caer. Como el brinco es largo, apunta derecho al empezarlo y a donde va a llegar Tamachin (su velocidad por lo que dura el brinco): si no, iba en espiral y se quedaba atrás.
   - **El encargo** `luna` es plantar la bandera (del color de Tamachin) en la loma del centro. Tiene su pieza (`luna`) y sus pasos (`polvo`). La prueba `luna` lo revisa todo.
 
+## Luz de más: sombra de rincón, de contacto, viento, nubes y borde (`01-core.js`, `06-main.js`)
+
+Nada de esto agrega luces ni pasadas de pantalla completa.
+
+- **Sombra de rincón** (`bakeAO`, en `Batch.geometry()`): al armar cada malla se oscurece en su color lo que queda cerca del suelo y no mira hacia arriba (la base de las paredes, troncos, setos, banquetas), y lo que mira hacia abajo (el lado de abajo de copas, toldos y autos). Usa la altura de la pieza: lo que se arma en su lugar o con la base en 0 queda bien. `batch.ao = false` la quita. No cuesta nada al jugar.
+- **Sombras de contacto** (`blobFixed`, `blobLive`, `updateBlobs`): una mancha negra suave justo debajo de lo que está en el suelo. Las de árboles y arbustos de la Tierra son fijas (van en `EARTH.root`). Las de Tamachin, los vecinos, los autos, los conejos, las ranas y los venados se mueven, en `blobLive`, que está en `KEEP` porque también sirve en la luna. La de Tamachin se pone sobre lo que tiene debajo y se achica al saltar; en la luna eso dice qué tan alto va. Van a `BLOB_UP` (0.08 m) del suelo: el piso de la ciudad está a 0.03 m y los senderos a 0.04, y a la misma altura salían rayas. Sin raycast, con niebla: de lejos se pierden.
+- **Viento, nubes y borde de luz** (`fxPatch`, `fxAll`, `FX`): se agregan al shader de cada material, como `duckify`. `updateFx` (en `step`) mueve los uniformes compartidos.
+  - **Viento** (`SWAY` en 03-world.js): árboles, arbustos, hierba y flores, también los del norte (`SKIND_SWAY`). Cada valor es [fuerza, altura donde empieza, rapidez], y más arriba se mece más. La sombra no se mece: con unos 10 cm en la copa no se nota.
+  - **Sombras de nubes:** en todo lo que recibe luz (`fxAll(scene)` antes de barrer la Tierra, y `fxAll(M.root)` en cada mundo nuevo), la luz directa se apaga un poco donde pasa una nube. La textura (`cloudTex`) cubre 100 m, sus manchas miden de 6 a 12 m de radio y avanzan a 1.2 m/s, como las nubes. No lleva mipmaps: con ellos, a lo lejos se promediaba en un gris parejo que oscurecía todo. De noche, nublado o en un mundo sin tiempo, no hay.
+  - **Borde de luz** (`rim`): Tamachin y los vecinos (sus materiales en 02-tamachin.js) brillan en la orilla con el color de la luz del cielo, como un juguete de vinil.
+  - **Caché de programas:** cada combinación es otro programa. `customProgramCacheKey` lleva la del material de antes (`agacharse`) y lo agregado. Si un material nuevo que recibe luz se crea después de armar, pásalo por `fxPatch`; si no, no le pasan las nubes.
+
 ## Sonido y música (`01-core.js`, `06-main.js`)
 
 - `snd.mode` es `'todo'`, `'efectos'` o `'no'` (el botón Sonido pasa por los tres; `setSound`). `snd.on` deja sonar los efectos y `snd.music` la música. Con `'no'` el `AudioContext` se suspende; también con la pestaña oculta. Las partidas viejas guardaban `sound: false`.
@@ -207,6 +219,7 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
 - Dos cosas de `sw.js` solo se probaron en Chrome:
   - **`resultingClientId`.** Sin él no se anota `fromCopy`. En un Safari que no lo dé, con red lenta justo después de publicar, la página de la copia podría cargar el `game.js` nuevo.
   - **Las fuentes en `performance`.** Que con `crossorigin` aparezcan ahí los archivos de fuente. Si Safari no los anota, las fuentes se guardan desde la segunda visita, no desde la primera.
+- La luz de más en un teléfono: cuánto cuestan el viento y las nubes en el shader (una lectura de textura por pixel en todo lo que recibe luz) y las sombras de contacto (hasta 90 que se mueven, más las fijas); cómo se ven las sombras de las nubes al aire libre.
 - La luna en un teléfono: cuánto cuesta (la malla del suelo, de unos 33 000 triángulos, también echa sombra), cómo se ven el cielo negro y la Tierra, y si con la cámara baja (16°) se juega bien. Que en iPhone empujar contra la boca del túnel con la palanca se sienta natural.
 - La versión nueva en un iPhone de verdad:
   - que la app instalada avise `visibilitychange` al salir del fondo, y que desde ahí `reg.update()` de verdad revise `sw.js`;
