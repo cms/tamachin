@@ -42,6 +42,36 @@ module.exports = {
     // el kiosco de Valle Alegre
     await E(() => window.__tamachin.go(0, -1360)); await adv(1.5);
     T.check('detrás del kiosco, su techo se quita', await E(() => window.__dbg.occluders.find((o) => Math.abs(o.z0 - (-1358.2)) < 0.1).k < 0.05));
+    const front = [];
+    for (const [x, dz] of [[0, 6.0], [5.2, 5.2], [-5.2, 5.2]]) { await E(([x, z]) => window.__tamachin.go(x, z), [x, -1352 + dz]); await adv(1.5); front.push(+(await E(() => window.__dbg.occluders.find((o) => o.roof).k)).toFixed(2)); }
+    T.check('pegado al kiosco por el frente (entre él y la cámara), su techo sigue entero', front.every((k) => k > 0.95), JSON.stringify(front));
+    // alrededor del kiosco, a tres alturas de cámara: el techo se corta si tapa algún punto de Tamachin (una rejilla de rayos contra
+    // el techo entero) y casi nunca si no tapa (antes, por estar cerca de su planta cuadrada, se quitaba en uno de cada cuatro lugares)
+    const ring = await E(() => {
+      const D = window.__dbg, G = window.__tamachin, V = G.view, o = D.occluders.find((q) => q.roof), KZ = o.roof.z, rc = new THREE.Raycaster(), pts = [];
+      let roof = null; D.scene.traverse((m) => { if (m.material === o.mats[0]) roof = m; });
+      for (let u = -0.75; u <= 0.751; u += 0.25) for (let h = 0.05; h <= 1.51; h += 0.18) if (Math.hypot(u, h - 0.75) <= 0.78) pts.push([u, h]);
+      const blocks = () => {
+        const P = D.player, sc = P.T.scale, cam = D.camera.position, c = Math.cos(V.yaw), s = Math.sin(V.yaw), clip = roof.material.clippingPlanes;
+        roof.material.clippingPlanes = null;
+        const hit = pts.some(([u, h]) => { const t = new THREE.Vector3(P.pos.x + u * sc * c, P.pos.y + h * sc, P.pos.z - u * sc * s), d = t.clone().sub(cam), L = d.length();
+          rc.set(cam, d.normalize()); rc.far = L; return rc.intersectObject(roof, false).length > 0; });
+        roof.material.clippingPlanes = clip; return hit;
+      };
+      const out = { n: 0, extra: 0, missed: [] };
+      for (const [yaw, pitch] of [[0, 15], [0, 34.2], [135, 34.2], [270, 60]]) {
+        V.yaw = V.yawT = yaw * Math.PI / 180; V.pitch = V.pitchT = pitch * Math.PI / 180;
+        for (let a = 0; a < 360; a += 30) for (const r of [6.0, 7.5, 10, 14]) {
+          const x = Math.cos(a * Math.PI / 180) * r, z = KZ + Math.sin(a * Math.PI / 180) * r;
+          G.go(x, z); o.k = 1; G.advance(1.2); if (Math.hypot(D.player.pos.x - x, D.player.pos.z - z) > 0.6) continue;
+          const need = blocks(), cut = o.k < 0.5; out.n++;
+          if (cut && !need) out.extra++; if (need && !cut) out.missed.push(yaw + '°/' + pitch + '° (' + x.toFixed(1) + ',' + (z - KZ).toFixed(1) + ')');
+        }
+      }
+      return out;
+    });
+    T.check('alrededor del kiosco, su techo nunca tapa a Tamachin', !ring.missed.length, ring.missed.join('; ') || undefined);
+    T.check('… y casi nunca se quita sin tapar (a lo más 1 de cada 10 lugares)', ring.extra <= ring.n / 10, ring.extra + ' de ' + ring.n);
 
     // lo que estorba se corta al ras (sin transparencias: eran ventanas fantasma) y vuelve entero al alejarse
     const cutState = (i) => E((i) => { const o = window.__dbg.occluders.filter((q) => q.z1 < 62 && q.z0 > -62)[i];

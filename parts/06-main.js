@@ -1148,6 +1148,28 @@ function rayCrosses(o, x, z, sx, back) {
   else if (z < n || z > so) return false;
   return a <= b && a * camSlope < o.h + 1.5;
 }
+// Un techo sobre postes (el kiosco): por debajo se ve, así que estar cerca de su planta no basta. Se sigue el rayo de la cámara a
+// cinco puntos de Tamachin (pies, centro, cabeza y los lados) y solo tapa si alguno pasa por el cono del techo, con margen m.
+// R: centro (x, z), radio de la orilla r a la altura y0, punta y1 y el remate (hasta tip, en radio tipR).
+const ROOF_PTS = [[0, 0.15], [0, 0.75], [0, 1.5], [-0.7, 0.75], [0.7, 0.75]];   // [a la derecha, altura] en tamaños de Tamachin
+function roofCrosses(R, m) {
+  const P = player, sc = P.T.scale, c = camView.vc, s = camView.vs;
+  for (const [u, h] of ROOF_PTS) {
+    const px = P.pos.x + u * sc * c, py = P.pos.y + h * sc, pz = P.pos.z - u * sc * s;
+    const dx = camPos.x - px, dy = camPos.y - py, dz = camPos.z - pz, fx = px - R.x, fz = pz - R.z;
+    const A = dx * dx + dz * dz, B = 2 * (fx * dx + fz * dz), C = fx * fx + fz * fz - (R.r + m) * (R.r + m), disc = B * B - 4 * A * C;
+    if (A < 1e-6 || disc <= 0) continue;                                    // el rayo no pasa sobre la planta
+    const q = Math.sqrt(disc), t0 = Math.max(0, (-B - q) / (2 * A)), t1 = Math.min(1, (-B + q) / (2 * A));
+    if (t0 >= t1) continue;
+    const n = Math.ceil((t1 - t0) * Math.sqrt(A) / 0.15);                  // cada 15 cm sobre la planta
+    for (let i = 0; i <= n; i++) {
+      const t = t0 + (t1 - t0) * i / n, y = py + dy * t, rr = Math.hypot(fx + dx * t, fz + dz * t);
+      const top = Math.max(R.y0 + (R.y1 - R.y0) * (1 - Math.max(0, rr - m) / R.r), rr < R.tipR + m ? R.tip : 0);
+      if (y > R.y0 - m && y < top + m) return true;
+    }
+  }
+  return false;
+}
 function fadeMat(m, op) { m.opacity = op; const tr = op < 0.985; if (m.transparent !== tr) { m.transparent = tr; m.needsUpdate = true; } }
 // Lo que tapa a Tamachin no se vuelve transparente (eso dibujaba ventanas fantasma enormes): se corta casi al ras del suelo,
 // como una casa de muñecas. Un plano horizontal baja desde arriba del techo hasta CUT_Y; queda la planta, las paredes se ven por
@@ -1192,7 +1214,8 @@ function updateScenery(dt) {
   for (const o of occluders) {
     if (o.k === 1 && Math.abs((o.z0 + o.z1) / 2 - z) > 70) continue;           // lejos (en casa o en Valle Alegre)
     let hide;
-    if (ui.closeup) { const b = camBox(o.x0, o.x1, o.z0, o.z1, x, z), ru = rayU(b.dmin); hide = b.dmin > -0.3 && b.dmin < 7 && ru > b.umin - 2.2 && ru < b.umax + 2.2; }
+    if (o.roof) hide = roofCrosses(o.roof, o.k < 0.5 ? 0.7 : 0.35);   // ya cortado, margen mayor: que no parpadee en la orilla
+    else if (ui.closeup) { const b = camBox(o.x0, o.x1, o.z0, o.z1, x, z), ru = rayU(b.dmin); hide = b.dmin > -0.3 && b.dmin < 7 && ru > b.umin - 2.2 && ru < b.umax + 2.2; }
     else hide = rayCrosses(o, x, z, cu / back, back);
     const t = hide ? 0 : 1; if (o.k === t) continue;
     o.k = Math.abs(o.k - t) < 0.001 ? t : damp(o.k, t, 9, dt);

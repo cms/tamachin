@@ -289,10 +289,12 @@ const townB = new Batch();
   const KZ = TOWN_Z;
   townB.cyl('#f4efe4', 0, 0.3, KZ, 5.2, 5.4, 0.6, 16).cyl('#e6d8bd', 0, 0.62, KZ, 5.0, 5.0, 0.04, 16);
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU + Math.PI / 8; townB.cyl('#ffffff', Math.cos(a) * 4.4, 2.3, KZ + Math.sin(a) * 4.4, 0.12, 0.14, 3.4, 8); solidCircle(Math.cos(a) * 4.4, KZ + Math.sin(a) * 4.4, 0.18); }
-  { // el techo va aparte para transparentarse cuando Tamachin pasa por detrás (como los edificios)
+  { // el techo va aparte para cortarse cuando tapa a Tamachin (como los edificios). Debajo está abierto: `roof` dice dónde está el
+    // cono (de la orilla, a 3.7 m, a la punta y su remate) para que se corte solo si de verdad lo tapa (`roofCrosses`, 06-main.js)
     const km = new THREE.MeshLambertMaterial({ vertexColors: true });
     scene.add(new Batch().cone('#ef6b5b', 0, 4.9, KZ, 6.2, 2.4, 8, Math.PI / 8).cone('#ffffff', 0, 6.35, KZ, 0.9, 0.9, 8, Math.PI / 8).sph('#ffd76a', 0, 6.9, KZ, 0.3).mesh(km));
-    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], k: 1, padW: 0, padE: 0, padN: 0, padS: 0 });
+    occluders.push({ x0: -6.2, x1: 6.2, z0: KZ - 6.2, z1: KZ + 6.2, h: 7.2, mats: [km], k: 1, padW: 0, padE: 0, padN: 0, padS: 0,
+      roof: { x: 0, z: KZ, r: 6.2, y0: 3.7, y1: 6.1, tip: 7.2, tipR: 0.9 } });
   }
   for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; townB.box('#ffffff', Math.cos(a) * 4.45, 1.05, KZ + Math.sin(a) * 4.45, 0.12, 0.7, 3.2, -a); }
   solidCircle(0, KZ, 5.4);
