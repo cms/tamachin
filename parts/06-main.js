@@ -1566,7 +1566,7 @@ function boot(data) {
   if (Number.isInteger(s.charcos) && s.charcos >= 0) puddleJumps = Math.min(10, s.charcos);
   applyMood(); syncPanel();
   resize(); updateCamera(0.016);
-  player.T.doTrick('wave'); say(player, '¡Hola! Soy Tamachin.', 4);
+  player.T.doTrick('wave'); say(player, upd.fresh ? '¡Me actualicé! ¿Qué habrá de nuevo?' : '¡Hola! Soy Tamachin.', 4);
   requestAnimationFrame(frame);
 }
 // lo que dejó hecho un encargo sigue así al volver
@@ -1575,9 +1575,67 @@ function restoreQuests() {
   if (quests.fuente === 2) { lulu.loop = null; lulu.home = LULU_SPOT; lulu.pos.set(LULU_SPOT.x, 0, LULU_SPOT.z); lulu.heading = LULU_SPOT.ry; }
   if (quests.gelatina === 2) { nube.mood0 = 'contento'; nube.T.setMood('contento'); }
 }
+// Versión nueva. publicar.cjs pone en la página (<meta name="version">) y en sw.js (VERSION) un resumen de lo publicado y la hora; en
+// el repo dicen "dev" y aquí no se busca nada. Cada publicación cambia sw.js: al volver al juego se le pide al navegador que lo revise
+// (`update`); si cambió, el nuevo se instala (guarda la copia nueva completa) y toma el control. Si el que manda tiene otra versión,
+// más reciente que la de esta página, ya está lista: un aviso, el diario lo dice con un botón, y la próxima vez que vuelvas al juego
+// se recarga sola si es buen momento. Antes de recargar se vuelve a preguntar, y nunca se recarga dos veces por la misma versión.
+function parseVer(s) { const m = /^([0-9a-f]{6,}) (\d{4}-\d\d-\d\dT\d\d:\d\d:\d\dZ)$/.exec(String(s || '')); return m ? { h: m[1], t: Date.parse(m[2]) } : null; }
+const upd = { mine: parseVer(($('meta[name=version]') || {}).content), ready: null, reg: null, fresh: false, tried: [], focusT: 0 };
+try {
+  upd.tried = JSON.parse(sessionStorage.getItem('tamachin-tried') || '[]') || [];
+  const from = sessionStorage.getItem('tamachin-from'); sessionStorage.removeItem('tamachin-from');
+  upd.fresh = !!(from && upd.mine && from !== upd.mine.h);   // venimos de actualizar (lo dice Tamachin al arrancar)
+} catch (e) { /* sin sessionStorage */ }
+const newer = (v) => !!(v && upd.mine && v.h !== upd.mine.h && v.t > upd.mine.t);
+// la versión del service worker que manda; null si no hay, si no contesta o si es uno viejo (sin VERSION)
+function askVer() {
+  const w = navigator.serviceWorker && navigator.serviceWorker.controller;
+  if (!w || !upd.mine) return Promise.resolve(null);
+  return new Promise((ok) => {
+    const ch = new MessageChannel(), t = setTimeout(() => ok(null), 2000);
+    ch.port1.onmessage = (e) => { clearTimeout(t); ok(parseVer(e.data)); };
+    try { w.postMessage({ type: 'version' }, [ch.port2]); } catch (e) { clearTimeout(t); ok(null); }
+  });
+}
+async function updCompare() {
+  const v = await askVer();
+  if (!newer(v) || upd.tried.includes(v.h) || (upd.ready && upd.ready.h === v.h)) return;
+  upd.ready = v; showVer();
+  toast('Hay una versión nueva de Tamachin: se pone sola la próxima vez que vuelvas al juego, o desde el diario.', 6);
+}
+function updCheck() { if (upd.reg && upd.mine) upd.reg.update().catch(() => {}); }   // sin red, o si falla: nada
+// buen momento: nada a medias que se perdería (lo que no se guarda: una secuencia, el mareo, quien lo acompaña) ni un panel abierto
+function updSafe() {
+  const P = player;
+  return P.state === 'normal' && P.onGround && P.T.mood !== 'mareado' && !ui.closeup && diaryEl.hidden
+    && !creatures.some((c) => c.follow > 0) && !npcs.some((n) => n.follow);
+}
+function updApply(v) {
+  try { sessionStorage.setItem('tamachin-from', upd.mine.h); sessionStorage.setItem('tamachin-tried', JSON.stringify(upd.tried.concat(v.h))); } catch (e) { /* igual se recarga */ }
+  save(); $('#updating').hidden = false; setTimeout(() => location.reload(), 60);   // que alcance a pintarse "Actualizando…"
+}
+// volviste al juego (la app sale del fondo, la pestaña se ve otra vez): si hay una lista, se pone; si no, se revisa
+async function updReturn() {
+  if (!upd.mine) return;
+  if (upd.ready && updSafe()) { const v = await askVer(); if (newer(v) && !upd.tried.includes(v.h) && updSafe()) { updApply(v); return; } }
+  updCheck(); updCompare();
+}
+const verEl = $('#dVer'), newEl = $('#dNew');
+function showVer() {
+  const m = upd.mine;
+  verEl.textContent = m ? 'Versión ' + m.h.slice(0, 6) + ' · ' + new Date(m.t).toLocaleString('es', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' }) : 'Versión local (sin publicar)';
+  newEl.hidden = !upd.ready; if (!diaryEl.hidden) updMore(diaryEl);
+}
+showVer();
+$('#dUpdate').addEventListener('click', () => { if (upd.ready) updApply(upd.ready); });   // a mano: sin esperar el buen momento
+window.addEventListener('pageshow', (e) => { if (e.persisted) updReturn(); });
+window.addEventListener('focus', () => { if (Date.now() - upd.focusT > 60000) { upd.focusT = Date.now(); updCheck(); } });   // una pestaña que nunca se oculta
+setInterval(() => { if (!document.hidden) updCheck(); }, 30 * 60000);
+
 window.addEventListener('pagehide', () => save());
 document.addEventListener('visibilitychange', () => {
-  if (document.hidden) save();
+  if (document.hidden) save(); else updReturn();
   const c = snd.ctx; if (c && snd.on) (document.hidden ? c.suspend() : c.resume()).catch(() => {});   // la música se detiene con la pestaña oculta y sigue donde iba
 });
 // Sin internet y como app instalada (manifest.webmanifest): sw.js guarda una copia del juego. Al terminar de cargar, la página le
@@ -1585,8 +1643,10 @@ document.addEventListener('visibilitychange', () => {
 function offline() {
   try {
     const sw = navigator.serviceWorker; if (!sw || !window.isSecureContext) return;
+    sw.addEventListener('controllerchange', () => updCompare());   // llegó uno nuevo: ¿trae otra versión?
     const go = () => sw.register('sw.js').then(() => sw.ready).then((reg) => {
       if (reg && reg.active) reg.active.postMessage({ type: 'loaded', urls: performance.getEntriesByType('resource').map((r) => r.name) });
+      upd.reg = reg; updCompare();
     }).catch(() => {});
     if (document.readyState === 'complete') go(); else window.addEventListener('load', go, { once: true });
   } catch (e) { /* sin copia: el juego funciona igual con red */ }

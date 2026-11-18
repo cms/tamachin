@@ -28,6 +28,7 @@ parts/
   05-norte.js     Montañas, Valle Alegre y el bosque sin fin (terreno, límites, vegetación por sectores y por casillas)
   06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
 build.sh          Concatena parts/ en game.js
+publicar.cjs      Arma dist/ (lo que se publica) y le pone la versión; lo llama `wrangler deploy`
 manifest.webmanifest  La app instalable: nombre, colores, íconos
 sw.js             Service worker: la copia para jugar sin internet
 iconos/           Íconos de la app (PNG) y de dónde salen (icono.svg, hacer.cjs)
@@ -68,11 +69,20 @@ Después de la primera visita abre también sin internet, instalado o en el nave
 - **Sin red, la copia.** Se usa la copia guardada sin red, o si la página tarda más de 4 s. En ese caso todo lo de esa página sale de la copia, para no mezclar una página vieja con un `game.js` nuevo. La copia de la página, `game.js` y el manifiesto se guarda completa y de una vez, y se pone al día cada vez que el juego termina de cargar.
 - **Three.js y las fuentes** se guardan la primera vez y después salen de la copia.
 
-En iPhone la app instalada guarda su propia partida, aparte de la de Safari: al instalarla Tamachin empieza de nuevo. Una app abierta sigue con la versión que tenía; para ver lo recién publicado hay que cerrarla (deslizarla hacia arriba en el selector de apps) y volver a abrirla.
+En iPhone la app instalada guarda su propia partida, aparte de la de Safari: al instalarla Tamachin empieza de nuevo.
+
+**Versiones nuevas.** Una app abierta se queda en segundo plano con la versión que tenía, así que el juego busca solo lo nuevo:
+
+- Al publicar, `publicar.cjs` pone una versión en la página y en `sw.js`: un resumen de lo que se publica del juego y la hora. El final del diario la dice («Versión 3f9a2c · 18 nov, 10:42»); en local dice «Versión local (sin publicar)».
+- Cada vez que vuelves al juego (la app sale del fondo, la pestaña se ve otra vez) le pide al navegador revisar `sw.js`. Si hay una versión nueva, se baja entera y avisa: «Hay una versión nueva de Tamachin…». El diario lo dice arriba, con «Actualizar ahora».
+- La siguiente vez que vuelves, si es buen momento (sin un panel abierto ni nada a medias: una secuencia, el mareo, alguien que lo acompaña), se recarga sola: «Actualizando…» un segundo, y Tamachin sigue donde estaba y dice «¡Me actualicé!».
+- Volver a publicar lo mismo, o algo que no cambia el juego, no hace recargar a nadie.
+
+Las apps instaladas antes de esto no tienen quien busque versiones: hay que cerrarlas y abrirlas una última vez.
 
 En iPhone el juego llega hasta las orillas de la pantalla (`viewport-fit=cover`, barra de estado translúcida) y la barra de arriba, la palanca, los botones y los paneles se apartan de la muesca y de la rayita de abajo (`env(safe-area-inset-*)`, a través de las variables `--sa-*` de `index.html`).
 
-Los íconos salen de `iconos/icono.svg`; si lo cambias, `node iconos/hacer.cjs` vuelve a armar los PNG con el Chrome instalado. `wrangler deploy` publica el manifiesto, `sw.js` y los PNG junto con el juego.
+Los íconos salen de `iconos/icono.svg`; si lo cambias, `node iconos/hacer.cjs` vuelve a armar los PNG con el Chrome instalado. `wrangler deploy` publica el manifiesto, `sw.js` y los PNG junto con el juego (`publicar.cjs` dice qué se copia a `dist/`).
 
 ## Pruebas
 

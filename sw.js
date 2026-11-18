@@ -10,6 +10,10 @@
 //   fuentes sale de la copia y se renueva por detrás. En la primera visita la página carga todo eso antes de que exista este archivo:
 //   por eso, al cargar, le dice qué usó de afuera.
 // - Lo demás (og.jpg, los íconos) no pasa por aquí. Si algo de aquí falla, la petición va a la red como si no existiera este archivo.
+// - Versión nueva: cada publicación cambia VERSION (la pone publicar.cjs; en el repo dice "dev"), así que el navegador ve un sw.js
+//   distinto cuando lo revisa (al cargar una página, o cuando ella llama `update()` al volver al juego). El nuevo se instala, que guarda
+//   la copia nueva completa, y toma el control enseguida; la página le pregunta su versión y, si es más nueva que la suya, se ofrece.
+const VERSION = 'dev';
 const CACHE = 'tamachin-1';   // súbelo solo si cambia la forma de guardar: al activarse borra las copias con otro nombre
 const SHELL = ['./', 'game.js', 'manifest.webmanifest'];
 const FIXED = /^https:\/\/(cdnjs\.cloudflare\.com\/ajax\/libs\/|fonts\.gstatic\.com\/)/;
@@ -36,9 +40,10 @@ async function saveShell() {
   await Promise.all(got.map((r, i) => c.put(SHELL[i], r)));
 }
 
-// la página terminó de cargar: pone al día la copia y guarda lo de afuera que usó
+// la página pregunta la versión (contesta por el puerto que manda), o terminó de cargar: pone al día la copia y guarda lo de afuera que usó
 self.addEventListener('message', (e) => {
   const d = e.data || {};
+  if (d.type === 'version') { if (e.ports && e.ports[0]) e.ports[0].postMessage(VERSION); return; }
   if (d.type !== 'loaded') return;
   const urls = (Array.isArray(d.urls) ? d.urls : []).filter((u) => typeof u === 'string' && (FIXED.test(u) || FONT_CSS.test(u)));
   e.waitUntil(Promise.all([saveShell().catch(() => {}), caches.open(CACHE).then((c) => Promise.all(urls.map((u) =>

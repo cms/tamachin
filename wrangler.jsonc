@@ -1,12 +1,12 @@
 // Publica el juego como Worker de solo archivos estáticos en https://tamachin.matteo.games
-// `wrangler deploy` primero regenera game.js y arma dist/ con lo único que se sirve: index.html, game.js, og.jpg (la imagen que
-// muestran las redes al compartir el enlace) y lo de la app instalable: manifest.webmanifest, sw.js (la copia para jugar sin internet)
-// y los íconos (iconos/*.png; el SVG y el script que los arma no se publican).
+// `wrangler deploy` primero regenera game.js y luego publicar.cjs arma dist/ con lo único que se sirve: index.html, game.js, og.jpg
+// (la imagen que muestran las redes al compartir el enlace) y lo de la app instalable: manifest.webmanifest, sw.js (la copia para jugar
+// sin internet) y los íconos (iconos/*.png; el SVG y el script que los arma no se publican). Además pone la versión en la página y en sw.js.
 {
   "name": "tamachin",
   "compatibility_date": "2025-09-01",
   "build": {
-    "command": "./build.sh && rm -rf dist && mkdir -p dist/iconos && cp index.html game.js og.jpg manifest.webmanifest sw.js dist/ && cp iconos/*.png dist/iconos/"
+    "command": "./build.sh && node publicar.cjs"
   },
   "assets": {
     "directory": "./dist"

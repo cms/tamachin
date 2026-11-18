@@ -1,11 +1,14 @@
-// La app instalable: manifiesto e íconos, la copia para jugar sin internet (sw.js) y, en iPhone, nada bajo la muesca ni la rayita.
+// La app instalable: manifiesto e íconos, la copia para jugar sin internet (sw.js), la versión nueva que se pone sola y, en iPhone,
+// nada bajo la muesca ni la rayita.
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
-const { REPO, openGame, PHONE, sleep } = require('./lib.cjs');
+const { REPO, serve, openGame, PHONE, sleep } = require('./lib.cjs');
+const { publicar, version, META, SWV } = require('../publicar.cjs');
 
 const read = (f) => fs.readFileSync(path.join(REPO, f), 'utf8');
-const INDEX = read('index.html'), GAME = read('game.js');
-const CACHE = /const CACHE = '([^']+)'/.exec(read('sw.js'))[1];
+const INDEX = read('index.html'), GAME = read('game.js'), SW = read('sw.js');
+const CACHE = /const CACHE = '([^']+)'/.exec(SW)[1];
 const OUTSIDE = [...INDEX.matchAll(/<script src="(https:[^"]+)"/g), ...INDEX.matchAll(/<link href="(https:[^"]+)" rel="stylesheet"/g)].map((m) => m[1]);
 const BUILD = /"command":\s*"([^"]+)"/.exec(read('wrangler.jsonc'))[1];
 
@@ -47,10 +50,22 @@ module.exports = {
       T.check('ícono para Android (maskable): a todo el cuadro, sin transparencia', has('maskable', '512x512') && m.icons.filter((i) => i.purpose === 'maskable').every((i) => i.got.clear === 0));
       T.check('ícono de iPhone: 180×180, sin transparencia (la pondría negra)', m.apple && m.apple.got && m.apple.got.w === 180 && m.apple.got.h === 180 && m.apple.got.clear === 0, JSON.stringify(m.apple));
       T.check('en iPhone ocupa toda la pantalla (viewport-fit=cover, barra de estado translúcida)', /viewport-fit=cover/.test(m.viewport) && m.bar === 'black-translucent' && m.capable === 'yes');
-      // lo que se publica (wrangler.jsonc) lleva todo lo de la app
-      const files = ['manifest.webmanifest', 'sw.js', m.apple.src, ...m.icons.map((i) => i.src)];
-      const missing = files.filter((f) => !BUILD.includes(f) && !BUILD.includes(path.dirname(f) + '/*' + path.extname(f)));
-      T.check('al publicar se copian el manifiesto, sw.js y los íconos', !missing.length, missing.join(', ') || undefined);
+      // lo que se publica (publicar.cjs, que llama wrangler.jsonc) lleva todo lo de la app, con la versión puesta
+      const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'tamachin-')), out = path.join(tmp, 'dist'), src = path.join(tmp, 'src');
+      try {
+        const v = publicar({ origen: REPO, salida: out, ahora: Date.UTC(2026, 10, 18, 10, 0, 0) }), pub = (f) => fs.readFileSync(path.join(out, f), 'utf8');
+        const files = ['index.html', 'game.js', 'og.jpg', 'manifest.webmanifest', 'sw.js', m.apple.src, ...m.icons.map((i) => i.src)];
+        const missing = files.filter((f) => !fs.existsSync(path.join(out, f)));
+        T.check('al publicar (wrangler.jsonc llama a publicar.cjs) van la página, game.js, el manifiesto, sw.js y los íconos', /node publicar\.cjs/.test(BUILD) && !missing.length, missing.join(', ') || BUILD);
+        T.check('… con la misma versión en la página y en sw.js (en el repo, "dev")', /^[0-9a-f]{10} 2026-11-18T10:00:00Z$/.test(v) && pub('index.html').includes('<meta name="version" content="' + v + '">')
+          && pub('sw.js').includes("const VERSION = '" + v + "';") && INDEX.includes(META) && SW.includes(SWV), v);
+        // el resumen sale de lo publicado del juego: igual si nada cambia (aunque se publique a otra hora), otro si cambia game.js
+        fs.mkdirSync(src); for (const f of ['index.html', 'game.js', 'manifest.webmanifest']) fs.copyFileSync(path.join(REPO, f), path.join(src, f));
+        const h0 = version(src, 0).split(' ')[0], h0b = version(src, 9e11).split(' ')[0];
+        fs.appendFileSync(path.join(src, 'game.js'), '\n// otro envío\n'); const h1 = version(src, 0).split(' ')[0];
+        T.check('la versión cambia si cambia el juego, y no si se vuelve a publicar lo mismo', v.startsWith(h0) && h0 === h0b && h1 !== h0, [h0, h0b, h1].join(' '));
+      } finally { fs.rmSync(tmp, { recursive: true, force: true }); }
+      T.check('en local (sin publicar) el diario dice que es la versión local, y no se busca otra', await E(() => document.querySelector('#dVer').textContent) === 'Versión local (sin publicar)');
       T.check('sin errores', !errors.length, errors.join(' | ') || undefined);
       await ctx.close();
     }
@@ -111,6 +126,89 @@ module.exports = {
       r = await reload();
       T.check('cuando la red contesta, la copia nueva queda completa: página y game.js juntos', fresh && r.mark === '3' && r.ver === 3, JSON.stringify(r));
       await ctx.close();
+    }
+    {
+      // Versión nueva. Un servidor propio (otro puerto: otro origen, con su propio service worker) contesta como si se hubiera publicado
+      // otra vez: la página y sw.js con la versión `pub.n` (`pub.page` deja la página en otra) y game.js con una marca. Con rutas no se
+      // puede: la revisión de sw.js que hace el navegador (`update()`) va directo al servidor.
+      const pub = { n: 1, page: null, swDown: false };   // swDown: sw.js contesta con error (la página sí llega)
+      const ver = (n) => String(n).repeat(10) + ' ' + new Date(Date.UTC(2026, 10, 18, 8 + n)).toISOString().slice(0, 19) + 'Z';
+      const own = await serve((f) => f === 'index.html' ? INDEX.replace(META, '<meta name="version" content="' + ver(pub.page || pub.n) + '">')
+        : f === 'sw.js' ? (pub.swDown ? { status: 503 } : SW.replace(SWV, "const VERSION = '" + ver(pub.n) + "';"))
+        : f === 'game.js' ? GAME.replace('window.__tamachin = {', 'window.__dbg = { creatures, player };\nwindow.__tamachin = {') + '\nwindow.__ver = ' + pub.n + ';\n' : null);
+      const { ctx, page, errors, E } = await openGame({ ...T, url: own.url }, { sw: true, device: PHONE });
+      try {
+        const st = () => E(() => ({ ver: window.__ver || null, mine: (document.querySelector('meta[name=version]') || {}).content || null,
+          ready: !document.querySelector('#dNew').hidden, line: document.querySelector('#dVer').textContent, toast: document.querySelector('#toast').textContent,
+          cover: !document.querySelector('#updating').hidden, said: [...document.querySelectorAll('.bubble.on')].map((b) => b.textContent).join(' | ') }));
+        // la app se va al fondo y vuelve (Chrome sin interfaz no la oculta de verdad: se cambia document.hidden y se avisa)
+        const away = () => E(() => {
+          const set = (h) => { Object.defineProperty(document, 'hidden', { configurable: true, get: () => h });
+            Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => (h ? 'hidden' : 'visible') }); document.dispatchEvent(new Event('visibilitychange')); };
+          set(true); set(false);
+        });
+        const reloaded = async (fn) => { const ld = page.waitForEvent('load', { timeout: 20000 }); await fn(); await ld; await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 }); await sleep(800); };
+        const copyOf = (f) => E(([name, u]) => caches.open(name).then((c) => c.match(u)).then((r) => (r ? r.text() : '')), [CACHE, own.url + f]);
+        await page.waitForFunction(() => !!navigator.serviceWorker.controller, null, { timeout: 20000 });
+        let s = await st();
+        T.check('el diario dice la versión: sus primeras letras y cuándo se publicó', s.line.startsWith('Versión 111111 · ') && s.ver === 1, s.line);
+
+        // se publica otra: al volver al juego se revisa y se baja entera, sin recargar a medio juego
+        pub.n = 2; await away();
+        const ready = await until(async () => (s = await st()).ready, 15000);
+        T.check('al volver al juego, la versión nueva se baja sola y avisa, sin recargar todavía', ready && s.ver === 1 && !s.cover && /versión nueva/.test(s.toast), JSON.stringify(s));
+        T.check('… y ya está en la copia, completa', (await copyOf('')).includes(ver(2)) && (await copyOf('game.js')).includes('__ver = 2'));
+        await page.tap('#bDiary'); await sleep(500); await page.screenshot({ path: T.out('version-nueva.jpg'), type: 'jpeg', quality: 70 });
+        // con un panel abierto (el diario, Personalizar) no es buen momento: espera
+        await away(); await sleep(1200); s = await st();
+        T.check('con el diario abierto no se recarga', s.ver === 1 && !s.cover, JSON.stringify(s));
+        await page.tap('#dClose'); await E(() => window.__tamachin.togglePanel(true)); await sleep(300);
+        await away(); await sleep(1200); s = await st();
+        T.check('con Personalizar abierto tampoco', s.ver === 1 && !s.cover, JSON.stringify(s));
+        await E(() => window.__tamachin.togglePanel(false)); await sleep(300);
+        // nada a medias que se perdería: el conejo siguiéndolo (pegado a él, para que no se quede atrás), o una secuencia (el refri, las bayas)
+        await E(() => { const P = window.__dbg.player, r = window.__dbg.creatures.find((c) => c.kind === 'conejo'); r.pos.set(P.pos.x + 1.5, 0, P.pos.z); r.follow = 30; window.__stay = true; });
+        await away(); await sleep(1200);
+        const rabbit = await E(() => window.__stay === true && window.__dbg.creatures.find((c) => c.kind === 'conejo').follow > 0);
+        await E(() => { window.__dbg.creatures.find((c) => c.kind === 'conejo').follow = 0; const P = window.__dbg.player; P.state = 'busy'; P.busy = { dur: 999, t: 0, fired: {}, update() {} }; });
+        await away(); await sleep(1200);
+        const busy = await E(() => window.__stay === true);
+        await E(() => { const P = window.__dbg.player; P.busy = null; P.state = 'normal'; });
+        T.check('con el conejo siguiéndolo, o a media secuencia, tampoco', rabbit && busy && (await st()).ver === 1, JSON.stringify({ rabbit, busy }));
+
+        // la siguiente vez que vuelve, en buen momento: se recarga en la nueva y sigue donde estaba
+        await E(() => { window.__tamachin.go(2, 6); window.__tamachin.advance(0.5); });
+        await reloaded(away);
+        s = await st(); const at = await E(() => [window.__tamachin.player.pos.x, window.__tamachin.player.pos.z]);
+        T.check('al volver otra vez se recarga en la versión nueva, donde estaba Tamachin', s.ver === 2 && s.mine === ver(2) && Math.hypot(at[0] - 2, at[1] - 6) < 0.5, JSON.stringify({ ...s, at }));
+        T.check('… Tamachin dice que se actualizó, y el diario dice la versión nueva', /actualicé/.test(s.said) && s.line.startsWith('Versión 222222 · ') && !s.ready, JSON.stringify(s));
+
+        // la página llega por la red más nueva que el service worker (se publicó, pero la revisión de sw.js falló: aquí contesta 503):
+        // el que manda es más viejo que la página, y eso no es "versión nueva"; tampoco al volver al juego, ni cuando por fin llega el nuevo
+        const swVer = () => E(() => new Promise((ok) => { const ch = new MessageChannel(); ch.port1.onmessage = (e) => ok(e.data); navigator.serviceWorker.controller.postMessage({ type: 'version' }, [ch.port2]); }));
+        pub.n = 3; pub.swDown = true; await E(() => { document.querySelector('#toast').textContent = ''; sessionStorage.removeItem('tamachin-tried'); });   // que no la tape "ya se intentó"
+        await reloaded(() => page.reload()); await E(() => { window.__stay = true; }); await away(); await sleep(1500);
+        const older = await swVer(); s = await st();
+        const mid = !s.ready && !/versión nueva/.test(s.toast);
+        pub.swDown = false; await away(); await until(async () => await swVer() === ver(3), 15000); await sleep(1000); s = await st();
+        const stayed = await E(() => window.__stay === true);   // y sin recargar en medio
+        T.check('si la página llega más nueva que el service worker, no avisa nada (ni con el viejo mandando, ni cuando llega el nuevo)',
+          older === ver(2) && mid && stayed && s.ver === 3 && !s.ready && !/versión nueva/.test(s.toast), JSON.stringify({ older, mid, stayed, ...s }));
+        for (let i = errors.length - 1; i >= 0; i--) if (/503 .*sw\.js/.test(errors[i])) errors.splice(i, 1);   // ese error es a propósito
+
+        // «Actualizar ahora» en el diario: sin esperar a volver al juego
+        pub.n = 4; await away(); await until(async () => (s = await st()).ready, 15000);
+        await page.tap('#bDiary'); await sleep(400);
+        await reloaded(() => page.tap('#dUpdate')); s = await st();
+        T.check('«Actualizar ahora» en el diario la pone enseguida', s.ver === 4 && s.mine === ver(4), JSON.stringify(s));
+
+        // si al recargar no llegó la versión nueva (el servidor sigue dando la página de antes), no lo vuelve a intentar: nunca en ciclo
+        pub.n = 5; pub.page = 4; await away(); await until(async () => (s = await st()).ready, 15000);
+        await reloaded(away);
+        await E(() => { window.__stay = true; }); await away(); await sleep(1500); s = await st();
+        T.check('si la recarga no trae la versión nueva, no vuelve a recargar por ella', s.mine === ver(4) && !s.ready && await E(() => window.__stay === true), JSON.stringify(s));
+        T.check('sin errores (versión nueva)', !errors.length, errors.join(' | ') || undefined);
+      } finally { await ctx.close(); own.server.close(); }
     }
     {
       // iPhone: la muesca y la barra de estado arriba (de pie) o a los lados (acostado), y la rayita de abajo. Chrome no las tiene:

@@ -17,12 +17,22 @@ function playwright() {
   throw new Error('Falta playwright-core: ejecuta `npm install` en la raíz del repo.');
 }
 
-// Sirve la raíz del repo en un puerto libre de 127.0.0.1.
-function serve() {
+// Sirve la raíz del repo en un puerto libre de 127.0.0.1. `over(archivo)` puede contestar otra cosa (texto o Buffer, una promesa
+// para tardar, o { status } para un error; null: el del repo): `pwa` simula así una publicación nueva, porque la revisión de sw.js
+// que hace el navegador (`update()`) no pasa por las rutas.
+function serve(over) {
   const types = { '.html': 'text/html; charset=utf-8', '.js': 'application/javascript', '.jpg': 'image/jpeg', '.png': 'image/png', '.json': 'application/json',
     '.webmanifest': 'application/manifest+json', '.svg': 'image/svg+xml' };
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(req.url.split('?')[0]).replace(/^\/+/, '') || 'index.html';
+    const alt = over ? over(rel) : null;
+    if (alt != null) {
+      Promise.resolve(alt).then((body) => {
+        if (body.status) { res.writeHead(body.status); res.end(); return; }
+        res.writeHead(200, { 'content-type': types[path.extname(rel)] || 'application/octet-stream' }); res.end(body);
+      });
+      return;
+    }
     const file = path.join(REPO, rel);
     if (!file.startsWith(REPO + path.sep) || !fs.existsSync(file) || fs.statSync(file).isDirectory()) { res.writeHead(404); res.end(); return; }
     res.writeHead(200, { 'content-type': types[path.extname(file)] || 'application/octet-stream' });
