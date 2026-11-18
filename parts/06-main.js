@@ -716,7 +716,7 @@ function handleClick(px, py) {
   const P = player; let best = Infinity, what = null;
   let d = hitTest(px, py, P.pos.x, P.pos.y + 0.8 * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z, 0.85 * P.T.scale); if (d < best) { best = d; what = P; }
   if (home) for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
-  if (home) for (const c of creatures) { if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
+  for (const c of creatures) { if ((c.world || EARTH.name) !== world.name) continue; if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
   if (!what) return;
   if (what === P) { if (P.state === 'sleep') wake(); else if (!pester()) playerTrick(); return; }
   const dist = Math.hypot(what.pos.x - P.pos.x, what.pos.z - P.pos.z);
@@ -826,7 +826,7 @@ function goHome() {
   if ((world !== EARTH || Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40) && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
-  setWorld(EARTH.name);                                             // desde otro mundo (la luna), también de vuelta a la Tierra
+  setWorld(EARTH.name, START);                                      // desde otro mundo (la luna), también de vuelta a la Tierra (y el conejo que lo sigue)
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
   P.pos.set(START.x, 0, START.z); camInit = false; camView.yaw = camView.yawT = 0; camView.pitch = camView.pitchT = PITCH.def;   // también la cámara, de frente a la casa
   toggleDiary(false); say(P, '¡De vuelta en casa!', 2.2); P.T.doTrick('hop'); burst('spark', P.pos.x, 1.6, P.pos.z, 6); SFX.nice(); save();
@@ -1558,7 +1558,7 @@ const EARTH = {
   },
   mid(dt) {
     updateCrossing(); updateNPCs(dt);
-    for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
+    for (const c of creatures) if (!c.world && (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90)) c.update(dt);   // el conejo de Tofu vive en la ciudad
     updateFish(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt); updateButterflies(dt); updateScenery(dt);
     for (const k in WORLDS) if (WORLDS[k].onEarth) WORLDS[k].onEarth(dt);   // la entrada de cada mundo (el túnel de la luna)
   },
@@ -1568,7 +1568,7 @@ world = EARTH;
 // Lo que otro mundo no trae: sin tiempo ni agua ni casa, la cámara sigue al suelo, nada que hacer. Puede poner `sky(force)` (su cielo
 // y su luz, en vez de applyDay; la hora sigue corriendo), `enter` y `leave`, y `build(M)`, que arma lo suyo en M.root y M.solids.
 const WORLD_BASE = {
-  rules: RULES, interacts: [], weather: false, wet: () => false, puddle: () => false, inHouse: () => false, collide() {}, slope: null,
+  rules: RULES, weather: false, wet: () => false, puddle: () => false, inHouse: () => false, collide() {}, slope: null,
   camBase(p) { return this.ground(p.x, p.z); }, hills: () => true, edge(x, z) { return this.ground(x, z); }, camX: () => Infinity, camZ: Infinity,
   surface: () => 'piedra', pre() {}, mid() {}, post() {},
 };
@@ -1583,27 +1583,40 @@ function worldNamed(name) {
   const M = WORLDS[name]; if (!M) return null;
   if (!M.root) {                                                    // la primera vez: se arma (y se compila bajo el telón)
     for (const k in WORLD_BASE) if (!(k in M)) M[k] = WORLD_BASE[k];
+    M.interacts = M.interacts || [];                                // los suyos (build puede ponerlos); un conejo de viaje agrega el suyo
     M.root = new THREE.Group(); M.root.userData.world = name; M.root.visible = false; M.solids = solids();
     M.build(M); scene.add(M.root);
   }
   return M;
 }
-// Al instante (al arrancar, «Volver al inicio», las pruebas); enterWorld lo hace con el telón. `at`: { x, z, heading, yaw }.
+// Al instante (al arrancar, «Volver al inicio», las pruebas); enterWorld lo hace con el telón. `at`: { x, z, heading, yaw, pet }; `pet`
+// es dónde aparece quien viaja con él: un conejo que lo sigue, si está cerca (de otro mundo, siempre: allá no se pierde).
 function setWorld(name, at) {
   const N = worldNamed(name); if (!N) return false;
   const P = player;
   if (N !== world) {
+    const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && (c.world || EARTH.name) === world.name
+      && (world !== EARTH || Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 10)), from = world;
     if (world.leave) world.leave();
     sweepEarth(); world.root.visible = false; N.root.visible = true; world = N;
     if (N.enter) N.enter();
     skyNow(true);                                                   // su cielo y su luz, ya (de vuelta, el de la hora)
     for (const b of bubbles) if (b.who && b.who !== P) b.until = 0;   // lo que decían los de allá se queda allá
+    pals.forEach((c, i) => travel(c, from, N, (at && at.pet) || { x: (at ? at.x : P.pos.x) + 1.3, z: (at ? at.z : P.pos.z) + 1.3 }, i));
     if (!N.compiled) { N.compiled = true; renderer.compile(scene, camera); }
   }
   P.vx = P.vz = P.vy = 0; P.perch = null; P.onGround = true; P.inWater = false;
   if (at) { P.pos.set(at.x, world.ground(at.x, at.z), at.z); if (at.heading != null) P.heading = at.heading; if (at.yaw != null) camView.yaw = camView.yawT = at.yaw; }
   P.inHouse = world.inHouse(P.pos); camInit = false;
   return true;
+}
+// un conejo de viaje: su malla va a la raíz del otro mundo, y su «Acariciar» a los avisos de allá (en la Tierra no debe quedar uno
+// invisible donde estaba); allá lo mueve step (06) con el suelo y los choques de ese mundo (makeRabbit, 04-life.js)
+function travel(c, from, to, spot, i) {
+  const it = from.interacts.indexOf(from.interacts.find((q) => q.who === c)); if (it >= 0) to.interacts.push(from.interacts.splice(it, 1)[0]);
+  c.world = to === EARTH ? null : to.name; to.root.add(c.mesh);
+  const x = spot.x + i * 0.9, z = spot.z; c.pos.set(x, to === EARTH ? 0 : to.ground(x, z), z); c.tx = x; c.tz = z; c.hopP = 0; c.rest = 0.4; c.mesh.rotation.x = 0;
+  if (to !== EARTH) say(c, choose(['¡Hooop!', '¡Hop… hooop!', '(mira las estrellas)']), 2.2);
 }
 // Con el telón: se cierra (0.45 s), cambia de mundo, y se abre. Va en una secuencia (startBusy), así `advance` también lo mueve.
 // o: { at, line, walkIn, walkOut }. walkIn y walkOut ({ x, z }, m/s) lo hacen caminar mientras se cierra y mientras se abre (por la
@@ -1628,7 +1641,9 @@ function enterWorld(name, o) {
 function step(dt) {
   clock += dt; updateDay(dt); updateDayCount();
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
-  world.pre(dt); updatePlayer(dt); world.mid(dt); updateNeeds(dt);
+  world.pre(dt); updatePlayer(dt); world.mid(dt);
+  if (world !== EARTH) for (const c of creatures) if (c.world === world.name) c.update(dt);   // quien vino con él (un conejo)
+  updateNeeds(dt);
   updateCamera(dt); updateLantern(dt); world.post(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
 }

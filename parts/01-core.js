@@ -368,7 +368,7 @@ function pushOutCircle(pos, r, cx, cz, cr) {
   const d = Math.sqrt(d2); pos.x = cx + dx / d * R; pos.z = cz + dz / d * R; return true;
 }
 // para quien acompaña a Tamachin (conejo, vecina): que no atraviese paredes ni troncos
-function resolveAgent(pos, r) { for (const b of boxes) pushOutBox(pos, r, b); for (const c of circles) pushOutCircle(pos, r, c.x, c.z, c.r); }
+function resolveAgent(pos, r, S) { S = S || EARTH_SOLIDS; for (const b of S.boxes) pushOutBox(pos, r, b); for (const c of S.circles) pushOutCircle(pos, r, c.x, c.z, c.r); }   // S: los de otro mundo
 
 // ───────────────────────── partículas (sprites) ─────────────────────────
 function glyphTex(draw) { return canvasTex(64, 64, draw); }

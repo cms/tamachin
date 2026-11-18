@@ -279,28 +279,34 @@ function makeRabbit(x, z, col) {
   const o = { kind: 'conejo', mesh, pos: mesh.position, home: { x, z }, tx: x, tz: z, hopP: 0, hopSpeed: 0, rest: 0, wait: rand(0, 3), follow: 0, scare: 0, heading: rand(0, TAU), side: rand(-1, 1), range: 5, clickR: 0.6,
     buddy: null, stuckT: 0, onLost: null, onStuck: null };
   o.bubblePos = (v) => v.set(o.pos.x, o.pos.y + 1.25, o.pos.z);
+  // De viaje en otro mundo con Tamachin (`o.world`, la luna; lo lleva setWorld, 06-main.js): pisa su suelo, choca con lo suyo, no hay agua,
+  // y con poca gravedad cada brinco es más alto y más lento. Allá no se cansa de seguirlo ni se pierde: así vuelve con él.
   o.update = (dt) => {
-    const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp);
-    o.follow = Math.max(0, o.follow - dt); o.scare = Math.max(0, o.scare - dt);
-    if (o.follow > 0 && dp > 32) { o.follow = 0; if (o.onLost) o.onLost(o); }          // se quedó muy atrás
+    const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp), M = o.world ? WORLDS[o.world] : null;
+    const HOP = M ? 0.8 : 0.36, HIGH = M ? 1.3 : 0.4;              // cuánto dura un brinco y qué tan alto
+    if (!M) o.follow = Math.max(0, o.follow - dt); o.scare = Math.max(0, o.scare - dt);
+    if (!M && o.follow > 0 && dp > 32) { o.follow = 0; if (o.onLost) o.onLost(o); }          // se quedó muy atrás
     if (o.buddy) { const B = o.buddy; o.tx = B.pos.x - Math.sin(B.heading) * 1.3 + o.side * 0.5; o.tz = B.pos.z - Math.cos(B.heading) * 1.3; }
-    else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side; o.tz = P.z - Math.cos(player.heading) * 1.7; }
+    else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side + (M ? player.vx * HOP : 0); o.tz = P.z - Math.cos(player.heading) * 1.7 + (M ? player.vz * HOP : 0); }   // allá, a donde va a llegar (el brinco es largo)
     else if (dp < 3.2 && player.speedN > 1.3 && o.scare <= 0) { o.tx = o.pos.x - dxp / dp * 5; o.tz = o.pos.z - dzp / dp * 5; o.scare = 2; o.rest = 0; emit('excl', o.pos.x, 1.1, o.pos.z); }
     else if (o.scare <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(2, 6); const a = rand(0, TAU), r = rand(0, o.range); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; } }
     const dx = o.tx - o.pos.x, dz = o.tz - o.pos.z, d = Math.hypot(dx, dz);
     if (o.hopP > 0) {
-      o.hopP += dt / 0.36; const k = Math.min(1, o.hopP);
+      o.hopP += dt / HOP; const k = Math.min(1, o.hopP);
       o.pos.x += Math.sin(o.heading) * o.hopSpeed * dt; o.pos.z += Math.cos(o.heading) * o.hopSpeed * dt; o.pos.x = clamp(o.pos.x, -60, 60);
-      o.pos.y = Math.sin(k * Math.PI) * 0.4; mesh.rotation.x = -Math.cos(k * Math.PI) * 0.28;
-      if (o.follow > 0 || o.buddy) resolveAgent(o.pos, 0.3);
-      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = 0; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0 || o.buddy) ? 0.03 : rand(0.1, 0.35); }
+      if (o.follow > 0 || o.buddy) resolveAgent(o.pos, 0.3, M && M.solids);
+      if (M) M.collide(o.pos);                                       // la orilla del cráter
+      const g = M ? M.ground(o.pos.x, o.pos.z) : 0;
+      o.pos.y = g + Math.sin(k * Math.PI) * HIGH; mesh.rotation.x = -Math.cos(k * Math.PI) * 0.28;
+      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = g; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0 || o.buddy) ? 0.03 : rand(0.1, 0.35); if (M) burst('puff', o.pos.x, g + 0.05, o.pos.z, 2); }   // en la luna, polvito
     } else {
       o.rest -= dt;
       if (d > 0.8) {
         o.heading += angDiff(o.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 10);
         if (o.rest <= 0) {
-          const sp = (o.follow > 0 || o.scare > 0 || o.buddy) ? clamp(d / 0.36, 3, 8) : 2.6;
-          if (wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) {
+          const sp = (o.follow > 0 || o.scare > 0 || o.buddy) ? clamp(d / HOP, M ? 1.2 : 3, M ? 11 : 8) : 2.6;
+          if (M) o.heading = Math.atan2(dx, dz);                       // un brinco largo, derecho a donde va (si no, va en espiral)
+          if (!M && wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) {
             o.rest = 0.6; o.tx = o.pos.x; o.tz = o.pos.z;
             if (o.follow > 0 && (o.stuckT += 0.6) > 2.4 && o.onStuck) { o.onStuck(o); o.stuckT = -20; }   // no nada: hay que cruzar por el puente
           }

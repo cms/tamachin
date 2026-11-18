@@ -125,23 +125,35 @@ module.exports = {
     await walk(['KeyW'], 1.2);
     const stay = await st();
     T.check('recién vuelto, empujar contra la boca no lo regresa a la luna (primero hay que alejarse)', stay.world === 'tierra' && stay.st === 'normal', JSON.stringify(stay));
-    // con el conejo siguiéndolo: se aleja un poco, entra otra vez, y el conejo lo espera en la boca
+    // con el conejo siguiéndolo: se aleja un poco, entra otra vez, y el conejo se va con él a la luna
     await E(() => { const D = window.__dbg, P = window.__tamachin.player, r = D.creatures.find((c) => c.kind === 'conejo'); r.pos.set(P.pos.x + 1.2, 0, P.pos.z + 1.6); r.follow = 30; D.rabbit = r; });
     await walk(['KeyS'], 0.8); await walk(['KeyW'], 1.4); await walk([], 1.2);
     const again = await st();
     T.check('después de alejarse un poco, el túnel lo lleva otra vez a la luna', again.world === 'luna', JSON.stringify(again));
-    const bunny = () => E(() => { const r = window.__dbg.rabbit, P = window.__tamachin.player; return { follow: +r.follow.toFixed(1), d: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(2), x: +r.pos.x.toFixed(1), z: +r.pos.z.toFixed(1) }; });
-    const b0 = await bunny(); await walk([], 4); const b1 = await bunny();
-    await walk(['KeyS'], 0.8); await walk(['KeyW'], 1.6); await walk([], 1.2);
+    const bunny = () => E(() => {
+      const D = window.__dbg, r = D.rabbit, P = window.__tamachin.player, W = D.W, drawn = (o) => { for (; o; o = o.parent) if (!o.visible) return false; return true; };
+      return { world: r.world || 'tierra', root: r.mesh.parent.userData.world, drawn: drawn(r.mesh), follow: +r.follow.toFixed(1), d: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(2),
+        here: W.interacts.some((i) => i.who === r), onEarth: D.EARTH.interacts.some((i) => i.who === r), feet: +(r.pos.y - W.ground(r.pos.x, r.pos.z)).toFixed(2) };
+    });
+    const b0 = await bunny();
+    T.check('el conejo que lo seguía se va con él a la luna: se dibuja allá, junto a él, y su «Acariciar» también se fue', b0.world === 'luna' && b0.root === 'luna' && b0.drawn && b0.d < 5 && b0.here && !b0.onEarth && b0.feet > -0.05, JSON.stringify(b0));
+    // allá lo sigue, brincando más alto (en la Tierra, 0.4 m)
+    const hop = await E(() => { const T = window.__tamachin, D = window.__dbg, r = D.rabbit, K = D.keys; let top = 0;
+      K.KeyS = true; for (let i = 0; i < 150; i++) { T.advance(1 / 60, 1 / 60); top = Math.max(top, r.pos.y - D.lunaY(r.pos.x, r.pos.z)); } K.KeyS = false;
+      for (let i = 0; i < 150; i++) { T.advance(1 / 60, 1 / 60); top = Math.max(top, r.pos.y - D.lunaY(r.pos.x, r.pos.z)); } return +top.toFixed(2); });
+    const b1 = await bunny();
+    T.check('en la luna lo sigue, brincando mucho más alto (' + hop + ' m)', b1.d < 4 && b1.follow === b0.follow && hop > 1, JSON.stringify({ ...b1, hop }));
+    // y vuelve con él por el túnel; en la Tierra lo sigue otra vez
+    await walk(['KeyW'], 3.6); await walk([], 1.2);
     const b2 = await E(() => window.__tamachin.world()), b3 = await bunny(); await walk(['KeyS'], 2); await walk([], 2.5); const b4 = await bunny();
-    T.check('el conejo que lo seguía lo espera en el túnel mientras está en la luna, y al volver lo sigue otra vez', b0.x === b1.x && b0.z === b1.z && b0.follow === b1.follow && b2 === 'tierra' && b3.follow > 0 && b3.d < 8 && b4.follow > 0 && b4.d < 4,
-      JSON.stringify({ moon: [b0, b1], back: b3, walked: b4 }));
-    await E(() => { const T = window.__tamachin; T.setWorld('luna', 0, -30); T.advance(0.3); });
+    T.check('vuelve con él a la Tierra (y su «Acariciar» también), y lo sigue otra vez', b2 === 'tierra' && b3.world === 'tierra' && b3.root === 'tierra' && b3.drawn && b3.here && b3.d < 5
+      && b4.follow > 0 && b4.d < 4, JSON.stringify({ back: b3, walked: b4 }));
+    await E(() => { const D = window.__dbg, T = window.__tamachin, P = T.player, r = D.rabbit; r.pos.set(P.pos.x + 1, 0, P.pos.z + 1); r.follow = 30; T.setWorld('luna', 0, -30); T.advance(0.3); });
 
     // «Volver al inicio» desde la luna: dos toques (está lejos) y queda frente a su casa, en la Tierra
     const home2 = await E(() => { const T = window.__tamachin, P = T.player, b = document.querySelector('#dHome'); b.click(); const once = T.world(); b.click(); T.advance(0.3);
-      return { once, world: T.world(), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2), earth: window.__dbg.EARTH.root.visible }; });
-    T.check('«Volver al inicio» desde la luna pide dos toques y lo deja frente a su casa, en la Tierra', home2.once === 'luna' && home2.world === 'tierra' && home2.x === 0 && home2.z === 3.5 && home2.earth, JSON.stringify(home2));
+      const r = window.__dbg.rabbit; return { once, world: T.world(), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2), earth: window.__dbg.EARTH.root.visible, rabbit: r.world || 'tierra', rd: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(2) }; });
+    T.check('«Volver al inicio» desde la luna pide dos toques y lo deja frente a su casa, en la Tierra, con el conejo que lo seguía', home2.once === 'luna' && home2.world === 'tierra' && home2.x === 0 && home2.z === 3.5 && home2.earth && home2.rabbit === 'tierra' && home2.rd < 3, JSON.stringify(home2));
 
     // los otros siete túneles siguen siendo pared
     const shut = await E(() => {

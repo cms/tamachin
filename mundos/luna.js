@@ -4,7 +4,7 @@
 // (24, −60), el de la placa con la luna pintada, y se vuelve por el túnel que hay en la orilla del Cráter Grande. Aquí se pesa un
 // tercio (salta unos 4 m) y se resbala un poco; el cielo es negro, con estrellas, el sol y la Tierra; no hay tiempo ni agua.
 // Al cargar solo se registra: el mundo, su música, sus pasos, su encargo, la placa del túnel y la calma de los autos en esa boca.
-// Lo demás se arma la primera vez que Tamachin llega (`build`). Usa sus propias semillas (mulberry), nunca `rnd`, y sus propios
+// Lo demás se arma la primera vez que Tamachin llega (`build`). Un conejo que lo sigue se va con él (setWorld, 06-main.js) y allá brinca altísimo. Usa sus propias semillas (mulberry), nunca `rnd`, y sus propios
 // colisionadores (M.solids): la Tierra queda igual (la prueba `mundo` no ve nada nuevo).
 const LUNA = { base: 3, R: 52, half: 80, cell: 1.25, rim: 6.5 };   // base: el suelo va de 3 m para arriba (los cráteres no bajan de 0)
 const LUNA_CRATERS = [{ x: -19, z: 6, r: 8, d: 2.2 }, { x: 21, z: 13, r: 6, d: 1.7 }, { x: 5, z: 30, r: 5, d: 1.3 }, { x: -27, z: -20, r: 7, d: 2 },
@@ -108,7 +108,7 @@ WORLDS.luna = {
     if (!D.armed) { if (P.pos.z > D.face + 2.5 || Math.abs(P.pos.x - D.x) > 6) D.armed = true; return; }   // al volver, primero se aleja
     if (P.state === 'normal' && !ui.closeup && Math.abs(P.pos.x - D.x) < D.half && P.pos.z < D.face + 0.8 && P.pos.z > D.face - 1 && P.vz < -0.6) {
       D.armed = false; LUNA_DOOR.armed = false;
-      enterWorld('luna', { at: { x: LUNA_DOOR.x, z: LUNA_DOOR.face - 1.3, heading: 0 }, walkIn: { x: 0, z: -5 }, walkOut: { x: 0, z: 5 }, line: '¡Estoy en la luna!' });
+      enterWorld('luna', { at: { x: LUNA_DOOR.x, z: LUNA_DOOR.face - 1.3, heading: 0, pet: { x: LUNA_DOOR.x, z: LUNA_DOOR.face + 2.3 } }, walkIn: { x: 0, z: -5 }, walkOut: { x: 0, z: 5 }, line: '¡Estoy en la luna!' });
     }
   },
   mid(dt) {
@@ -118,7 +118,7 @@ WORLDS.luna = {
     if (!D.armed) { if (P.pos.z > D.face + 2.5 || Math.abs(P.pos.x - D.x) > 6) D.armed = true; }
     else if (P.state === 'normal' && !ui.closeup && Math.abs(P.pos.x - D.x) < D.half && P.pos.z < D.face + 0.8 && P.vz < -0.6) {
       D.armed = false; EARTH_DOOR.armed = false;
-      enterWorld('tierra', { at: { x: EARTH_DOOR.x, z: EARTH_DOOR.face - 1.3, heading: 0 }, walkIn: { x: 0, z: -5 }, walkOut: { x: 0, z: 5 }, line: '¡De vuelta en la Tierra!' });
+      enterWorld('tierra', { at: { x: EARTH_DOOR.x, z: EARTH_DOOR.face - 1.3, heading: 0, pet: { x: EARTH_DOOR.x, z: EARTH_DOOR.face + 2.5 } }, walkIn: { x: 0, z: -5 }, walkOut: { x: 0, z: 5 }, line: '¡De vuelta en la Tierra!' });
     }
     // un salto de luna (más de 2.5 m) divierte; al caer, polvo
     const gy = lunaY(P.pos.x, P.pos.z);

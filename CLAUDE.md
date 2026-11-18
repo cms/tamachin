@@ -66,7 +66,8 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
   - la cámara: `camBase`, `hills`, `edge`, `camX`, `camZ`;
   - `zone` (el nombre en el HUD), `music`, `interacts`, `weather` (si hay tiempo), `night` (para la música), `skyWord` y `skyText` (el reloj y el diario sin tiempo; la carátula del reloj tampoco pinta nubes ni lluvia).
 - **`step()`** corre lo que comparten todos los mundos: la hora, Tamachin, las necesidades, la cámara, el farolito, las partículas, el HUD y la música. Lo de cada uno va en `world.pre` (antes de Tamachin), `world.mid` (después) y `world.post` (después de la cámara).
-  - Mientras está en otro mundo, en la Tierra no se mueve nada: los autos, los vecinos y quien lo acompaña lo esperan donde estaban.
+  - Mientras está en otro mundo, en la Tierra no se mueve nada: los autos y los vecinos (también Lulú, si lo acompaña) lo esperan donde estaban.
+  - **Un conejo que lo sigue viaja con él** (`setWorld` → `travel`): desde la Tierra si está a menos de 10 m, desde otro mundo siempre (allá no se pierde ni se cansa: `follow` no baja). Su malla pasa a la raíz del otro mundo, su «Acariciar» a los `interacts` de allá y `c.world` dice dónde está; `step` lo mueve allá y los toques (`handleClick`) solo ven a los del mundo de ahora. `at.pet` dice dónde aparece.
   - El `onEarth(dt)` de cada mundo (su entrada) corre en `EARTH.mid`.
 - **El cielo.** Otro mundo puede poner `sky(force)`, que corre en vez de `applyDay` (`skyNow`, 01-core.js).
   - La hora sigue corriendo, pero la luz, la niebla, el fondo, las estrellas y el sol son suyos. También pone `day.light`, `day.stars` y `day.lamps`.
@@ -86,6 +87,7 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
   - **Las reglas:** un tercio de la gravedad (salta 4.1 m y pasa 2.1 s en el aire) y se resbala un poco (`accel`, `stop`).
   - **El suelo** es una rejilla como la de `terrainY` (`lunaY`: la malla y los pies usan los mismos triángulos). Empieza en 3 m, así que los cráteres no bajan de 0: la cámara corta lo que queda abajo de −0.3, por el río.
   - **La cámara** baja a 16° al entrar y al salir regresa a como estaba (`homePitch`). `save()` guarda esa altura de la Tierra, no la de la luna, y `boot()` pone la cámara antes de entrar al mundo guardado. Mira hacia abajo, y solo así se ven las estrellas y la Tierra, un `skySprite` grande a 3° sobre el horizonte, detrás de la orilla.
+  - **El conejo, allá** (`makeRabbit`, 04-life.js, con `M` = su mundo): pisa `lunaY` y choca con lo de la luna (`resolveAgent` con `M.solids`), no busca agua, y cada brinco dura 0.8 s y sube 1.3 m (en la Tierra, 0.36 s y 0.4 m), con polvito al caer. Como el brinco es largo, apunta derecho al empezarlo y a donde va a llegar Tamachin (su velocidad por lo que dura el brinco): si no, iba en espiral y se quedaba atrás.
   - **El encargo** `luna` es plantar la bandera (del color de Tamachin) en la loma del centro. Tiene su pieza (`luna`) y sus pasos (`polvo`). La prueba `luna` lo revisa todo.
 
 ## Sonido y música (`01-core.js`, `06-main.js`)
