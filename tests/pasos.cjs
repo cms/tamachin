@@ -1,5 +1,5 @@
 // Los pasos: suenan cuando un pie toca el suelo (al caminar, más seguido al correr, más fuerte al caer de un salto) y según lo que
-// pisa: pasto, tierra, piedra, madera, nieve, agua, charco, metal (botes e hidrantes) y la cama. Se renderizan con un
+// pisa: pasto, tierra, piedra, madera, nieve, agua, charco, metal (botes e hidrantes), la cama y el polvo de la luna. Se renderizan con un
 // OfflineAudioContext (el mismo `footstep` del juego) para medir volumen y brillo.
 //   npm test -- pasos --wav   además deja tests/out/pasos-*.wav: cada suelo, y caminar y correr con la música de la ciudad
 const fs = require('fs');
@@ -31,11 +31,11 @@ const RENDER = async ({ plan, secs, sr = 44100, music, run, wav }) => {
   }
   return { peak: +peak.toFixed(4), rms: +Math.sqrt(sum / (2 * L.length)).toFixed(5), dur: +((end - i0) / sr).toFixed(3), hz: Math.round(num / (den || 1)), nan, b64 };
 };
-const KINDS = ['pasto', 'tierra', 'piedra', 'madera', 'nieve', 'agua', 'charco', 'metal', 'cama'];
+const KINDS = ['pasto', 'tierra', 'piedra', 'madera', 'nieve', 'agua', 'charco', 'metal', 'cama', 'polvo'];
 const WALK = 0.25, RUN = 0.195;   // segundos entre pasos: la fase de la animación corre 7 + 5.5 × velocidad (1 caminando, 1.65 corriendo)
 
 module.exports = {
-  titulo: 'los pasos: al paso de la animación, según el suelo (pasto, tierra, piedra, madera, nieve, agua, charco, metal, cama), bajitos',
+  titulo: 'los pasos: al paso de la animación, según el suelo (pasto, tierra, piedra, madera, nieve, agua, charco, metal, cama, polvo), bajitos',
   async run(T) {
     const { ctx, page, errors, E } = await openGame(T, { expose: EXPOSE });
 
@@ -46,7 +46,7 @@ module.exports = {
     T.check('cada suelo, un paso: se oye, más bajito que un salto, y dura menos de 0.15 s', !bad.length, bad.map((k) => k + ' ' + JSON.stringify({ ...one[k], b64: undefined })).join(' | ') || undefined);
     const hz = (k) => one[k].hz;
     T.check('suenan distinto: la madera es lo más grave y el pasto y la nieve lo más agudo', KINDS.every((k) => k === 'madera' || hz(k) > hz('madera'))
-      && ['tierra', 'piedra', 'agua', 'charco', 'metal', 'cama', 'madera'].every((k) => hz(k) < Math.min(hz('pasto'), hz('nieve'))), KINDS.map((k) => k + ' ' + hz(k)).join(', '));
+      && ['tierra', 'piedra', 'agua', 'charco', 'metal', 'cama', 'madera', 'polvo'].every((k) => hz(k) < Math.min(hz('pasto'), hz('nieve'))), KINDS.map((k) => k + ' ' + hz(k)).join(', '));
     // cada paso varía un poco (tono y ruido): se comparan ocho seguidos
     const eight = (k, v, w) => E(RENDER, { plan: Array.from({ length: 8 }, (_, i) => [0.05 + i * WALK, k, v, w]), secs: 2.1 });
     const wet = await eight('pasto', 1, true), dry = await eight('pasto', 1, false);

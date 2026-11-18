@@ -173,8 +173,10 @@ function paintSky(top, mid, hor, glow) {
   }
   C.needsUpdate = true;
 }
-function setHour(h) { day.h = ((h % 24) + 24) % 24; applyDay(true); }
-function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; applyDay(false); }
+function setHour(h) { day.h = ((h % 24) + 24) % 24; skyNow(true); }
+function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; skyNow(false); }
+// en otro mundo la hora sigue corriendo, pero el cielo y la luz son los suyos (`world.sky`, mundos/)
+function skyNow(force) { if (world && world.sky) world.sky(force); else applyDay(force); }
 function applyDay(force) {
   const h = day.h; let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++;
   const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));
@@ -332,10 +334,23 @@ function canvasTex(w, h, draw) {
 // ───────────────────────── colisiones ─────────────────────────
 // Lo bajo lleva `top` (la altura de arriba, solo en suelo plano): Tamachin lo libra saltando y, salvo `stand` falso (una cerca),
 // se para encima (`perches`). Sin `top` no tiene límite de altura. Quien lo acompaña (resolveAgent) no salta: todo le estorba.
-const boxes = [], circles = [], perches = [];
-const lowSolid = (list, s, top, stand) => { list.push(s); if (top != null) { s.top = top; if (stand !== false) perches.push(s); } return s; };
-const solidBox = (x0, x1, z0, z1, top, stand) => lowSolid(boxes, { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), top: Infinity }, top, stand);
-const solidCircle = (x, z, r, top, stand) => lowSolid(circles, { x, z, r, top: Infinity }, top, stand);
+// Cada mundo tiene los suyos (`solids()`): los de la Tierra son boxes, circles y perches, con solidBox y solidCircle. Otro mundo
+// (mundos/) arma los suyos y nunca toca estos (la prueba `mundo` los compara).
+function solids() {
+  const S = { boxes: [], circles: [], perches: [] };
+  const low = (list, s, top, stand) => { list.push(s); if (top != null) { s.top = top; if (stand !== false) S.perches.push(s); } return s; };
+  S.box = (x0, x1, z0, z1, top, stand) => low(S.boxes, { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), top: Infinity }, top, stand);
+  S.circle = (x, z, r, top, stand) => low(S.circles, { x, z, r, top: Infinity }, top, stand);
+  return S;
+}
+const EARTH_SOLIDS = solids(), { boxes, circles, perches } = EARTH_SOLIDS, solidBox = EARTH_SOLIDS.box, solidCircle = EARTH_SOLIDS.circle;
+// ───────────────────────── mundos ─────────────────────────
+// La Tierra es uno; los otros (la luna) viven en mundos/*.js, que build.sh mete entre 05-norte.js y 06-main.js. Al cargar solo se
+// registran en WORLDS; lo suyo se construye la primera vez que Tamachin va (06-main.js: setWorld). `world` es donde está ahora (lo
+// pone 06-main.js: antes es null). Las reglas del movimiento son de cada mundo: el salto llega a jump²/(2·grav), 1.38 m en la Tierra.
+const RULES = { grav: 22, jump: 7.8, jumpWater: 6, jumpBed: 9, walk: 5.2, run: 8.6, accel: 12, stop: 14 };
+const WORLDS = {};
+let world = null;
 function pushOutBox(pos, r, b) {
   if (pos.x < b.x0 - r || pos.x > b.x1 + r || pos.z < b.z0 - r || pos.z > b.z1 + r) return false;
   const cx = clamp(pos.x, b.x0, b.x1), cz = clamp(pos.z, b.z0, b.z1), dx = pos.x - cx, dz = pos.z - cz, d2 = dx * dx + dz * dz;

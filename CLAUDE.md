@@ -2,8 +2,8 @@
 
 ## Lo esencial
 
-- `game.js` se genera: edita `parts/*.js` y ejecuta `./build.sh`. Nunca edites `game.js` a mano.
-- Las partes forman una sola IIFE en orden 01 → 06 (la lista está en `build.sh`). Una `const` usada antes de su declaración (en otra parte o más arriba) falla por zona muerta temporal; las declaraciones `function` sí se elevan.
+- `game.js` se genera: edita `parts/*.js` (o `mundos/*.js`) y ejecuta `./build.sh`. Nunca edites `game.js` a mano.
+- Las partes forman una sola IIFE en orden 01 → 06, con los mundos (`mundos/*.js`) entre 05 y 06 (la lista está en `build.sh`). Una `const` usada antes de su declaración (en otra parte o más arriba) falla por zona muerta temporal; las declaraciones `function` sí se elevan.
 - Three.js es r128 en build UMD (`THREE` global). No existen `CapsuleGeometry` ni `BufferGeometryUtils`; no se usa `outputEncoding`, los colores se escriben tal cual en hex.
 - Tras cada cambio: `./build.sh && node --check game.js`.
 
@@ -52,6 +52,41 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 - **Árboles que se agachan**: los del norte lo hacen en el shader (`duckify`, uniforme `duckU`), no en el bucle de `updateScenery`. También su sombra (`duckDepth`).
 - **Bosque sin fin**: casillas de 26 m con semilla según su posición (`genChunk`); al volver, todo está igual y lo comido sigue comido (`forest.eaten`). Se dibujan con un InstancedMesh por tipo para todo el bosque (`FK`), con un tramo fijo por casilla; fuera del bosque se ocultan. Para frutas nuevas: una entrada en `FRUITS` y su planta en `genChunk`.
 - **Cámara en las montañas**: sigue al suelo y se sube lo necesario para ver a Tamachin entero cuando baja una ladera (`updateCamera`). La niebla se aleja con la altura (`updateNorth`).
+
+## Mundos (`mundos/`; `WORLDS`, `world` y `RULES` en `01-core.js`; `EARTH`, `setWorld` y `enterWorld` en `06-main.js`)
+
+- **Qué es un mundo.** La Tierra (`EARTH`) es todo lo de siempre. Los otros viven en `mundos/*.js` (por ahora `luna.js`), que `build.sh` mete en la IIFE entre `05-norte.js` y `06-main.js`, en orden alfabético.
+  - **Al cargar, un mundo solo se registra** en `WORLDS`. También puede agregar su pieza a `MUSIC` y `MUSIC_ZONES` (antes de que `makeMusic` las recorra), sus pasos a `STEPS`, sus encargos en `quests` (06 los junta con `QUESTS`) y su entrada en la Tierra.
+  - **Lo suyo se arma la primera vez que Tamachin llega**: `build(M)` lo pone en `M.root` y `M.solids`, y se compila bajo el telón.
+  - **No es un archivo que se baje aparte.** Así `sw.js`, `publicar.cjs` y la versión no cambian, y una página nunca junta un mundo de otra publicación.
+- **`world` es donde está Tamachin.** Lo que pregunta "¿dónde estoy?" se lo pregunta a `world`, nunca a x y z sueltos: en la luna, el punto (0, −8) no es la casa. Los ganchos de la Tierra son el código de antes, movido, y lo que otro mundo no trae lo pone `WORLD_BASE`:
+  - `rules`: gravedad, salto, velocidades, aceleración y frenado. `RULES` son las de la Tierra; el salto llega a jump²/(2·grav).
+  - el suelo y lo que pisa: `ground`, `wet` (el río), `puddle`, `inHouse`, `slope`, `surface` (los pasos);
+  - `collide`: lo que va después de los colisionadores. En la Tierra, los autos, los vecinos, `northCollide` y `keepInWorld`;
+  - la cámara: `camBase`, `hills`, `edge`, `camX`, `camZ`;
+  - `zone` (el nombre en el HUD), `music`, `interacts`, `weather` (si hay tiempo), `night` (para la música), `skyWord` y `skyText` (el reloj y el diario sin tiempo; la carátula del reloj tampoco pinta nubes ni lluvia).
+- **`step()`** corre lo que comparten todos los mundos: la hora, Tamachin, las necesidades, la cámara, el farolito, las partículas, el HUD y la música. Lo de cada uno va en `world.pre` (antes de Tamachin), `world.mid` (después) y `world.post` (después de la cámara).
+  - Mientras está en otro mundo, en la Tierra no se mueve nada: los autos, los vecinos y quien lo acompaña lo esperan donde estaban.
+  - El `onEarth(dt)` de cada mundo (su entrada) corre en `EARTH.mid`.
+- **El cielo.** Otro mundo puede poner `sky(force)`, que corre en vez de `applyDay` (`skyNow`, 01-core.js).
+  - La hora sigue corriendo, pero la luz, la niebla, el fondo, las estrellas y el sol son suyos. También pone `day.light`, `day.stars` y `day.lamps`.
+  - Al volver, `applyDay(true)` repinta el cielo de la Tierra.
+- **Qué se dibuja.** Antes de `boot()`, todo lo de la escena pasa a `EARTH.root` (un Group en el origen). Al cambiar de mundo se esconde esa raíz entera: no se dibuja nada de adentro, ni su sombra, aunque sus sistemas prendan cosas.
+  - Afuera quedan solo los de `KEEP`: Tamachin, las tres luces, el cielo, el farolito y las partículas. Nunca se esconden: quitar una luz recompilaría todo.
+  - Lo que se agregue después a `scene` (makeTamachin, la fruta que vuela) se barre a la raíz de la Tierra al cambiar de mundo (`sweepEarth`).
+  - Un mundo nuevo nunca toca `boxes`, `circles`, `perches` ni `rnd` (los compara `mundo`): usa `M.solids` y su propio `mulberry`.
+- **Cambiar de mundo.**
+  - `setWorld(nombre, at)` cambia al instante: al arrancar, con «Volver al inicio» y en las pruebas (`__tamachin.setWorld`).
+  - `enterWorld(nombre, { at, walkIn, walkOut, line })` cambia con el telón (`#telon`). Va en una secuencia `startBusy` con `ghost`, que no choca con nada (camina a través de la boca de un túnel), así `advance` también la mueve.
+  - `save()` guarda `mundo` y `boot()` vuelve a él; si ese mundo ya no existe, Tamachin queda al inicio. «Volver al inicio» desde otro mundo pide dos toques.
+- **La luna** (`mundos/luna.js`).
+  - **Se entra** empujando contra la boca del túnel de los autos del noreste (24, −60). La placa tiene una luna pintada que de noche brilla. `onEarth` lo detecta y Tamachin camina hacia adentro.
+  - **Los autos**, en esa boca y dentro del túnel, lo esperan sin pitar (`CALM`, 04-life.js).
+  - **Se vuelve** por el túnel de la orilla del Cráter Grande (0, −50). Al volver, la boca no se activa hasta que Tamachin se aleja (`armed`).
+  - **Las reglas:** un tercio de la gravedad (salta 4.1 m y pasa 2.1 s en el aire) y se resbala un poco (`accel`, `stop`).
+  - **El suelo** es una rejilla como la de `terrainY` (`lunaY`: la malla y los pies usan los mismos triángulos). Empieza en 3 m, así que los cráteres no bajan de 0: la cámara corta lo que queda abajo de −0.3, por el río.
+  - **La cámara** baja a 16° al entrar y al salir regresa a como estaba (`homePitch`). `save()` guarda esa altura de la Tierra, no la de la luna, y `boot()` pone la cámara antes de entrar al mundo guardado. Mira hacia abajo, y solo así se ven las estrellas y la Tierra, un `skySprite` grande a 3° sobre el horizonte, detrás de la orilla.
+  - **El encargo** `luna` es plantar la bandera (del color de Tamachin) en la loma del centro. Tiene su pieza (`luna`) y sus pasos (`polvo`). La prueba `luna` lo revisa todo.
 
 ## Sonido y música (`01-core.js`, `06-main.js`)
 
@@ -147,7 +182,7 @@ Cuando el contenido de Personalizar o del diario no cabe (en teléfono), `updMor
 - El raycast de `BLOCKER` no ve a los árboles del norte agachados (eso pasa en el shader): ahí un "árbol" puede ser falso.
 - Con render por software el juego corre lento y su reloj también (dt se limita a 0.05 s): las esperas deben ser generosas.
 - Para no esperar en tiempo real: `window.__tamachin.advance(seg)` corre el juego `seg` segundos de golpe (`step(dt)` repetido, sin dibujar, y dibuja una vez al final para que las matrices queden al día). `vista` lo usa en cada lugar (de 7 minutos a 5 s). Lo que depende del reloj del audio o de eventos reales (la palanca con `setInterval`, la música en vivo) no se puede adelantar así.
-- `openGame` bloquea el service worker (`serviceWorkers: 'block'`). Si no, al recargar sería él quien sirve `game.js` y no pasaría por la ruta de `expose`. Con `sw: true` lo deja instalarse y pone las rutas en el contexto. `lib.cjs` pone `PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1`: sin eso, lo que pide el service worker no pasa por `ctx.route` y `setOffline` no lo corta. `before(page, ctx)` corre antes de abrir la página, para agregar rutas. La revisión de `sw.js` que hace el navegador (`update()`) no pasa por ninguna ruta: para cambiar lo que contesta el servidor, `serve(over)`, como hace `pwa` con las versiones nuevas. Las rutas de Three.js y de las fuentes contestan aunque esté `setOffline`: para probar sin red de verdad, `pwa` las corta y además apaga la caché del navegador (`Network.setCacheDisabled`, también la de memoria, que guarda las fuentes al recargar).
+- `openGame` bloquea el service worker (`serviceWorkers: 'block'`). Si no, al recargar sería él quien sirve `game.js` y no pasaría por la ruta de `expose`. Con `sw: true` lo deja instalarse y pone las rutas en el contexto. `lib.cjs` pone `PW_EXPERIMENTAL_SERVICE_WORKER_NETWORK_EVENTS=1`: sin eso, lo que pide el service worker no pasa por `ctx.route` y `setOffline` no lo corta. `before(page, ctx)` corre antes de abrir la página, para agregar rutas. `world` es `let` y cambia: para verlo desde la página, `expose` puede llevar `get W() { return world; }` (como `luna`). La revisión de `sw.js` que hace el navegador (`update()`) no pasa por ninguna ruta: para cambiar lo que contesta el servidor, `serve(over)`, como hace `pwa` con las versiones nuevas. Las rutas de Three.js y de las fuentes contestan aunque esté `setOffline`: para probar sin red de verdad, `pwa` las corta y además apaga la caché del navegador (`Network.setCacheDisabled`, también la de memoria, que guarda las fuentes al recargar).
 - `run.cjs` corre 3 grupos a la vez (`--paralelo=N`) e imprime cada uno al terminar; los que llevan `solo: true` (`cuidados`, `musica`, `caminata`) van solos al final porque con la máquina ocupada su tiempo real se atrasa. Three.js lo sirve `lib.cjs` desde `tests/.cache/` (se baja la primera vez).
 
 ## Rendimiento
@@ -170,6 +205,7 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
 - Dos cosas de `sw.js` solo se probaron en Chrome:
   - **`resultingClientId`.** Sin él no se anota `fromCopy`. En un Safari que no lo dé, con red lenta justo después de publicar, la página de la copia podría cargar el `game.js` nuevo.
   - **Las fuentes en `performance`.** Que con `crossorigin` aparezcan ahí los archivos de fuente. Si Safari no los anota, las fuentes se guardan desde la segunda visita, no desde la primera.
+- La luna en un teléfono: cuánto cuesta (la malla del suelo, de unos 33 000 triángulos, también echa sombra), cómo se ven el cielo negro y la Tierra, y si con la cámara baja (16°) se juega bien. Que en iPhone empujar contra la boca del túnel con la palanca se sienta natural.
 - La versión nueva en un iPhone de verdad:
   - que la app instalada avise `visibilitychange` al salir del fondo, y que desde ahí `reg.update()` de verdad revise `sw.js`;
   - cuánto tarda la vuelta: bajar la versión nueva y luego la recarga, con «Actualizando…».

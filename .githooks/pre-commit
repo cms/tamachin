@@ -1,6 +1,6 @@
 #!/usr/bin/env sh
 # Arma game.js con las partes PREPARADAS (no las del árbol de trabajo) y lo pone en el índice,
-# para que cada commit lleve un game.js que corresponde exactamente a sus parts/.
+# para que cada commit lleve un game.js que corresponde exactamente a sus parts/ y mundos/.
 # Activar una vez por clon: git config core.hooksPath .githooks
 set -e
 cd "$(git rev-parse --show-toplevel)"
@@ -9,5 +9,6 @@ trap 'rm -rf "$dir"' EXIT
 ./build.sh --staged > "$dir/game.js"
 if command -v node >/dev/null 2>&1; then node --check "$dir/game.js"; fi
 git update-index --add --cacheinfo "100644,$(git hash-object -w "$dir/game.js"),game.js"
-# Si no quedan cambios sin preparar en parts/, el game.js del árbol también debe quedar igual al del commit.
-if git diff --quiet -- parts; then cp "$dir/game.js" game.js; fi
+# Si no quedan cambios sin preparar en parts/ ni en mundos/ (ni mundos nuevos sin agregar), el game.js del árbol también debe
+# quedar igual al del commit.
+if git diff --quiet -- parts mundos && [ -z "$(git ls-files --others --exclude-standard -- 'mundos/*.js')" ]; then cp "$dir/game.js" game.js; fi

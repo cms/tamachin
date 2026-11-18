@@ -37,9 +37,12 @@ function carRect(c, pad) {
   const a = c.L.axis === 'x';
   carBox.x0 = c.x - (a ? c.half : c.hw) - pad; carBox.x1 = c.x + (a ? c.half : c.hw) + pad; carBox.z0 = c.z - (a ? c.hw : c.half) - pad; carBox.z1 = c.z + (a ? c.hw : c.half) + pad; return carBox;
 }
+// Donde los autos esperan a Tamachin sin pitar ni asustarlo, como con el monito verde: la boca del túnel de la luna (mundos/luna.js).
+const CALM = [];
+const calmAt = (x, z) => CALM.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 function updateCars(dt, t) {
   for (const c of cars) { c.x = c.L.axis === 'x' ? c.s : c.L.fixed; c.z = c.L.axis === 'x' ? c.L.fixed : c.s; }
-  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = !!pz && pz.state !== 'stop';   // cruza con el monito verde
+  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = (!!pz && pz.state !== 'stop') || (inCity && calmAt(P.pos.x, P.pos.z));   // cruza con el monito verde
   for (const c of cars) {
     const L = c.L, dir = L.dir, ax = L.axis === 'x'; let gap = 999, cross = false, honk = false;
     const front = c.s + dir * c.half;

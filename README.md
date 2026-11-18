@@ -26,8 +26,10 @@ parts/
   03-world.js     Suelo, ciudad, casa, parque, camino, bosque, río, instancias
   04-life.js      Autos, semáforos y pasos de cebra, vecinos, animales del bosque
   05-norte.js     Montañas, Valle Alegre y el bosque sin fin (terreno, límites, vegetación por sectores y por casillas)
-  06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, bucle principal
-build.sh          Concatena parts/ en game.js
+  06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, mundos, bucle principal
+mundos/
+  luna.js         La luna: un mundo aparte, al que se llega por un túnel de la ciudad
+build.sh          Concatena parts/ y mundos/ en game.js
 publicar.cjs      Arma dist/ (lo que se publica) y le pone la versión; lo llama `wrangler deploy`
 manifest.webmanifest  La app instalable: nombre, colores, íconos
 sw.js             Service worker: la copia para jugar sin internet
@@ -35,11 +37,11 @@ iconos/           Íconos de la app (PNG) y de dónde salen (icono.svg, hacer.cj
 tests/            Pruebas en Chrome sin interfaz (npm test)
 ```
 
-Las seis partes son fragmentos de **una sola IIFE**: `01-core.js` la abre y `06-main.js` la cierra. No son módulos; comparten el mismo ámbito y el orden importa.
+Las seis partes son fragmentos de **una sola IIFE**: `01-core.js` la abre y `06-main.js` la cierra. No son módulos; comparten el mismo ámbito y el orden importa. Los mundos de `mundos/` van dentro de la misma IIFE, entre `05-norte.js` y `06-main.js`: al cargar solo se registran, y lo suyo se arma la primera vez que Tamachin va.
 
 ## Flujo de trabajo
 
-1. Edita los archivos de `parts/`.
+1. Edita los archivos de `parts/` (o de `mundos/`).
 2. Ejecuta `./build.sh` para regenerar `game.js`.
 3. Recarga la página.
 
@@ -95,7 +97,7 @@ npm test -- vista controles  # solo algunas
 npm run test:largo           # también la caminata de la fogata al bosque sin fin (4 minutos más)
 ```
 
-Hay catorce grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos`, `trafico`, `pwa` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
+Hay quince grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `controles`, `saltos`, `musica`, `dia`, `clima`, `pasos`, `trafico`, `pwa`, `luna` y `caminata`. Todas abren el juego a mediodía y con sol (`?hora=12&clima=sol`), salvo las que revisan la hora o el tiempo. Van tres grupos a la vez (`--paralelo=1` los corre uno por uno); `cuidados`, `musica` y `caminata` dependen del tiempo real y van solos, al final. Three.js se baja una vez a `tests/.cache/`. `mundo` compara el mundo generado con `tests/mundo.json`: si cambias algo del mundo a propósito, acéptalo con `npm test -- mundo --actualizar`. Las capturas de pantalla quedan en `tests/out/`. Necesitan red, porque Three.js viene de cdnjs. Chrome corre mudo: `musica` renderiza cada mezcla y mide su volumen; con `npm test -- musica --wav` también deja `tests/out/musica-*.wav` para escucharlas (y `npm test -- pasos --wav`, los pasos en cada suelo y con la música).
 
 ## Controles
 
@@ -125,7 +127,8 @@ Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a
 
 - Tamachin tiene tres necesidades que bajan solas: **panza** (refri de casa, bayas del bosque), **energía** (siesta en la cama, fogata) y **diversión** (trucos, tele, fuente, platicar, acariciar animales). Si una queda baja, cambia su ánimo hasta que se recupera; no pasa nada peor.
 - Encargos que salen de lo que dicen los vecinos: llevarle un conejo a Tofu, ver un pez saltarín, acompañar a Lulú a la fuente y llevarle gelatina del refri a Nube. De noche, el búho pide ver el amanecer desde una cima (entre las 5 y las 6:30) y Musgo, junto a la fogata, atrapar diez luciérnagas (tocándolas o pasando junto a ellas): quedan brillando en un frasco sobre la mesa de la casa. El diario los lista.
-- Se guardan forma, color, ánimo, necesidades, encargos, el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada), la hora y el día, las luciérnagas atrapadas y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
+- **La luna.** Uno de los túneles por donde los autos salen de la ciudad, el del noreste, tiene una luna pintada en la placa (de noche brilla). Caminando hacia dentro, Tamachin llega a la luna: un cráter grande con cráteres chicos, peñascos, el cielo negro con estrellas y la Tierra asomando detrás de la orilla. Ahí pesa un tercio, así que salta unos 4 m, y se resbala un poco. El encargo es plantar su bandera (de su color) en la loma del centro. Se vuelve por el túnel de la orilla del cráter. En la boca del túnel de la ciudad los autos lo esperan sin pitar, y mientras está en la luna en la Tierra todo lo espera quieto.
+- Se guardan forma, color, ánimo, necesidades, encargos, en qué mundo y el lugar donde quedó Tamachin, hacia dónde mira la cámara y a qué altura, qué suena (todo, solo efectos o nada), la hora y el día, las luciérnagas atrapadas y si ya cerraste la ayuda (en `localStorage`). En el diario, «Volver al inicio» lo regresa frente a su casa.
 
 ## Día y noche
 
@@ -168,7 +171,7 @@ Se sintetiza en el navegador, sin archivos de audio, y empieza con el primer toq
 
 La música también sigue a Tamachin: dormido (en su cama o en la hamaca) suena una canción de cuna; corriendo entra percusión; si tiene hambre, sueño o aburrimiento, una parte alegre se calla hasta que se recupera; los efectos con tono (saltar, trucos, premios) suenan en la tonalidad de la música, que se agacha un momento bajo los premios, y en cada cima suena una fanfarria.
 
-Los pasos de Tamachin suenan según lo que pisa: pasto, tierra (senderos y caminos), piso (calles, banquetas y el empedrado de Valle Alegre), madera (la casa y el puente), roca y nieve en los cerros, agua en el río, charcos, metal (botes e hidrantes) y la cama. Corriendo van más seguido, al caer de un salto suenan más fuerte, después de llover chapotean un poco y el fantasma, que flota, no hace ruido. Son efectos: suenan también con «Solo efectos».
+Los pasos de Tamachin suenan según lo que pisa: pasto, tierra (senderos y caminos), piso (calles, banquetas y el empedrado de Valle Alegre), madera (la casa y el puente), roca y nieve en los cerros, agua en el río, charcos, metal (botes e hidrantes), la cama y el polvo de la luna. Corriendo van más seguido, al caer de un salto suenan más fuerte, después de llover chapotean un poco y el fantasma, que flota, no hace ruido. Son efectos: suenan también con «Solo efectos».
 
 De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en las montañas; eso sigue sonando con «Solo efectos». De noche cantan grillos en vez de pájaros, ulula un búho en el camino y los bosques, y la música se oye más suave. Con la pestaña oculta todo se detiene. Si en iPhone no suena nada, revisa el interruptor de silencio: Safari suele callar con él el audio de las páginas.
 
@@ -180,4 +183,5 @@ De fondo cantan pájaros, suena el río cerca del puente y sopla el viento en la
 - Camino: de Z = −62 a Z = −160. Bosque: de Z = −160 a Z = −268, con el río cerca de Z = −205.
 - Montañas: de Z = −268 a Z = −1288, X entre −340 y 340. Tres picos de 400 m: Malvavisco (X −300), Gelatina (X 0, Z −770) y Turrón (X 300). Un sendero sale del claro de la fogata, sube al Pico Gelatina y baja al pueblo.
 - Valle Alegre: el pueblo, de Z = −1288 a Z = −1416 (centro en Z = −1352), con mercado al sur, kiosco en la plaza y posada con hamaca al norte.
+- La luna: un mundo aparte, con sus propias coordenadas: el Cráter Grande, de 52 m de radio, con el túnel de vuelta en (0, −50), mirando al centro. Se entra por el túnel de los autos de la calle X = 24, en Z = −60.
 - Bosque sin fin: al norte de Z = −1440, sin límite. Se genera por casillas de 26 m alrededor de Tamachin; tiene naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas.

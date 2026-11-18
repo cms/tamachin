@@ -72,6 +72,7 @@ const QUESTS = {
   arcoiris: { title: 'Un arcoíris', hint: 'Cuando deja de llover de día, sale un arcoíris del lado contrario al sol. Baja la cámara para ver el cielo.', done: 'Viste un arcoíris.' },
   frutas: { title: 'Las siete frutas', hint: 'Prueba naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas del bosque sin fin, al norte de Valle Alegre.', done: 'Probaste las siete frutas del bosque sin fin.', progress: () => fruitsTasted.length + ' de 7' },
 };
+for (const k in WORLDS) Object.assign(QUESTS, WORLDS[k].quests);   // los de otros mundos (mundos/), al final
 function reachSummit(p) {
   p.reached = true; if (summits.includes(p.name)) return;
   summits.push(p.name); const P = player; say(P, '¡Llegué a la cima del ' + p.name + '!', 3); P.T.doTrick('dance'); burst('star', P.pos.x, P.pos.y + 2, P.pos.z, 8); gain('diversion', 0.25);
@@ -93,6 +94,7 @@ function discover(zone) {
   toast(T[zone], 5); gain('diversion', 0.12);
 }
 const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0, amanecer: 0, luciernagas: 0, charcos: 0, arcoiris: 0 };
+for (const k in WORLDS) for (const q in WORLDS[k].quests) quests[q] = 0;
 let fliesCaught = 0, puddleJumps = 0;
 const summits = [], fruitsTasted = [];          // nombres de las cimas alcanzadas y frutas probadas (claves de FRUITS)
 function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
@@ -106,7 +108,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
+      mundo: world.name, x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +(world.homePitch != null ? world.homePitch : camView.pitchT).toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -131,7 +133,8 @@ function jump() {
   const P = player;
   if (P.state === 'sleep') { wake(); return; }
   if (P.state !== 'normal' || ui.closeup) { if (ui.closeup) playerTrick(); return; }
-  if (P.onGround) { P.vy = P.inWater ? 6 : P.perch && P.perch.bounce ? 9 : 7.8; P.onGround = false; P.T.poke(3.2); SFX.jump(); }   // desde la cama, más alto
+  const R = world.rules;
+  if (P.onGround) { P.vy = P.inWater ? R.jumpWater : P.perch && P.perch.bounce ? R.jumpBed : R.jump; P.onGround = false; P.T.poke(3.2); SFX.jump(); }   // desde la cama, más alto
   else P.jumpAsk = clock;                                           // rebotando en la cama: saltar justo antes de caer lo impulsa otra vez
 }
 // subirse a algo saltando divierte un poco (con la misma regla de siempre: no cuenta repetirlo seguido)
@@ -708,11 +711,12 @@ function pester() {
   pest.n = 0; makeDizzy(4.5); P.T.poke(5); return true;
 }
 function handleClick(px, py) {
-  if (tapShootingStar(px, py) || tapFly(px, py)) return;
+  const home = world === EARTH;                                     // los vecinos, los animales y las luciérnagas viven en la Tierra
+  if (home && (tapShootingStar(px, py) || tapFly(px, py))) return;
   const P = player; let best = Infinity, what = null;
   let d = hitTest(px, py, P.pos.x, P.pos.y + 0.8 * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z, 0.85 * P.T.scale); if (d < best) { best = d; what = P; }
-  for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
-  for (const c of creatures) { if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
+  if (home) for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
+  if (home) for (const c of creatures) { if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
   if (!what) return;
   if (what === P) { if (P.state === 'sleep') wake(); else if (!pester()) playerTrick(); return; }
   const dist = Math.hypot(what.pos.x - P.pos.x, what.pos.z - P.pos.z);
@@ -819,9 +823,10 @@ for (const el of [panelEl, diaryEl]) el.querySelector('.pbody').addEventListener
 const START = { x: 0, z: 3.5 }, bHome = $('#dHome'); let homeArmed = 0;
 function goHome() {
   const P = player; if (P.state === 'busy') return;
-  if (Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40 && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
+  if ((world !== EARTH || Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40) && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
+  setWorld(EARTH.name);                                             // desde otro mundo (la luna), también de vuelta a la Tierra
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
   P.pos.set(START.x, 0, START.z); camInit = false; camView.yaw = camView.yawT = 0; camView.pitch = camView.pitchT = PITCH.def;   // también la cámara, de frente a la casa
   toggleDiary(false); say(P, '¡De vuelta en casa!', 2.2); P.T.doTrick('hop'); burst('spark', P.pos.x, 1.6, P.pos.z, 6); SFX.nice(); save();
@@ -867,14 +872,15 @@ const riverNear = (x, z) => Math.pow(clamp(1 - Math.max(0, Math.abs(z - riverZ(x
 function updateMusic(dt) {
   const c = snd.ctx; if (!c || c.state !== 'running' || !snd.on || musErr) return;
   if (!mus) mus = makeMusic(c, c.destination);
-  const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
+  const P = player, now = c.currentTime, k = world.music(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
   if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
-  const night = 1 - day.light, band = town.band && k === 'pueblo' ? clamp(1.4 - Math.hypot(P.pos.x, P.pos.z - TOWN_Z) / 60, 0, 1) : 0;   // la banda del kiosco
-  const amb = ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night, weather.rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y))); amb.roof = !!P.inHouse;
+  const night = world.night != null ? world.night : 1 - day.light, band = town.band && k === 'pueblo' ? clamp(1.4 - Math.hypot(P.pos.x, P.pos.z - TOWN_Z) / 60, 0, 1) : 0;   // la banda del kiosco
+  const rain = world.weather ? weather.rain : 0;                    // en un mundo sin tiempo (la luna) no llueve
+  const amb = ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night, rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y))); amb.roof = !!P.inHouse;
   mus.ambient(amb, now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * weather.rain), now); mus.param.band = band;
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * rain), now); mus.param.band = band;
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -884,8 +890,11 @@ $('#helpOk').addEventListener('click', hideHelp);
 // ───────────────────────── actualización por cuadro ─────────────────────────
 // pos.y todavía es la altura del cuadro anterior: lo bajo que ya libró no lo empuja (pasa por encima o está parado ahí)
 function resolvePlayer() {
-  const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02;
-  for (let it = 0; it < 2; it++) { for (const b of boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
+  const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02, S = world.solids;
+  for (let it = 0; it < 2; it++) { for (const b of S.boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of S.circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
+  world.collide(pos, r);                                            // lo demás de cada mundo: en la Tierra, autos, vecinos y límites
+}
+function earthCollide(pos, r) {
   if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
     if (pos.y < c.h * 0.8) pushOutBox(pos, r * 0.8, carRect(c, 0));   // un choque solo lo empuja (antes: knock(c) si el auto iba a más de 2.2 m/s)
   }
@@ -896,7 +905,7 @@ function resolvePlayer() {
 // lo que no lo empuja lo sostiene; si cae por la orilla, al cuadro siguiente ya está más bajo y lo empuja hacia fuera.
 function perchUnder(x, z, y0) {
   let best = null;
-  for (const s of perches) {
+  for (const s of world.solids.perches) {
     if (y0 + 0.02 < s.top || (best && s.top <= best.top)) continue;
     const R = s.r + (s.rim || 0);
     if (s.r != null ? (x - s.x) * (x - s.x) + (z - s.z) * (z - s.z) <= R * R : x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) best = s;
@@ -965,11 +974,11 @@ function walkSteps(w0, w1) {
   const P = player, HALF = Math.PI / 2;
   if (Math.floor((w1 - HALF) / Math.PI) === Math.floor((w0 - HALF) / Math.PI)) return;   // ningún pie bajó
   if (!P.onGround || P.state !== 'normal' || P.T.def.feet === false || P.speedN < 0.25) return;
-  stepSound(stepSurface(P.pos.x, P.pos.z, P.perch), P.running ? 1.2 : 0.75 + 0.25 * Math.min(1, P.speedN));
+  stepSound(world.surface(P.pos.x, P.pos.z, P.perch), P.running ? 1.2 : 0.75 + 0.25 * Math.min(1, P.speedN));
 }
 function landStep(perch) {   // al caer de un salto: los dos pies, más fuerte (la cama rebota y suena aparte)
   const P = player; if (P.T.def.feet === false) return;
-  foot.lands++; stepSound(stepSurface(P.pos.x, P.pos.z, perch), 1.35);
+  foot.lands++; stepSound(world.surface(P.pos.x, P.pos.z, perch), 1.35);
 }
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
@@ -990,17 +999,15 @@ function updatePlayer(dt) {
     ix = x2 + Math.cos(clock * 2.6) * 0.3; iz = z2 + Math.sin(clock * 2.1) * 0.3; mag = Math.min(1, Math.hypot(ix, iz));
   }
   const ms = P.needMood && T.mood === P.needMood ? Math.max(0.8, m.speed || 1) : (m.speed || 1);   // cansado o con hambre camina un poco más lento, no tanto
-  let speed = (run ? 8.6 : 5.2) * ms * (P.inWater ? 0.55 : 1);
-  if (pos.z < NORTH_Z && mag > 0.08) {                              // cuesta arriba cuesta un poco más
-    const gx = (terrainY(pos.x + 1, pos.z) - terrainY(pos.x - 1, pos.z)) / 2, gz = (terrainY(pos.x, pos.z + 1) - terrainY(pos.x, pos.z - 1)) / 2, up = (gx * ix + gz * iz) / mag;
-    speed *= up > 0 ? Math.max(0.62, 1 - 0.4 * up) : 1 + Math.min(0.15, -0.15 * up);
-  }
+  const R = world.rules;
+  let speed = (run ? R.run : R.walk) * ms * (P.inWater ? 0.55 : 1);
+  if (world.slope && mag > 0.08) speed *= world.slope(pos, ix, iz, mag);   // cuesta arriba cuesta un poco más
   if (P.state === 'normal') {
     if (mag > 0.08) {
-      P.vx = damp(P.vx, ix * speed, 12, dt); P.vz = damp(P.vz, iz * speed, 12, dt);
+      P.vx = damp(P.vx, ix * speed, R.accel, dt); P.vz = damp(P.vz, iz * speed, R.accel, dt);
       P.heading += angDiff(P.heading, Math.atan2(ix, iz)) * Math.min(1, dt * 12); P.idleT = 0; P.moved += speed * mag * dt;
     } else {
-      P.vx = damp(P.vx, 0, 14, dt); P.vz = damp(P.vz, 0, 14, dt); P.idleT += dt;
+      P.vx = damp(P.vx, 0, R.stop, dt); P.vz = damp(P.vz, 0, R.stop, dt); P.idleT += dt;
       if (ptr.active && clock - ptr.moveT < 0.3 && Math.abs(P.spin) > 1.2) P.heading += angDiff(P.heading, Math.atan2(ptr.x - pScreen.x, ptr.y - pScreen.y) + camView.yaw) * Math.min(1, dt * 14);
       else if (ui.closeup) P.heading += angDiff(P.heading, ui.faceYaw) * Math.min(1, dt * 5);   // mira a la cámara como estaba al abrir: si la giras, se le ve de lado
     }
@@ -1010,30 +1017,31 @@ function updatePlayer(dt) {
 
   if (P.state === 'sleep') { P.sleepT += dt; if (P.nightSleep) sleepThroughNight(dt); else if (P.sleepT > 9) wake(); }
   else {
-    pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
-    const gy = groundY(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
-    P.vy -= 22 * dt; pos.y += P.vy * dt;
+    pos.x += P.vx * dt; pos.z += P.vz * dt; if (!(P.busy && P.busy.ghost)) resolvePlayer();   // ghost: entrando por la boca de un túnel
+    const gy = world.ground(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
+    const water = world.wet(gy);                                    // en la Tierra, el río (más de 20 cm de hondo)
+    P.vy -= R.grav * dt; pos.y += P.vy * dt;
     if (pos.y <= sy || (P.onGround && P.vy <= 0.01 && pos.y - sy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
       if (pr && pr.bounce && P.vy < -2.2 && P.state === 'normal') {   // la cama: rebota cada vez menos
         const again = clock - (P.jumpAsk || -9) < 0.25; P.jumpAsk = -9;
         P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
       } else {
-        if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
+        if (P.vy < -5) { T.poke(-3.2); if (!pr && water) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
         const drop = P.vy < -4 && !P.onGround && P.state === 'normal';
-        if (drop && !(!pr && puddleJump(pos.x, pos.z)) && !(!pr && gy < -0.2)) landStep(pr);   // en un charco: ¡splash!; si no, el paso de caer (en el río ya salpica)
+        if (drop && !(!pr && world.puddle(pos.x, pos.z)) && !(!pr && water)) landStep(pr);   // en un charco: ¡splash!; si no, el paso de caer (en el río ya salpica)
         const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
         if (pr && landed && P.state === 'normal') perched(pr);
       }
     } else { P.onGround = false; P.perch = null; }
-    const wet = gy < -0.2 && pos.y < gy + 0.15;
+    const wet = water && pos.y < gy + 0.15;
     if (wet && !P.inWater) { burst('splash', pos.x, 0.3, pos.z, 6); SFX.splash(); say(P, '¡Splash!', 1.2); }
     P.inWater = wet;
     if (wet && Math.hypot(P.vx, P.vz) > 1 && Math.random() < dt * 7) emit('splash', pos.x + rand(-0.4, 0.4), 0.25, pos.z + rand(-0.4, 0.4));
     if (P.state === 'flat') { P.flatT -= dt; if (P.flatT <= 0) getUp(); }
   }
   T.group.rotation.y = P.heading;
-  P.inHouse = pos.x > HOUSE.x0 + 0.1 && pos.x < HOUSE.x1 - 0.1 && pos.z > HOUSE.z0 + 0.25 && pos.z < HOUSE.z1 - 0.2;
-  P.speedN = Math.hypot(P.vx, P.vz) / 5.2;
+  P.inHouse = world.inHouse(pos);
+  P.speedN = Math.hypot(P.vx, P.vz) / R.walk;
 
   // marearse: el puntero da vueltas a su alrededor
   if (P.spin !== 0) { const dec = dt * 1.6; P.spin = Math.abs(P.spin) <= dec ? 0 : P.spin - Math.sign(P.spin) * dec; }
@@ -1058,8 +1066,8 @@ function updateLead(dt) {
   if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly') {
     const halfW = Math.tan(camera.fov * Math.PI / 360) * camera.aspect * CAM_D0;           // medio ancho visible a la distancia de Tamachin
     const vr = P.vx * camView.c - P.vz * camView.s, vb = P.vx * camView.s + P.vz * camView.c;   // a la derecha y hacia la cámara
-    const gx = clamp(vr / 8.6, -1, 1) * LEAD.side * halfW;
-    const gz = vb > 0 ? Math.min(vb / 5.2, 1.66) * LEAD.south : Math.max(vb / 5.2, -1.66) * LEAD.north;
+    const R = world.rules, gx = clamp(vr / R.run, -1, 1) * LEAD.side * halfW;
+    const gz = vb > 0 ? Math.min(vb / R.walk, 1.66) * LEAD.south : Math.max(vb / R.walk, -1.66) * LEAD.north;
     const k = 1 - Math.exp(-LEAD.grow * dt), mx = LEAD.maxRate * dt;
     camLead.x += clamp((gx - camLead.x) * k, -mx, mx); camLead.z += clamp((gz - camLead.z) * k, -mx, mx);
   }
@@ -1067,7 +1075,7 @@ function updateLead(dt) {
 }
 function updateCamera(dt) {
   const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, ox = 0, tx = P.pos.x, ty, tz = P.pos.z;
-  const base = P.pos.z < NORTH_Z ? Math.max(0, groundY(P.pos.x, P.pos.z)) : 0;   // en las montañas la cámara sigue al suelo
+  const base = world.camBase(P.pos), hills = world.hills(P.pos);    // en las montañas la cámara sigue al suelo
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
   // girar: el arrastre y las teclas Z y X mueven yawT; yaw lo sigue suave
   const V = camView, kz = (keys.KeyZ ? 1 : 0) - (keys.KeyX ? 1 : 0);
@@ -1085,25 +1093,24 @@ function updateCamera(dt) {
   else {
     const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z, p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
     oy = d * Math.sin(p); oz = d * Math.cos(p); ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
-    const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = xLimitAt(P.pos.z);
-    tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, LIMIT);   // sin mirar más allá del borde
+    const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = world.camX(P.pos.z);
+    tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, world.camZ);   // sin mirar más allá del borde
   }
   if (fixed) { const b = P.busy.cam; tx = b.x; ty = b.y; tz = b.z; ox = b.ox || 0; oy = b.oy; oz = b.oz; }   // toma cercana (el refri), fija en el mundo
   else { const wx = ox * c + oz * s; oz = -ox * s + oz * c; ox = wx; }   // la cámara gira alrededor de Tamachin
   _ct.set(tx, ty, tz); _cp.set(tx + ox, ty + oy, tz + oz);
-  const hills = P.pos.z < NORTH_Z + 15;
   if (hills || (!fixed && !ui.closeup)) {                           // bajando una ladera, o con la cámara baja tras un seto, un túnel o su
     let lift = 0;                                                   // loma (edgeTop), el rayo hacia Tamachin choca: se sube lo necesario
     const fy = P.pos.y + 0.3;                                       // desde los pies: que se vea entero, no solo la cabeza
     for (let i = 1; i <= 10; i++) {
-      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? groundY(x, z) : edgeTop(x, z);
+      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? world.ground(x, z) : world.edge(x, z);
       const need = top + 0.35 + 0.8 * k - lerp(fy, _cp.y, k); if (need > 0) lift = Math.max(lift, need / k);
     }
     _cp.y += lift;
   }
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
-  if (P.pos.z < NORTH_Z + 15) camPos.y = Math.max(camPos.y, groundY(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
+  if (hills) camPos.y = Math.max(camPos.y, world.ground(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
   V.vc = c; V.vs = s;
   if (fixed) { const hx = camPos.x - P.pos.x, hz = camPos.z - P.pos.z, h = Math.hypot(hx, hz); if (h > 0.5) { V.vs = hx / h; V.vc = hz / h; } }   // toma fija: el marco sigue a la cámara real
   camSlope = (camPos.y - ty) / Math.max(1, (camPos.x - P.pos.x) * V.vs + (camPos.z - P.pos.z) * V.vc);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
@@ -1303,13 +1310,13 @@ let hudT = 0, lastZone = '', lastPrompt = null;
 function updateHud(dt) {
   const P = player; let best = null, bd = Infinity;
   if (P.state === 'normal' && !ui.closeup) {
-    for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
-    const fp = forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
+    for (const it of world.interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
+    const fp = world === EARTH && forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
   }
   curInteract = best; updateClock();
   const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
-  hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
+  hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = world.zone(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
@@ -1461,6 +1468,7 @@ function hourText(h) {
 }
 // el tiempo en palabras: lo que dicen el reloj y el diario
 function weatherText() {
+  if (!world.weather) return world.skyText || '';                   // en la luna no hay tiempo
   const W = weather, h = day.h, p = wPlan;
   if (W.rain > 0.3) return W.snow > W.here ? 'Está nevando en los cerros.' : 'Está lloviendo.';
   if (W.bow > 0.5) return '¡Hay un arcoíris!';
@@ -1468,23 +1476,23 @@ function weatherText() {
   if (W.cloud > 0.5) return 'Está nublado.';
   return day.light > 0.5 ? 'Hace sol.' : 'El cielo está despejado.';
 }
-const weatherWord = () => (weather.kind === 'lluvia' ? 'lluvioso' : weather.kind === 'nublado' ? 'nublado' : day.light > 0.5 ? 'soleado' : 'despejado');
+const weatherWord = () => (!world.weather ? world.skyWord : weather.kind === 'lluvia' ? 'lluvioso' : weather.kind === 'nublado' ? 'nublado' : day.light > 0.5 ? 'soleado' : 'despejado');
 function clockSay() {
   const dark = day.h >= DAY.set || day.h < DAY.rise;
-  toast(hourText(day.h) + '. ' + weatherText() + ' ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.'), 4); SFX.pop();
+  toast(hourText(day.h) + '. ' + weatherText() + (!world.weather ? '' : ' ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.')), 4); SFX.pop();   // en la luna, la hora es la de la Tierra
 }
 clockEl.addEventListener('click', clockSay);
 function updateClock() {
   const h = day.h, m = (h % 1) * 360;
   if (Math.abs(m - clockA) > 0.25) { clockA = m; cMin.setAttribute('transform', 'rotate(' + m.toFixed(1) + ')'); cHour.setAttribute('transform', 'rotate(' + ((h % 12) * 30).toFixed(2) + ')'); }
-  const n = 1 - day.light;
-  const wkey = n + weather.cloud * 3 + weather.rain * 7;
+  const n = 1 - day.light, cl = world.weather ? weather.cloud : 0, rn = world.weather ? weather.rain : 0;   // en la luna, sin nubes ni lluvia
+  const wkey = n + cl * 3 + rn * 7;
   if (Math.abs(wkey - clockN) > 0.005) {
     clockN = wkey; const sunK = smooth(0.38, 0.48, day.light), nk = smooth(0.5, 0.95, n);   // al atardecer la carátula se pone durazno; ya de noche, azul
     cNight.setAttribute('opacity', nk.toFixed(3)); cWarm.setAttribute('opacity', (day.warm * 0.9).toFixed(3));
-    const cloudK = smooth(0.4, 0.7, weather.cloud);
+    const cloudK = smooth(0.4, 0.7, cl);
     cSun.setAttribute('opacity', (sunK * (1 - cloudK)).toFixed(3)); cMoon.setAttribute('opacity', ((1 - sunK) * (1 - cloudK)).toFixed(3));
-    cCloud.setAttribute('opacity', cloudK.toFixed(3)); cRain.setAttribute('opacity', smooth(0.2, 0.5, weather.rain).toFixed(3));
+    cCloud.setAttribute('opacity', cloudK.toFixed(3)); cRain.setAttribute('opacity', smooth(0.2, 0.5, rn).toFixed(3));
     clockSvg.style.color = '#' + _ck.copy(CLOCK_INK).lerp(CLOCK_INK_NIGHT, smooth(0.35, 0.65, nk)).getHexString();
   }
   const step = Math.floor(h * 6);                                  // el texto, cada 10 minutos de juego
@@ -1526,16 +1534,102 @@ function frame(now) {
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
+// ───────────────────────── mundos ─────────────────────────
+// La Tierra: todo lo de siempre. Cada gancho es lo que el juego ya hacía, movido aquí. Lo que se pregunta "¿dónde estoy?" (el suelo,
+// el agua, la casa, la cámara, el nombre del lugar, la música, los pasos) se lo pregunta al mundo de ahora (`world`), nunca a x y z
+// sueltos: en la luna, el punto (0, -8) no es la casa. pre, mid y post corren antes de Tamachin, después y después de la cámara:
+// mientras está en otro mundo, en la Tierra no se mueve nada (los autos, los vecinos y quien lo acompaña lo esperan donde estaban).
+const EARTH = {
+  name: 'tierra', rules: RULES, solids: EARTH_SOLIDS, interacts, weather: true, root: new THREE.Group(),
+  ground: groundY, wet: (gy) => gy < -0.2, puddle: puddleJump, collide: earthCollide,
+  inHouse: (p) => p.x > HOUSE.x0 + 0.1 && p.x < HOUSE.x1 - 0.1 && p.z > HOUSE.z0 + 0.25 && p.z < HOUSE.z1 - 0.2,
+  slope(pos, ix, iz, mag) {                                         // al norte, en los cerros
+    if (pos.z >= NORTH_Z) return 1;
+    const gx = (terrainY(pos.x + 1, pos.z) - terrainY(pos.x - 1, pos.z)) / 2, gz = (terrainY(pos.x, pos.z + 1) - terrainY(pos.x, pos.z - 1)) / 2, up = (gx * ix + gz * iz) / mag;
+    return up > 0 ? Math.max(0.62, 1 - 0.4 * up) : 1 + Math.min(0.15, -0.15 * up);
+  },
+  camBase: (p) => (p.z < NORTH_Z ? Math.max(0, groundY(p.x, p.z)) : 0), hills: (p) => p.z < NORTH_Z + 15, edge: edgeTop, camX: xLimitAt, camZ: LIMIT,
+  zone: zoneName, music: musicZone, surface: stepSurface,
+  pre(dt) {
+    updateWeather(dt); updateTownHours(dt);
+    houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
+    if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
+    updateLights(clock); updatePedSigns(clock); updateCars(dt, clock);
+  },
+  mid(dt) {
+    updateCrossing(); updateNPCs(dt);
+    for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
+    updateFish(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt); updateButterflies(dt); updateScenery(dt);
+    for (const k in WORLDS) if (WORLDS[k].onEarth) WORLDS[k].onEarth(dt);   // la entrada de cada mundo (el túnel de la luna)
+  },
+  post(dt) { updateFireflies(dt); updateShootingStar(dt); },
+};
+world = EARTH;
+// Lo que otro mundo no trae: sin tiempo ni agua ni casa, la cámara sigue al suelo, nada que hacer. Puede poner `sky(force)` (su cielo
+// y su luz, en vez de applyDay; la hora sigue corriendo), `enter` y `leave`, y `build(M)`, que arma lo suyo en M.root y M.solids.
+const WORLD_BASE = {
+  rules: RULES, interacts: [], weather: false, wet: () => false, puddle: () => false, inHouse: () => false, collide() {}, slope: null,
+  camBase(p) { return this.ground(p.x, p.z); }, hills: () => true, edge(x, z) { return this.ground(x, z); }, camX: () => Infinity, camZ: Infinity,
+  surface: () => 'piedra', pre() {}, mid() {}, post() {},
+};
+// Lo de la Tierra va en EARTH.root: escondido, no se dibuja nada de adentro (ni su sombra) aunque sus sistemas prendan o apaguen
+// cosas. Afuera se quedan Tamachin, las tres luces, el cielo, el farolito y las partículas: no se esconden nunca (quitar una luz
+// recompilaría todos los materiales). Lo que se agrega después (makeTamachin, la fruta que vuela) se barre al cambiar de mundo.
+const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, ...particles.map((p) => p.s)]);
+function sweepEarth() { for (const o of scene.children.slice()) if (!KEEP.has(o) && !o.userData.world) EARTH.root.add(o); }
+EARTH.root.userData.world = EARTH.name; scene.add(EARTH.root); sweepEarth();
+function worldNamed(name) {
+  if (name === EARTH.name) return EARTH;
+  const M = WORLDS[name]; if (!M) return null;
+  if (!M.root) {                                                    // la primera vez: se arma (y se compila bajo el telón)
+    for (const k in WORLD_BASE) if (!(k in M)) M[k] = WORLD_BASE[k];
+    M.root = new THREE.Group(); M.root.userData.world = name; M.root.visible = false; M.solids = solids();
+    M.build(M); scene.add(M.root);
+  }
+  return M;
+}
+// Al instante (al arrancar, «Volver al inicio», las pruebas); enterWorld lo hace con el telón. `at`: { x, z, heading, yaw }.
+function setWorld(name, at) {
+  const N = worldNamed(name); if (!N) return false;
+  const P = player;
+  if (N !== world) {
+    if (world.leave) world.leave();
+    sweepEarth(); world.root.visible = false; N.root.visible = true; world = N;
+    if (N.enter) N.enter();
+    skyNow(true);                                                   // su cielo y su luz, ya (de vuelta, el de la hora)
+    for (const b of bubbles) if (b.who && b.who !== P) b.until = 0;   // lo que decían los de allá se queda allá
+    if (!N.compiled) { N.compiled = true; renderer.compile(scene, camera); }
+  }
+  P.vx = P.vz = P.vy = 0; P.perch = null; P.onGround = true; P.inWater = false;
+  if (at) { P.pos.set(at.x, world.ground(at.x, at.z), at.z); if (at.heading != null) P.heading = at.heading; if (at.yaw != null) camView.yaw = camView.yawT = at.yaw; }
+  P.inHouse = world.inHouse(P.pos); camInit = false;
+  return true;
+}
+// Con el telón: se cierra (0.45 s), cambia de mundo, y se abre. Va en una secuencia (startBusy), así `advance` también lo mueve.
+// o: { at, line, walkIn, walkOut }. walkIn y walkOut ({ x, z }, m/s) lo hacen caminar mientras se cierra y mientras se abre (por la
+// boca de un túnel): la secuencia es `ghost`, sin chocar con nada, porque la boca es una pared.
+const telonEl = $('#telon');
+function enterWorld(name, o) {
+  const P = player; o = o || {}; if (P.state !== 'normal' || !worldNamed(name)) return false;
+  telonEl.hidden = false;
+  const walk = (v) => { if (!v) return; P.vx = v.x; P.vz = v.z; P.heading = Math.atan2(v.x, v.z); };
+  startBusy({ dur: 1.15, cam: null, ghost: true,
+    update(dt, t) {
+      telonEl.style.opacity = (t < 0.45 ? t / 0.45 : Math.max(0, 1 - (t - 0.6) / 0.5)).toFixed(3);
+      if (t < 0.5) walk(o.walkIn); else if (t > 0.55 && t < 1.05) walk(o.walkOut);
+      if (once(this, 'swap', 0.5)) setWorld(name, o.at);
+    },
+    end() { telonEl.hidden = true; telonEl.style.opacity = '0'; if (o.line) say(P, o.line, 2.6); save(); },
+  });
+  return true;
+}
+
 // todo lo que pasa en un cuadro, sin dibujar (las pruebas lo repiten con `advance` para adelantar el juego sin esperar)
 function step(dt) {
-  clock += dt; updateDay(dt); updateDayCount(); updateWeather(dt); updateTownHours(dt);
+  clock += dt; updateDay(dt); updateDayCount();
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
-  houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
-  if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
-  updateLights(clock); updatePedSigns(clock); updateCars(dt, clock); updatePlayer(dt); updateCrossing(); updateNPCs(dt);
-  for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
-  updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
-  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateShootingStar(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  world.pre(dt); updatePlayer(dt); world.mid(dt); updateNeeds(dt);
+  updateCamera(dt); updateLantern(dt); world.post(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
 }
 // para las pruebas: corre `sec` segundos de juego de golpe, en pasos de `dt`, y dibuja una vez (así quedan al día las matrices)
@@ -1552,11 +1646,12 @@ function boot(data) {
   if (Array.isArray(s.summits)) for (const n of s.summits) { const p = PEAKS.find((q) => q.name === n); if (p && !summits.includes(n)) { summits.push(n); p.reached = true; } }
   if (Array.isArray(s.fruits)) for (const k of s.fruits) if (FRUITS[k] && !fruitsTasted.includes(k)) fruitsTasted.push(k);
   restoreQuests();
-  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
-    player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(groundY(player.pos.x, player.pos.z), top); }
-  if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
-  if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
+  if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste (antes del mundo: la luna la baja al entrar)
   if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
+  const away = typeof s.mundo === 'string' && s.mundo !== EARTH.name, there = away && setWorld(s.mundo);   // se quedó en otro mundo: ahí sigue
+  if ((!away || there) && typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
+    player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(world.ground(player.pos.x, player.pos.z), top); }   // (de un mundo que ya no existe: al inicio)
+  if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
   const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
@@ -1654,6 +1749,7 @@ function offline() {
 offline();
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
-window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, advance, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
+window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, advance, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; },
+  world: () => world.name, setWorld: (name, x, z) => setWorld(name, x == null ? null : { x, z }) };
 if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
 })();

@@ -77,6 +77,11 @@ module.exports = {
       T.check('en ' + k + ': pieza ' + piece + (k === piece ? '' : ', mezcla ' + k) + ', efectos transportados ' + semis + ' semitonos', s.key === k && s.cur === piece && s.live.join() === piece
         && Math.abs(s.tune - Math.pow(2, semis / 12)) < 0.002, JSON.stringify(s));
     }
+    // en la luna (mundos/luna.js): su pieza, sin nada de fondo (no hay aire) y los efectos en su tonalidad (mi)
+    await E(() => window.__tamachin.setWorld('luna', 0, -30)); await sleep(3000); s = await live();
+    T.check('en la luna: su pieza, sin pájaros, río ni viento, efectos transportados 4 semitonos, sin errores', s.key === 'luna' && s.cur === 'luna' && s.live.join() === 'luna'
+      && s.birds === 0 && s.river === 0 && s.wind === 0 && Math.abs(s.tune - Math.pow(2, 4 / 12)) < 0.002 && !s.err, JSON.stringify(s));
+    await E(() => window.__tamachin.setWorld('tierra', 0, 3.5)); await sleep(2500);
     // lo de fondo: junto al río suena el río y cantan pájaros; en la cima hay viento y ningún pájaro
     s = await go(8, -191, 4000);
     T.check('junto al río: río y pájaros', s.key === 'bosque' && s.river > 0.3 && s.birds === 1 && s.calls > 0, JSON.stringify(s));
@@ -136,7 +141,7 @@ module.exports = {
     T.check('después de una pausa sigue desde ahora, sin amontonar notas', skip[1] <= 3, skip[0] + ' y luego ' + skip[1] + ' corcheas');
 
     // cada mezcla, renderizada: ni muda, ni saturada, ni con huecos; los efectos del juego llegan a 0.06
-    const ZONES = [['casa', 80], ['ciudad', 72], ['jardin', 24], ['parque', 24], ['camino', 30], ['bosque', 101], ['montes', 64], ['pueblo', 58], ['sinfin', 60], ['cuna', 69]];
+    const ZONES = [['casa', 80], ['ciudad', 72], ['jardin', 24], ['parque', 24], ['camino', 30], ['bosque', 101], ['montes', 64], ['pueblo', 58], ['sinfin', 60], ['luna', 72], ['cuna', 69]];
     for (const [k, secs] of ZONES) {
       const r = await E(RENDER, { plan: [[0, k]], secs, sr: 22050 });
       T.info(k + ': pico ' + r.peak.toFixed(3) + ', RMS ' + r.rms.toFixed(4) + ', el segundo más callado ' + r.quiet.toFixed(4));

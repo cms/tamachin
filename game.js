@@ -173,8 +173,10 @@ function paintSky(top, mid, hor, glow) {
   }
   C.needsUpdate = true;
 }
-function setHour(h) { day.h = ((h % 24) + 24) % 24; applyDay(true); }
-function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; applyDay(false); }
+function setHour(h) { day.h = ((h % 24) + 24) % 24; skyNow(true); }
+function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; skyNow(false); }
+// en otro mundo la hora sigue corriendo, pero el cielo y la luz son los suyos (`world.sky`, mundos/)
+function skyNow(force) { if (world && world.sky) world.sky(force); else applyDay(force); }
 function applyDay(force) {
   const h = day.h; let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++;
   const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));
@@ -332,10 +334,23 @@ function canvasTex(w, h, draw) {
 // ───────────────────────── colisiones ─────────────────────────
 // Lo bajo lleva `top` (la altura de arriba, solo en suelo plano): Tamachin lo libra saltando y, salvo `stand` falso (una cerca),
 // se para encima (`perches`). Sin `top` no tiene límite de altura. Quien lo acompaña (resolveAgent) no salta: todo le estorba.
-const boxes = [], circles = [], perches = [];
-const lowSolid = (list, s, top, stand) => { list.push(s); if (top != null) { s.top = top; if (stand !== false) perches.push(s); } return s; };
-const solidBox = (x0, x1, z0, z1, top, stand) => lowSolid(boxes, { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), top: Infinity }, top, stand);
-const solidCircle = (x, z, r, top, stand) => lowSolid(circles, { x, z, r, top: Infinity }, top, stand);
+// Cada mundo tiene los suyos (`solids()`): los de la Tierra son boxes, circles y perches, con solidBox y solidCircle. Otro mundo
+// (mundos/) arma los suyos y nunca toca estos (la prueba `mundo` los compara).
+function solids() {
+  const S = { boxes: [], circles: [], perches: [] };
+  const low = (list, s, top, stand) => { list.push(s); if (top != null) { s.top = top; if (stand !== false) S.perches.push(s); } return s; };
+  S.box = (x0, x1, z0, z1, top, stand) => low(S.boxes, { x0: Math.min(x0, x1), x1: Math.max(x0, x1), z0: Math.min(z0, z1), z1: Math.max(z0, z1), top: Infinity }, top, stand);
+  S.circle = (x, z, r, top, stand) => low(S.circles, { x, z, r, top: Infinity }, top, stand);
+  return S;
+}
+const EARTH_SOLIDS = solids(), { boxes, circles, perches } = EARTH_SOLIDS, solidBox = EARTH_SOLIDS.box, solidCircle = EARTH_SOLIDS.circle;
+// ───────────────────────── mundos ─────────────────────────
+// La Tierra es uno; los otros (la luna) viven en mundos/*.js, que build.sh mete entre 05-norte.js y 06-main.js. Al cargar solo se
+// registran en WORLDS; lo suyo se construye la primera vez que Tamachin va (06-main.js: setWorld). `world` es donde está ahora (lo
+// pone 06-main.js: antes es null). Las reglas del movimiento son de cada mundo: el salto llega a jump²/(2·grav), 1.38 m en la Tierra.
+const RULES = { grav: 22, jump: 7.8, jumpWater: 6, jumpBed: 9, walk: 5.2, run: 8.6, accel: 12, stop: 14 };
+const WORLDS = {};
+let world = null;
 function pushOutBox(pos, r, b) {
   if (pos.x < b.x0 - r || pos.x > b.x1 + r || pos.z < b.z0 - r || pos.z > b.z1 + r) return false;
   const cx = clamp(pos.x, b.x0, b.x1), cz = clamp(pos.z, b.z0, b.z1), dx = pos.x - cx, dz = pos.z - cz, d2 = dx * dx + dz * dz;
@@ -1880,9 +1895,12 @@ function carRect(c, pad) {
   const a = c.L.axis === 'x';
   carBox.x0 = c.x - (a ? c.half : c.hw) - pad; carBox.x1 = c.x + (a ? c.half : c.hw) + pad; carBox.z0 = c.z - (a ? c.hw : c.half) - pad; carBox.z1 = c.z + (a ? c.hw : c.half) + pad; return carBox;
 }
+// Donde los autos esperan a Tamachin sin pitar ni asustarlo, como con el monito verde: la boca del túnel de la luna (mundos/luna.js).
+const CALM = [];
+const calmAt = (x, z) => CALM.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 function updateCars(dt, t) {
   for (const c of cars) { c.x = c.L.axis === 'x' ? c.s : c.L.fixed; c.z = c.L.axis === 'x' ? c.L.fixed : c.s; }
-  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = !!pz && pz.state !== 'stop';   // cruza con el monito verde
+  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = (!!pz && pz.state !== 'stop') || (inCity && calmAt(P.pos.x, P.pos.z));   // cruza con el monito verde
   for (const c of cars) {
     const L = c.L, dir = L.dir, ax = L.axis === 'x'; let gap = 999, cross = false, honk = false;
     const front = c.s + dir * c.half;
@@ -2854,6 +2872,198 @@ function updateNorth(dt) {
   if (zone && !northSeen[zone]) { northSeen[zone] = true; discover(zone); }
 }
 
+// ───────────────────────── la luna (mundos/luna.js) ─────────────────────────
+// Un mundo aparte (WORLDS en 01-core.js, setWorld en 06-main.js). Se llega caminando hacia dentro del túnel de los autos del noreste
+// (24, −60), el de la placa con la luna pintada, y se vuelve por el túnel que hay en la orilla del Cráter Grande. Aquí se pesa un
+// tercio (salta unos 4 m) y se resbala un poco; el cielo es negro, con estrellas, el sol y la Tierra; no hay tiempo ni agua.
+// Al cargar solo se registra: el mundo, su música, sus pasos, su encargo, la placa del túnel y la calma de los autos en esa boca.
+// Lo demás se arma la primera vez que Tamachin llega (`build`). Usa sus propias semillas (mulberry), nunca `rnd`, y sus propios
+// colisionadores (M.solids): la Tierra queda igual (la prueba `mundo` no ve nada nuevo).
+const LUNA = { base: 3, R: 52, half: 80, cell: 1.25, rim: 6.5 };   // base: el suelo va de 3 m para arriba (los cráteres no bajan de 0)
+const LUNA_CRATERS = [{ x: -19, z: 6, r: 8, d: 2.2 }, { x: 21, z: 13, r: 6, d: 1.7 }, { x: 5, z: 30, r: 5, d: 1.3 }, { x: -27, z: -20, r: 7, d: 2 },
+  { x: 24, z: -21, r: 4.5, d: 1.2 }, { x: -9, z: -26, r: 3.6, d: 0.9 }, { x: -6, z: 37, r: 3.2, d: 0.8 }];
+// las bocas de los dos túneles: miran al sur (la de la Tierra a la ciudad, la de la luna al centro del cráter); su pared está en z
+const EARTH_DOOR = { x: 24, face: -59.5, half: 3.4, armed: true }, LUNA_DOOR = { x: 0, z: -50, face: -49.5, half: 3.4, armed: false };
+const LUNA_FLAG = { x: 0, z: 0 };
+// la altura sin rejilla: la orilla del Cráter Grande, una loma en medio, los cráteres (hondonada y borde) y ondas suaves; `o` recibe
+// cuánto es de cráter y de orilla (para el color)
+function lunaRaw(x, z, o) {
+  const d = Math.hypot(x, z), a = Math.atan2(z, x), rim = LUNA.rim * sstep(51, 64, d) * (1 + 0.12 * Math.sin(a * 5 + 0.7) + 0.06 * Math.sin(a * 11));
+  let cr = 0;
+  for (const c of LUNA_CRATERS) {
+    const q = Math.hypot(x - c.x, z - c.z) / c.r; if (q > 2.2) continue;
+    cr += (q < 1 ? -c.d * (1 - q * q) : 0) + c.d * 0.42 * Math.exp(-((q - 1) / 0.3) * ((q - 1) / 0.3));
+  }
+  const flat = sstep(5, 12, Math.hypot(x - LUNA_DOOR.x, z - LUNA_DOOR.z - 4));   // frente al túnel, llano
+  const wav = (0.22 * Math.sin(x * 0.13 + z * 0.07) * Math.sin(z * 0.11 - x * 0.05) + 0.1 * Math.sin(x * 0.31 + 1.2) * Math.sin(z * 0.27 - 0.4)) * flat;
+  if (o) { o.cr = cr; o.rim = rim; }
+  return LUNA.base + rim + cr + 1.1 * Math.exp(-(d / 6.5) * (d / 6.5)) + wav;
+}
+// rejilla: la malla y los pies de Tamachin usan los mismos triángulos (como terrainY en 05-norte.js); fuera de ella, la fórmula
+const LG = { x0: -LUNA.half, z0: -LUNA.half, s: LUNA.cell, n: Math.round(2 * LUNA.half / LUNA.cell) + 1 };
+let LH = null;
+function lunaY(x, z) {
+  const fx = (x - LG.x0) / LG.s, fz = (z - LG.z0) / LG.s;
+  if (!LH || fx < 0 || fz < 0 || fx >= LG.n - 1 || fz >= LG.n - 1) return lunaRaw(x, z);
+  const i = Math.floor(fx), j = Math.floor(fz), u = fx - i, v = fz - j, k = j * LG.n + i;
+  const h00 = LH[k], h10 = LH[k + 1], h01 = LH[k + LG.n], h11 = LH[k + LG.n + 1];
+  return u + v <= 1 ? h00 + (h10 - h00) * u + (h01 - h00) * v : h11 + (h01 - h11) * (1 - u) + (h10 - h11) * (1 - v);
+}
+// pintado a mano en un lienzo: la luna creciente de la placa en la Tierra, y la Tierra (la placa de la luna y el cielo)
+const crescentTex = canvasTex(64, 64, (g) => {
+  g.fillStyle = '#fff1a8'; g.beginPath(); g.arc(32, 32, 24, 0, TAU); g.fill();
+  g.globalCompositeOperation = 'destination-out'; g.beginPath(); g.arc(44, 24, 20, 0, TAU); g.fill();
+});
+const earthTex = canvasTex(128, 128, (g) => {
+  const R = mulberry(4064), halo = g.createRadialGradient(64, 64, 40, 64, 64, 62);
+  halo.addColorStop(0, 'rgba(140,200,255,.55)'); halo.addColorStop(1, 'rgba(140,200,255,0)'); g.fillStyle = halo; g.fillRect(0, 0, 128, 128);
+  g.save(); g.beginPath(); g.arc(64, 64, 44, 0, TAU); g.clip();
+  g.fillStyle = '#2f73d6'; g.fillRect(0, 0, 128, 128);
+  g.fillStyle = '#56b65a'; for (const [x, y, rx, ry, a] of [[48, 46, 16, 11, 0.5], [80, 70, 12, 18, -0.3], [56, 86, 10, 7, 0.2], [88, 38, 8, 6, 0.9]]) { g.beginPath(); g.ellipse(x, y, rx, ry, a, 0, TAU); g.fill(); }
+  g.fillStyle = 'rgba(255,255,255,.85)'; for (let i = 0; i < 9; i++) { g.beginPath(); g.ellipse(20 + R() * 88, 20 + R() * 88, 6 + R() * 12, 2 + R() * 3, R() * 3, 0, TAU); g.fill(); }
+  const sh = g.createLinearGradient(20, 0, 108, 0); sh.addColorStop(0, 'rgba(0,0,0,.75)'); sh.addColorStop(0.45, 'rgba(0,0,0,.1)'); sh.addColorStop(1, 'rgba(0,0,0,0)');
+  g.fillStyle = sh; g.fillRect(0, 0, 128, 128); g.restore();   // la noche de la Tierra, del lado izquierdo
+});
+const paintDisc = (tex, r) => { const m = new THREE.Mesh(new THREE.CircleGeometry(r, 24), new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5 })); m.raycast = () => {}; return m; };
+
+// ── en la Tierra: la placa del túnel (con la luna, que de noche brilla) y la boca donde los autos esperan sin pitar ──
+{
+  const z = EARTH_DOOR.face + 0.23, disc = paintDisc(crescentTex, 0.52);   // el frente de la placa (03-world.js: PF_PORTAL) está en −59.28
+  disc.position.set(EARTH_DOOR.x, 4.3, z); scene.add(disc);
+  const glow = new THREE.Mesh(new THREE.CircleGeometry(0.52, 24), nightMat(0xfff1a8, 0.9, { map: crescentTex })); glow.position.set(EARTH_DOOR.x, 4.3, z + 0.01); glow.raycast = () => {}; scene.add(glow);
+  CALM.push({ x0: EARTH_DOOR.x - 4.4, x1: EARTH_DOOR.x + 4.4, z0: -66, z1: -53.5 });   // hasta dentro del túnel: al entrar camina 2.5 m por él
+}
+// el paso que suena en la luna: polvo suave
+STEPS.polvo = (c, d, t, v, r) => { swish(c, d, t, 0.055 * v, 'bandpass', 950 * r, 0.7, 0.08); swish(c, d, t + 0.015, 0.016 * v, 'bandpass', 2100 * r, 1.2, 0.03); };
+// su música: colchón con novenas que entra despacio, el tema en campanitas sueltas una octava arriba y un arpegio que titila
+MUSIC.luna = { bpm: 54, swing: 0, wet: 0.85, vol: 0.2, key: 4, meter: 8, low: { bell: 0.35, arp: 0.3 },
+  layers: { pad: { vol: 0.013 }, low: { vol: 0.018 }, bell: { vol: 0.36, pan: 0.2 }, arp: { vol: 0.1, pan: -0.3 } },
+  step(E, L, i, t, sd) {
+    const K = 4, s = i % 8, bar = (i >> 3) % 8, pass = (i >> 6) % 2, ch = PROG_M[bar];
+    if (s === 0) { const len = 8 * sd + 1.4; for (const m of voicing(ch, 55)) INST.pad(E, L.pad, t, m + K, len, 1, 1.8); INST.pad(E, L.low, t, rootIn(ch, 40) + K, len, 1, 1.8); }
+    const n = MEL_A[i % 64];
+    if (pass === 0 && n && s % 2 === 0) INST.bell(E, L.bell, t, n[0] + K + 12, 0, 0.75);
+    else if (pass === 1 && s % 2 === 0 && Math.random() < 0.35) INST.bell(E, L.bell, t, choose(voicing(ch, 76)) + K, 0, rand(0.4, 0.8));
+    if (s % 2) { const vc = voicing(ch, 67); INST.bell(E, L.arp, t, vc[(i >> 1) % vc.length] + K, 0, 0.55); }
+  } };
+MUSIC_ZONES.luna = { piece: 'luna', mix: {}, amb: {} };   // sin aire: sin pájaros, viento ni grillos
+
+const LUNA_SUN = new THREE.Vector3(0.62, Math.sin(32 * DEG), 0.62).normalize(), LUNA_BLACK = new THREE.Color(0, 0, 0), LUNA_HEMI = [new THREE.Color(0x8f9bbf), new THREE.Color(0x3b3b44)];
+WORLDS.luna = {
+  name: 'luna', skyWord: 'en la luna', skyText: 'En la luna no hay nubes ni lluvia: el cielo siempre es negro y se ven las estrellas.',
+  rules: Object.assign({}, RULES, { grav: RULES.grav / 3, accel: 5, stop: 4.5 }), night: 0,
+  quests: { luna: { title: 'Una bandera en la luna', hint: 'Planta tu bandera en la loma del centro del Cráter Grande. Y salta: en la luna pesas menos.', done: 'Tu bandera quedó plantada en la luna.' } },
+  ground: lunaY, surface: () => 'polvo',
+  zone() { const p = player.pos; return Math.hypot(p.x - LUNA_DOOR.x, p.z - LUNA_DOOR.z) < 8 ? 'Túnel a la Tierra' : Math.hypot(p.x, p.z) < 7 ? 'Centro del Cráter Grande' : 'La luna'; },
+  music: () => 'luna',
+  collide(pos) { const d = Math.hypot(pos.x, pos.z); if (d > LUNA.R) { pos.x *= LUNA.R / d; pos.z *= LUNA.R / d; } },   // la orilla del cráter
+  // el cielo y la luz, en vez de applyDay (la hora de la Tierra sigue corriendo): negro, siempre con estrellas y el sol, un sol blanco que
+  // pega fuerte desde el sureste y bajo (sombras largas), poca luz de lo demás
+  sky(force) {
+    day.light = 0.4; day.warm = 0; day.stars = 1; day.lamps = 0;   // el farolito, un poco prendido
+    sun.color.setRGB(1, 1, 1); sun.intensity = 0.95; SUN_OFF.copy(LUNA_SUN).multiplyScalar(LIGHT_D);
+    hemi.color.copy(LUNA_HEMI[0]); hemi.groundColor.copy(LUNA_HEMI[1]); hemi.intensity = 0.34;
+    scene.fog.color.copy(LUNA_BLACK); scene.background.copy(LUNA_BLACK); scene.fog.near = 55; scene.fog.far = 170;
+    for (const s of skyStars) s.material.opacity = 1;
+    skyMoon.visible = false; skyBow.visible = false;
+    skySun.visible = true; skySun.material.opacity = 1; skySun.material.color.copy(SUN_DISC); skySun.position.copy(LUNA_SUN).multiplyScalar(470);
+    if (force) paintSky(LUNA_BLACK, LUNA_BLACK, LUNA_BLACK, 0);
+  },
+  enter() {
+    const M = this; M.earth.visible = true; M.flag.visible = quests.luna === 2; M.flag.k = 1; M.greet = true;   // ya plantada: entera
+    M.homePitch = camView.pitchT; camView.pitch = camView.pitchT = Math.min(camView.pitchT, 16 * DEG);   // la cámara baja: que se vean la Tierra y las estrellas
+    // (homePitch: la altura de la Tierra; es la que se guarda, y al volver se pone otra vez)
+  },
+  leave() { const M = this; M.earth.visible = false; if (M.homePitch != null) camView.pitch = camView.pitchT = M.homePitch; M.homePitch = null; },
+  // en la Tierra: caminar hacia dentro de la boca del túnel (empujando contra la pared negra) lleva a la luna
+  onEarth() {
+    const P = player, D = EARTH_DOOR;
+    if (!D.armed) { if (P.pos.z > D.face + 2.5 || Math.abs(P.pos.x - D.x) > 6) D.armed = true; return; }   // al volver, primero se aleja
+    if (P.state === 'normal' && !ui.closeup && Math.abs(P.pos.x - D.x) < D.half && P.pos.z < D.face + 0.8 && P.pos.z > D.face - 1 && P.vz < -0.6) {
+      D.armed = false; LUNA_DOOR.armed = false;
+      enterWorld('luna', { at: { x: LUNA_DOOR.x, z: LUNA_DOOR.face - 1.3, heading: 0 }, walkIn: { x: 0, z: -5 }, walkOut: { x: 0, z: 5 }, line: '¡Estoy en la luna!' });
+    }
+  },
+  mid(dt) {
+    const M = this, P = player, D = LUNA_DOOR;
+    if (M.greet && P.state === 'normal') { M.greet = false; if (!quests.luna) startQuest('luna'); }
+    // de vuelta: por la boca del túnel del borde
+    if (!D.armed) { if (P.pos.z > D.face + 2.5 || Math.abs(P.pos.x - D.x) > 6) D.armed = true; }
+    else if (P.state === 'normal' && !ui.closeup && Math.abs(P.pos.x - D.x) < D.half && P.pos.z < D.face + 0.8 && P.vz < -0.6) {
+      D.armed = false; EARTH_DOOR.armed = false;
+      enterWorld('tierra', { at: { x: EARTH_DOOR.x, z: EARTH_DOOR.face - 1.3, heading: 0 }, walkIn: { x: 0, z: -5 }, walkOut: { x: 0, z: 5 }, line: '¡De vuelta en la Tierra!' });
+    }
+    // un salto de luna (más de 2.5 m) divierte; al caer, polvo
+    const gy = lunaY(P.pos.x, P.pos.z);
+    if (!P.onGround) M.air = Math.max(M.air || 0, P.pos.y - gy);
+    else if (M.air) {
+      if (M.air > 0.8) burst('puff', P.pos.x, P.pos.y + 0.1, P.pos.z, M.air > 2.5 ? 7 : 4);
+      if (M.air > 2.5 && P.state === 'normal' && gain('diversion', 0.05, 'salto-luna', 6)) say(P, choose(['¡Qué salto!', '¡Casi toco las estrellas!', '¡Floto!', '¡Wiii, en la luna!']), 1.6);
+      M.air = 0;
+    }
+    // la bandera sale del suelo al plantarla, y es del color de Tamachin
+    const F = M.flag;
+    if (F.visible) { F.k = Math.min(1, (F.k || 0) + dt * 2.2); F.scale.set(1, Math.max(0.01, ease(F.k)), 1); if (F.cloth.material.color.getHexString() !== P.T.color.replace('#', '').toLowerCase()) F.cloth.material.color.set(P.T.color); }
+  },
+  build(M) {
+    const S = M.solids, R = mulberry(4062), c = new THREE.Color(), o = {}, n = new THREE.Vector3();
+    // el suelo: la rejilla y su malla (sombreado suave por la rejilla; color por cráter y orilla, con un grano)
+    LH = new Float32Array(LG.n * LG.n);
+    const parts = []; for (let j = 0; j < LG.n; j++) for (let i = 0; i < LG.n; i++) { LH[j * LG.n + i] = lunaRaw(LG.x0 + i * LG.s, LG.z0 + j * LG.s, o); parts.push(o.cr, o.rim); }
+    const hAt = (i, j) => LH[clamp(j, 0, LG.n - 1) * LG.n + clamp(i, 0, LG.n - 1)];
+    const BASE = new THREE.Color('#bdb9b2'), DARK = new THREE.Color('#8a8781'), LIGHT = new THREE.Color('#dcd8d0'), RIM = new THREE.Color('#a8a39b');
+    const pos = [], nor = [], col = [], uv = [], idx = [];
+    for (let j = 0; j < LG.n; j++) for (let i = 0; i < LG.n; i++) {
+      const k = j * LG.n + i, x = LG.x0 + i * LG.s, z = LG.z0 + j * LG.s, cr = parts[k * 2], rim = parts[k * 2 + 1];
+      n.set(-(hAt(i + 1, j) - hAt(i - 1, j)) / (2 * LG.s), 1, -(hAt(i, j + 1) - hAt(i, j - 1)) / (2 * LG.s)).normalize();
+      pos.push(x, LH[k], z); nor.push(n.x, n.y, n.z); uv.push(x / 5, z / 5);
+      c.copy(BASE).lerp(DARK, clamp(-cr / 1.6, 0, 1) * 0.8).lerp(LIGHT, clamp(cr / 0.7, 0, 1) * 0.55).lerp(RIM, clamp(rim / LUNA.rim, 0, 1) * 0.7).multiplyScalar(0.94 + R() * 0.1);
+      col.push(c.r, c.g, c.b);
+    }
+    for (let j = 0; j < LG.n - 1; j++) for (let i = 0; i < LG.n - 1; i++) { const a = j * LG.n + i, b = a + 1, d = a + LG.n, e = d + 1; idx.push(a, d, b, e, b, d); }   // mismo corte que lunaY
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('normal', new THREE.Float32BufferAttribute(nor, 3));
+    g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeBoundingSphere();
+    const grain = canvasTex(128, 128, (q) => { q.fillStyle = '#ffffff'; q.fillRect(0, 0, 128, 128); const G = mulberry(4065);   // polvo gris: el color lo ponen los vértices
+      for (let i = 0; i < 700; i++) { q.fillStyle = 'rgba(0,0,0,' + (0.015 + G() * 0.03).toFixed(3) + ')'; q.beginPath(); q.arc(G() * 128, G() * 128, 0.6 + G() * 1.8, 0, TAU); q.fill(); } });
+    grain.wrapS = grain.wrapT = THREE.RepeatWrapping;
+    const ground = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, map: grain })); ground.receiveShadow = true; ground.castShadow = true; M.root.add(ground);
+    // piedras: chiquitas sueltas y peñascos donde subirse (con su colisionador: se para encima)
+    const b = new Batch(), GREYS = ['#9c9890', '#aaa69e', '#8f8b84', '#b3afa7'];
+    const clear = (x, z, m) => Math.hypot(x, z) > 7 + m && Math.hypot(x - LUNA_DOOR.x, z - LUNA_DOOR.z - 5) > 8 + m && Math.hypot(x, z) < LUNA.R + 4;
+    for (let i = 0; i < 70; i++) {
+      const a = R() * TAU, d = 8 + Math.sqrt(R()) * 50, x = Math.cos(a) * d, z = Math.sin(a) * d, s = 0.15 + R() * R() * 0.6; if (!clear(x, z, 0)) continue;
+      b.rock(GREYS[Math.floor(R() * 4)], x, lunaRaw(x, z) + s * 0.25, z, s, s * (0.5 + R() * 0.3), s * (0.8 + R() * 0.4), R() * TAU);
+    }
+    for (const [x, z, r, h] of [[-8, 15, 1.8, 2.2], [14, -8, 1.5, 1.8], [31, 3, 2, 2.6], [-33, 12, 1.6, 2], [-15, -39, 1.4, 1.7], [13, 41, 1.7, 2.3], [-37, -3, 1.2, 1.5], [36, -33, 1.8, 2.4]]) {
+      const y = lunaRaw(x, z) - 0.3; b.rock(GREYS[Math.floor(R() * 4)], x, y + h / 2, z, r, h / 2, r * 0.9, R() * TAU); S.circle(x, z, r * 0.82, y + h - 0.05).step = 'piedra';
+    }
+    // el túnel de vuelta, metido en la orilla (como los de la ciudad, con la Tierra pintada en la placa) y un peñasco encima
+    const STONE_L = '#c2bdb4';
+    const pf = new Batch().box('#0b0a12', 0, 1.9, 5, 8.2, 3.8, 11).box(STONE_L, -4.55, 2.2, 0.9, 0.9, 4.4, 3).box(STONE_L, 4.55, 2.2, 0.9, 0.9, 4.4, 3)
+      .box(STONE_L, 0, 4.3, 0.9, 10, 0.95, 3).box('#b8b1a3', 0, 4.3, -0.62, 1.4, 1.25, 0.2);
+    b.merge(pf, LUNA_DOOR.x, LUNA.base, LUNA_DOOR.z, Math.PI); b.rock('#a29e96', LUNA_DOOR.x, LUNA.base + 2.5, LUNA_DOOR.z - 8, 8.5, 5.5, 7, 0.4);
+    S.box(LUNA_DOOR.x - 5, LUNA_DOOR.x + 5, LUNA_DOOR.z - 11, LUNA_DOOR.face);
+    const rocks = b.mesh(); M.root.add(rocks);
+    const plate = paintDisc(earthTex, 0.56); plate.position.set(LUNA_DOOR.x, LUNA.base + 4.3, LUNA_DOOR.face + 0.23); M.root.add(plate);
+    // la bandera (escondida hasta que se planta): asta blanca, varilla de lado (en la luna no hay viento) y la tela del color de Tamachin
+    const F = new THREE.Group(), white = new THREE.MeshLambertMaterial({ color: 0xf4f4f0 }), cloth = new THREE.Mesh(new THREE.BoxGeometry(1.3, 0.85, 0.04), new THREE.MeshLambertMaterial({ color: player.T.color }));
+    const pole = new THREE.Mesh(new THREE.CylinderGeometry(0.045, 0.05, 2.9, 8), white); pole.position.y = 1.45;
+    const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.4, 6), white); rod.rotation.z = Math.PI / 2; rod.position.set(0.68, 2.85, 0);
+    cloth.position.set(0.68, 2.4, 0); for (const m of [pole, rod, cloth]) { m.castShadow = true; F.add(m); }
+    F.position.set(LUNA_FLAG.x, lunaRaw(LUNA_FLAG.x, LUNA_FLAG.z) - 0.05, LUNA_FLAG.z); F.rotation.y = -0.5; F.visible = false; F.cloth = cloth; M.root.add(F); M.flag = F;
+    M.interacts = [{ pos: LUNA_FLAG, range: 2.8, label: 'Plantar tu bandera', ok: () => quests.luna !== 2, act: () => {
+      const P = player, dx = P.pos.x - LUNA_FLAG.x, dz = P.pos.z - LUNA_FLAG.z, d = Math.hypot(dx, dz);
+      if (d < 1.2) { const k = d > 0.01 ? 1.2 / d : 0; P.pos.x = LUNA_FLAG.x + (d > 0.01 ? dx * k : 0); P.pos.z = LUNA_FLAG.z + (d > 0.01 ? dz * k : 1.2); }   // que no quede encima del asta
+      P.heading = Math.atan2(LUNA_FLAG.x - P.pos.x, LUNA_FLAG.z - P.pos.z);
+      F.k = 0; F.visible = true; burst('star', LUNA_FLAG.x, F.position.y + 2.4, LUNA_FLAG.z, 8); P.T.doTrick('dance'); say(P, '¡Mi bandera en la luna!', 2.6); finishQuest('luna');
+    } }];
+    // la Tierra en el cielo: bajita hacia el norte (la cámara casi siempre mira hacia abajo), detrás del túnel de vuelta
+    // la cámara mira hacia abajo: lo más alto que se ve son unos grados sobre el horizonte. Por eso es grande y sale detrás de la orilla
+    const ea = 8 * DEG, ee = 3 * DEG;                               // un poco a la derecha, para que no quede detrás del nombre del lugar
+    M.earth = skySprite(earthTex, 150); M.earth.position.set(Math.cos(ee) * Math.sin(ea), Math.sin(ee), -Math.cos(ee) * Math.cos(ea)).multiplyScalar(470); M.earth.visible = false;
+  },
+};
+
 // ───────────────────────── Tamachin (jugador) ─────────────────────────
 const SAVE_KEY = 'tamachin.v1';
 const player = { T: makeTamachin({ shape: 'bola', color: '#ffc93c', mood: 'contento', scale: 1.3 }), vx: 0, vz: 0, vy: 0, heading: 0, onGround: true, state: 'normal', r: 0.62,
@@ -2927,6 +3137,7 @@ const QUESTS = {
   arcoiris: { title: 'Un arcoíris', hint: 'Cuando deja de llover de día, sale un arcoíris del lado contrario al sol. Baja la cámara para ver el cielo.', done: 'Viste un arcoíris.' },
   frutas: { title: 'Las siete frutas', hint: 'Prueba naranjas, manzanas, uvas, arándanos, sandías, fresas y granadas del bosque sin fin, al norte de Valle Alegre.', done: 'Probaste las siete frutas del bosque sin fin.', progress: () => fruitsTasted.length + ' de 7' },
 };
+for (const k in WORLDS) Object.assign(QUESTS, WORLDS[k].quests);   // los de otros mundos (mundos/), al final
 function reachSummit(p) {
   p.reached = true; if (summits.includes(p.name)) return;
   summits.push(p.name); const P = player; say(P, '¡Llegué a la cima del ' + p.name + '!', 3); P.T.doTrick('dance'); burst('star', P.pos.x, P.pos.y + 2, P.pos.z, 8); gain('diversion', 0.25);
@@ -2948,6 +3159,7 @@ function discover(zone) {
   toast(T[zone], 5); gain('diversion', 0.12);
 }
 const quests = { conejo: 0, peces: 0, fuente: 0, gelatina: 0, cumbres: 0, frutas: 0, amanecer: 0, luciernagas: 0, charcos: 0, arcoiris: 0 };
+for (const k in WORLDS) for (const q in WORLDS[k].quests) quests[q] = 0;
 let fliesCaught = 0, puddleJumps = 0;
 const summits = [], fruitsTasted = [];          // nombres de las cimas alcanzadas y frutas probadas (claves de FRUITS)
 function startQuest(id) { if (quests[id]) return; quests[id] = 1; toast('Nuevo encargo: ' + QUESTS[id].title + '. Está en el diario.', 4.5); SFX.pop(); renderDiary(); save(); }
@@ -2961,7 +3173,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +camView.pitchT.toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
+      mundo: world.name, x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +(world.homePitch != null ? world.homePitch : camView.pitchT).toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -2986,7 +3198,8 @@ function jump() {
   const P = player;
   if (P.state === 'sleep') { wake(); return; }
   if (P.state !== 'normal' || ui.closeup) { if (ui.closeup) playerTrick(); return; }
-  if (P.onGround) { P.vy = P.inWater ? 6 : P.perch && P.perch.bounce ? 9 : 7.8; P.onGround = false; P.T.poke(3.2); SFX.jump(); }   // desde la cama, más alto
+  const R = world.rules;
+  if (P.onGround) { P.vy = P.inWater ? R.jumpWater : P.perch && P.perch.bounce ? R.jumpBed : R.jump; P.onGround = false; P.T.poke(3.2); SFX.jump(); }   // desde la cama, más alto
   else P.jumpAsk = clock;                                           // rebotando en la cama: saltar justo antes de caer lo impulsa otra vez
 }
 // subirse a algo saltando divierte un poco (con la misma regla de siempre: no cuenta repetirlo seguido)
@@ -3563,11 +3776,12 @@ function pester() {
   pest.n = 0; makeDizzy(4.5); P.T.poke(5); return true;
 }
 function handleClick(px, py) {
-  if (tapShootingStar(px, py) || tapFly(px, py)) return;
+  const home = world === EARTH;                                     // los vecinos, los animales y las luciérnagas viven en la Tierra
+  if (home && (tapShootingStar(px, py) || tapFly(px, py))) return;
   const P = player; let best = Infinity, what = null;
   let d = hitTest(px, py, P.pos.x, P.pos.y + 0.8 * P.T.scale * (1 - 0.6 * P.T.lieK), P.pos.z, 0.85 * P.T.scale); if (d < best) { best = d; what = P; }
-  for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
-  for (const c of creatures) { if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
+  if (home) for (const n of npcs) { d = hitTest(px, py, n.pos.x, 0.7 * n.T.scale, n.pos.z, 0.8 * n.T.scale); if (d < best) { best = d; what = n; } }
+  if (home) for (const c of creatures) { if (c.kind === 'músico' && !c.T.group.visible) continue; d = hitTest(px, py, c.pos.x, c.pos.y + 0.5, c.pos.z, c.clickR); if (d < best) { best = d; what = c; } }   // los músicos, solo cuando tocan
   if (!what) return;
   if (what === P) { if (P.state === 'sleep') wake(); else if (!pester()) playerTrick(); return; }
   const dist = Math.hypot(what.pos.x - P.pos.x, what.pos.z - P.pos.z);
@@ -3674,9 +3888,10 @@ for (const el of [panelEl, diaryEl]) el.querySelector('.pbody').addEventListener
 const START = { x: 0, z: 3.5 }, bHome = $('#dHome'); let homeArmed = 0;
 function goHome() {
   const P = player; if (P.state === 'busy') return;
-  if (Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40 && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
+  if ((world !== EARTH || Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40) && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
+  setWorld(EARTH.name);                                             // desde otro mundo (la luna), también de vuelta a la Tierra
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
   P.pos.set(START.x, 0, START.z); camInit = false; camView.yaw = camView.yawT = 0; camView.pitch = camView.pitchT = PITCH.def;   // también la cámara, de frente a la casa
   toggleDiary(false); say(P, '¡De vuelta en casa!', 2.2); P.T.doTrick('hop'); burst('spark', P.pos.x, 1.6, P.pos.z, 6); SFX.nice(); save();
@@ -3722,14 +3937,15 @@ const riverNear = (x, z) => Math.pow(clamp(1 - Math.max(0, Math.abs(z - riverZ(x
 function updateMusic(dt) {
   const c = snd.ctx; if (!c || c.state !== 'running' || !snd.on || musErr) return;
   if (!mus) mus = makeMusic(c, c.destination);
-  const P = player, now = c.currentTime, k = musicZone(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
+  const P = player, now = c.currentTime, k = world.music(), key = P.state === 'sleep' ? 'cuna' : k, alt = clamp(P.pos.y / 400, 0, 1);   // dormido, canción de cuna
   if (key !== musWant) { musWant = key; musT = 0; } else musT += dt;
-  const night = 1 - day.light, band = town.band && k === 'pueblo' ? clamp(1.4 - Math.hypot(P.pos.x, P.pos.z - TOWN_Z) / 60, 0, 1) : 0;   // la banda del kiosco
-  const amb = ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night, weather.rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y))); amb.roof = !!P.inHouse;
+  const night = world.night != null ? world.night : 1 - day.light, band = town.band && k === 'pueblo' ? clamp(1.4 - Math.hypot(P.pos.x, P.pos.z - TOWN_Z) / 60, 0, 1) : 0;   // la banda del kiosco
+  const rain = world.weather ? weather.rain : 0;                    // en un mundo sin tiempo (la luna) no llueve
+  const amb = ambFor(k, k === 'bosque' ? riverNear(P.pos.x, P.pos.z) : 0, alt, night, rain * (1 - smooth(WEATHER.top, WEATHER.top + 50, P.pos.y))); amb.roof = !!P.inHouse;
   mus.ambient(amb, now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * weather.rain), now); mus.param.band = band;
+  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * rain), now); mus.param.band = band;
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -3739,8 +3955,11 @@ $('#helpOk').addEventListener('click', hideHelp);
 // ───────────────────────── actualización por cuadro ─────────────────────────
 // pos.y todavía es la altura del cuadro anterior: lo bajo que ya libró no lo empuja (pasa por encima o está parado ahí)
 function resolvePlayer() {
-  const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02;
-  for (let it = 0; it < 2; it++) { for (const b of boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
+  const P = player, pos = P.pos, r = P.r, feet = pos.y + 0.02, S = world.solids;
+  for (let it = 0; it < 2; it++) { for (const b of S.boxes) if (feet < b.top) pushOutBox(pos, r, b); for (const c of S.circles) if (feet < c.top) pushOutCircle(pos, r, c.x, c.z, c.r); }
+  world.collide(pos, r);                                            // lo demás de cada mundo: en la Tierra, autos, vecinos y límites
+}
+function earthCollide(pos, r) {
   if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
     if (pos.y < c.h * 0.8) pushOutBox(pos, r * 0.8, carRect(c, 0));   // un choque solo lo empuja (antes: knock(c) si el auto iba a más de 2.2 m/s)
   }
@@ -3751,7 +3970,7 @@ function resolvePlayer() {
 // lo que no lo empuja lo sostiene; si cae por la orilla, al cuadro siguiente ya está más bajo y lo empuja hacia fuera.
 function perchUnder(x, z, y0) {
   let best = null;
-  for (const s of perches) {
+  for (const s of world.solids.perches) {
     if (y0 + 0.02 < s.top || (best && s.top <= best.top)) continue;
     const R = s.r + (s.rim || 0);
     if (s.r != null ? (x - s.x) * (x - s.x) + (z - s.z) * (z - s.z) <= R * R : x >= s.x0 && x <= s.x1 && z >= s.z0 && z <= s.z1) best = s;
@@ -3820,11 +4039,11 @@ function walkSteps(w0, w1) {
   const P = player, HALF = Math.PI / 2;
   if (Math.floor((w1 - HALF) / Math.PI) === Math.floor((w0 - HALF) / Math.PI)) return;   // ningún pie bajó
   if (!P.onGround || P.state !== 'normal' || P.T.def.feet === false || P.speedN < 0.25) return;
-  stepSound(stepSurface(P.pos.x, P.pos.z, P.perch), P.running ? 1.2 : 0.75 + 0.25 * Math.min(1, P.speedN));
+  stepSound(world.surface(P.pos.x, P.pos.z, P.perch), P.running ? 1.2 : 0.75 + 0.25 * Math.min(1, P.speedN));
 }
 function landStep(perch) {   // al caer de un salto: los dos pies, más fuerte (la cama rebota y suena aparte)
   const P = player; if (P.T.def.feet === false) return;
-  foot.lands++; stepSound(stepSurface(P.pos.x, P.pos.z, perch), 1.35);
+  foot.lands++; stepSound(world.surface(P.pos.x, P.pos.z, perch), 1.35);
 }
 function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
@@ -3845,17 +4064,15 @@ function updatePlayer(dt) {
     ix = x2 + Math.cos(clock * 2.6) * 0.3; iz = z2 + Math.sin(clock * 2.1) * 0.3; mag = Math.min(1, Math.hypot(ix, iz));
   }
   const ms = P.needMood && T.mood === P.needMood ? Math.max(0.8, m.speed || 1) : (m.speed || 1);   // cansado o con hambre camina un poco más lento, no tanto
-  let speed = (run ? 8.6 : 5.2) * ms * (P.inWater ? 0.55 : 1);
-  if (pos.z < NORTH_Z && mag > 0.08) {                              // cuesta arriba cuesta un poco más
-    const gx = (terrainY(pos.x + 1, pos.z) - terrainY(pos.x - 1, pos.z)) / 2, gz = (terrainY(pos.x, pos.z + 1) - terrainY(pos.x, pos.z - 1)) / 2, up = (gx * ix + gz * iz) / mag;
-    speed *= up > 0 ? Math.max(0.62, 1 - 0.4 * up) : 1 + Math.min(0.15, -0.15 * up);
-  }
+  const R = world.rules;
+  let speed = (run ? R.run : R.walk) * ms * (P.inWater ? 0.55 : 1);
+  if (world.slope && mag > 0.08) speed *= world.slope(pos, ix, iz, mag);   // cuesta arriba cuesta un poco más
   if (P.state === 'normal') {
     if (mag > 0.08) {
-      P.vx = damp(P.vx, ix * speed, 12, dt); P.vz = damp(P.vz, iz * speed, 12, dt);
+      P.vx = damp(P.vx, ix * speed, R.accel, dt); P.vz = damp(P.vz, iz * speed, R.accel, dt);
       P.heading += angDiff(P.heading, Math.atan2(ix, iz)) * Math.min(1, dt * 12); P.idleT = 0; P.moved += speed * mag * dt;
     } else {
-      P.vx = damp(P.vx, 0, 14, dt); P.vz = damp(P.vz, 0, 14, dt); P.idleT += dt;
+      P.vx = damp(P.vx, 0, R.stop, dt); P.vz = damp(P.vz, 0, R.stop, dt); P.idleT += dt;
       if (ptr.active && clock - ptr.moveT < 0.3 && Math.abs(P.spin) > 1.2) P.heading += angDiff(P.heading, Math.atan2(ptr.x - pScreen.x, ptr.y - pScreen.y) + camView.yaw) * Math.min(1, dt * 14);
       else if (ui.closeup) P.heading += angDiff(P.heading, ui.faceYaw) * Math.min(1, dt * 5);   // mira a la cámara como estaba al abrir: si la giras, se le ve de lado
     }
@@ -3865,30 +4082,31 @@ function updatePlayer(dt) {
 
   if (P.state === 'sleep') { P.sleepT += dt; if (P.nightSleep) sleepThroughNight(dt); else if (P.sleepT > 9) wake(); }
   else {
-    pos.x += P.vx * dt; pos.z += P.vz * dt; resolvePlayer();
-    const gy = groundY(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
-    P.vy -= 22 * dt; pos.y += P.vy * dt;
+    pos.x += P.vx * dt; pos.z += P.vz * dt; if (!(P.busy && P.busy.ghost)) resolvePlayer();   // ghost: entrando por la boca de un túnel
+    const gy = world.ground(pos.x, pos.z), pr = perchUnder(pos.x, pos.z, pos.y), sy = pr ? Math.max(gy, pr.top) : gy;   // el suelo, o lo que tiene debajo
+    const water = world.wet(gy);                                    // en la Tierra, el río (más de 20 cm de hondo)
+    P.vy -= R.grav * dt; pos.y += P.vy * dt;
     if (pos.y <= sy || (P.onGround && P.vy <= 0.01 && pos.y - sy < 0.16 + Math.hypot(P.vx, P.vz) * dt * 1.6)) {   // cuesta abajo no despega
       if (pr && pr.bounce && P.vy < -2.2 && P.state === 'normal') {   // la cama: rebota cada vez menos
         const again = clock - (P.jumpAsk || -9) < 0.25; P.jumpAsk = -9;
         P.vy = again ? 9 : Math.min(8.6, -P.vy * 0.72); pos.y = sy; P.onGround = false; P.perch = null; T.poke(-2.6); SFX.jump(); perched(pr);
       } else {
-        if (P.vy < -5) { T.poke(-3.2); if (!pr && gy < -0.2) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
+        if (P.vy < -5) { T.poke(-3.2); if (!pr && water) { burst('splash', pos.x, 0.3, pos.z, 8); SFX.splash(); } }
         const drop = P.vy < -4 && !P.onGround && P.state === 'normal';
-        if (drop && !(!pr && puddleJump(pos.x, pos.z)) && !(!pr && gy < -0.2)) landStep(pr);   // en un charco: ¡splash!; si no, el paso de caer (en el río ya salpica)
+        if (drop && !(!pr && world.puddle(pos.x, pos.z)) && !(!pr && water)) landStep(pr);   // en un charco: ¡splash!; si no, el paso de caer (en el río ya salpica)
         const landed = !P.onGround; pos.y = sy; P.vy = 0; P.onGround = true; P.perch = pr; if (P.state === 'fly') land();
         if (pr && landed && P.state === 'normal') perched(pr);
       }
     } else { P.onGround = false; P.perch = null; }
-    const wet = gy < -0.2 && pos.y < gy + 0.15;
+    const wet = water && pos.y < gy + 0.15;
     if (wet && !P.inWater) { burst('splash', pos.x, 0.3, pos.z, 6); SFX.splash(); say(P, '¡Splash!', 1.2); }
     P.inWater = wet;
     if (wet && Math.hypot(P.vx, P.vz) > 1 && Math.random() < dt * 7) emit('splash', pos.x + rand(-0.4, 0.4), 0.25, pos.z + rand(-0.4, 0.4));
     if (P.state === 'flat') { P.flatT -= dt; if (P.flatT <= 0) getUp(); }
   }
   T.group.rotation.y = P.heading;
-  P.inHouse = pos.x > HOUSE.x0 + 0.1 && pos.x < HOUSE.x1 - 0.1 && pos.z > HOUSE.z0 + 0.25 && pos.z < HOUSE.z1 - 0.2;
-  P.speedN = Math.hypot(P.vx, P.vz) / 5.2;
+  P.inHouse = world.inHouse(pos);
+  P.speedN = Math.hypot(P.vx, P.vz) / R.walk;
 
   // marearse: el puntero da vueltas a su alrededor
   if (P.spin !== 0) { const dec = dt * 1.6; P.spin = Math.abs(P.spin) <= dec ? 0 : P.spin - Math.sign(P.spin) * dec; }
@@ -3913,8 +4131,8 @@ function updateLead(dt) {
   if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly') {
     const halfW = Math.tan(camera.fov * Math.PI / 360) * camera.aspect * CAM_D0;           // medio ancho visible a la distancia de Tamachin
     const vr = P.vx * camView.c - P.vz * camView.s, vb = P.vx * camView.s + P.vz * camView.c;   // a la derecha y hacia la cámara
-    const gx = clamp(vr / 8.6, -1, 1) * LEAD.side * halfW;
-    const gz = vb > 0 ? Math.min(vb / 5.2, 1.66) * LEAD.south : Math.max(vb / 5.2, -1.66) * LEAD.north;
+    const R = world.rules, gx = clamp(vr / R.run, -1, 1) * LEAD.side * halfW;
+    const gz = vb > 0 ? Math.min(vb / R.walk, 1.66) * LEAD.south : Math.max(vb / R.walk, -1.66) * LEAD.north;
     const k = 1 - Math.exp(-LEAD.grow * dt), mx = LEAD.maxRate * dt;
     camLead.x += clamp((gx - camLead.x) * k, -mx, mx); camLead.z += clamp((gz - camLead.z) * k, -mx, mx);
   }
@@ -3922,7 +4140,7 @@ function updateLead(dt) {
 }
 function updateCamera(dt) {
   const P = player, wide = VW > 760, sc = P.T.scale; let oy, oz, ox = 0, tx = P.pos.x, ty, tz = P.pos.z;
-  const base = P.pos.z < NORTH_Z ? Math.max(0, groundY(P.pos.x, P.pos.z)) : 0;   // en las montañas la cámara sigue al suelo
+  const base = world.camBase(P.pos), hills = world.hills(P.pos);    // en las montañas la cámara sigue al suelo
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
   // girar: el arrastre y las teclas Z y X mueven yawT; yaw lo sigue suave
   const V = camView, kz = (keys.KeyZ ? 1 : 0) - (keys.KeyX ? 1 : 0);
@@ -3940,25 +4158,24 @@ function updateCamera(dt) {
   else {
     const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z, p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
     oy = d * Math.sin(p); oz = d * Math.cos(p); ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
-    const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = xLimitAt(P.pos.z);
-    tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, LIMIT);   // sin mirar más allá del borde
+    const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = world.camX(P.pos.z);
+    tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, world.camZ);   // sin mirar más allá del borde
   }
   if (fixed) { const b = P.busy.cam; tx = b.x; ty = b.y; tz = b.z; ox = b.ox || 0; oy = b.oy; oz = b.oz; }   // toma cercana (el refri), fija en el mundo
   else { const wx = ox * c + oz * s; oz = -ox * s + oz * c; ox = wx; }   // la cámara gira alrededor de Tamachin
   _ct.set(tx, ty, tz); _cp.set(tx + ox, ty + oy, tz + oz);
-  const hills = P.pos.z < NORTH_Z + 15;
   if (hills || (!fixed && !ui.closeup)) {                           // bajando una ladera, o con la cámara baja tras un seto, un túnel o su
     let lift = 0;                                                   // loma (edgeTop), el rayo hacia Tamachin choca: se sube lo necesario
     const fy = P.pos.y + 0.3;                                       // desde los pies: que se vea entero, no solo la cabeza
     for (let i = 1; i <= 10; i++) {
-      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? groundY(x, z) : edgeTop(x, z);
+      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? world.ground(x, z) : world.edge(x, z);
       const need = top + 0.35 + 0.8 * k - lerp(fy, _cp.y, k); if (need > 0) lift = Math.max(lift, need / k);
     }
     _cp.y += lift;
   }
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
-  if (P.pos.z < NORTH_Z + 15) camPos.y = Math.max(camPos.y, groundY(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
+  if (hills) camPos.y = Math.max(camPos.y, world.ground(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
   V.vc = c; V.vs = s;
   if (fixed) { const hx = camPos.x - P.pos.x, hz = camPos.z - P.pos.z, h = Math.hypot(hx, hz); if (h > 0.5) { V.vs = hx / h; V.vc = hz / h; } }   // toma fija: el marco sigue a la cámara real
   camSlope = (camPos.y - ty) / Math.max(1, (camPos.x - P.pos.x) * V.vs + (camPos.z - P.pos.z) * V.vc);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
@@ -4158,13 +4375,13 @@ let hudT = 0, lastZone = '', lastPrompt = null;
 function updateHud(dt) {
   const P = player; let best = null, bd = Infinity;
   if (P.state === 'normal' && !ui.closeup) {
-    for (const it of interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
-    const fp = forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
+    for (const it of world.interacts) { const d = Math.hypot(it.pos.x - P.pos.x, it.pos.z - P.pos.z); if (d < it.range && d < bd && (!it.ok || it.ok())) { bd = d; best = it; } }
+    const fp = world === EARTH && forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
   }
   curInteract = best; updateClock();
   const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
-  hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = zoneName(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
+  hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = world.zone(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (!helpEl.hidden && P.moved > 14) hideHelp();
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
@@ -4316,6 +4533,7 @@ function hourText(h) {
 }
 // el tiempo en palabras: lo que dicen el reloj y el diario
 function weatherText() {
+  if (!world.weather) return world.skyText || '';                   // en la luna no hay tiempo
   const W = weather, h = day.h, p = wPlan;
   if (W.rain > 0.3) return W.snow > W.here ? 'Está nevando en los cerros.' : 'Está lloviendo.';
   if (W.bow > 0.5) return '¡Hay un arcoíris!';
@@ -4323,23 +4541,23 @@ function weatherText() {
   if (W.cloud > 0.5) return 'Está nublado.';
   return day.light > 0.5 ? 'Hace sol.' : 'El cielo está despejado.';
 }
-const weatherWord = () => (weather.kind === 'lluvia' ? 'lluvioso' : weather.kind === 'nublado' ? 'nublado' : day.light > 0.5 ? 'soleado' : 'despejado');
+const weatherWord = () => (!world.weather ? world.skyWord : weather.kind === 'lluvia' ? 'lluvioso' : weather.kind === 'nublado' ? 'nublado' : day.light > 0.5 ? 'soleado' : 'despejado');
 function clockSay() {
   const dark = day.h >= DAY.set || day.h < DAY.rise;
-  toast(hourText(day.h) + '. ' + weatherText() + ' ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.'), 4); SFX.pop();
+  toast(hourText(day.h) + '. ' + weatherText() + (!world.weather ? '' : ' ' + (dark ? 'Amanece a las 5 de la mañana.' : 'Oscurece a las 8 de la noche.')), 4); SFX.pop();   // en la luna, la hora es la de la Tierra
 }
 clockEl.addEventListener('click', clockSay);
 function updateClock() {
   const h = day.h, m = (h % 1) * 360;
   if (Math.abs(m - clockA) > 0.25) { clockA = m; cMin.setAttribute('transform', 'rotate(' + m.toFixed(1) + ')'); cHour.setAttribute('transform', 'rotate(' + ((h % 12) * 30).toFixed(2) + ')'); }
-  const n = 1 - day.light;
-  const wkey = n + weather.cloud * 3 + weather.rain * 7;
+  const n = 1 - day.light, cl = world.weather ? weather.cloud : 0, rn = world.weather ? weather.rain : 0;   // en la luna, sin nubes ni lluvia
+  const wkey = n + cl * 3 + rn * 7;
   if (Math.abs(wkey - clockN) > 0.005) {
     clockN = wkey; const sunK = smooth(0.38, 0.48, day.light), nk = smooth(0.5, 0.95, n);   // al atardecer la carátula se pone durazno; ya de noche, azul
     cNight.setAttribute('opacity', nk.toFixed(3)); cWarm.setAttribute('opacity', (day.warm * 0.9).toFixed(3));
-    const cloudK = smooth(0.4, 0.7, weather.cloud);
+    const cloudK = smooth(0.4, 0.7, cl);
     cSun.setAttribute('opacity', (sunK * (1 - cloudK)).toFixed(3)); cMoon.setAttribute('opacity', ((1 - sunK) * (1 - cloudK)).toFixed(3));
-    cCloud.setAttribute('opacity', cloudK.toFixed(3)); cRain.setAttribute('opacity', smooth(0.2, 0.5, weather.rain).toFixed(3));
+    cCloud.setAttribute('opacity', cloudK.toFixed(3)); cRain.setAttribute('opacity', smooth(0.2, 0.5, rn).toFixed(3));
     clockSvg.style.color = '#' + _ck.copy(CLOCK_INK).lerp(CLOCK_INK_NIGHT, smooth(0.35, 0.65, nk)).getHexString();
   }
   const step = Math.floor(h * 6);                                  // el texto, cada 10 minutos de juego
@@ -4381,16 +4599,102 @@ function frame(now) {
   renderer.render(scene, camera);
   if (statsEl) updateStats(raw);
 }
+// ───────────────────────── mundos ─────────────────────────
+// La Tierra: todo lo de siempre. Cada gancho es lo que el juego ya hacía, movido aquí. Lo que se pregunta "¿dónde estoy?" (el suelo,
+// el agua, la casa, la cámara, el nombre del lugar, la música, los pasos) se lo pregunta al mundo de ahora (`world`), nunca a x y z
+// sueltos: en la luna, el punto (0, -8) no es la casa. pre, mid y post corren antes de Tamachin, después y después de la cámara:
+// mientras está en otro mundo, en la Tierra no se mueve nada (los autos, los vecinos y quien lo acompaña lo esperan donde estaban).
+const EARTH = {
+  name: 'tierra', rules: RULES, solids: EARTH_SOLIDS, interacts, weather: true, root: new THREE.Group(),
+  ground: groundY, wet: (gy) => gy < -0.2, puddle: puddleJump, collide: earthCollide,
+  inHouse: (p) => p.x > HOUSE.x0 + 0.1 && p.x < HOUSE.x1 - 0.1 && p.z > HOUSE.z0 + 0.25 && p.z < HOUSE.z1 - 0.2,
+  slope(pos, ix, iz, mag) {                                         // al norte, en los cerros
+    if (pos.z >= NORTH_Z) return 1;
+    const gx = (terrainY(pos.x + 1, pos.z) - terrainY(pos.x - 1, pos.z)) / 2, gz = (terrainY(pos.x, pos.z + 1) - terrainY(pos.x, pos.z - 1)) / 2, up = (gx * ix + gz * iz) / mag;
+    return up > 0 ? Math.max(0.62, 1 - 0.4 * up) : 1 + Math.min(0.15, -0.15 * up);
+  },
+  camBase: (p) => (p.z < NORTH_Z ? Math.max(0, groundY(p.x, p.z)) : 0), hills: (p) => p.z < NORTH_Z + 15, edge: edgeTop, camX: xLimitAt, camZ: LIMIT,
+  zone: zoneName, music: musicZone, surface: stepSurface,
+  pre(dt) {
+    updateWeather(dt); updateTownHours(dt);
+    houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
+    if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
+    updateLights(clock); updatePedSigns(clock); updateCars(dt, clock);
+  },
+  mid(dt) {
+    updateCrossing(); updateNPCs(dt);
+    for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
+    updateFish(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt); updateButterflies(dt); updateScenery(dt);
+    for (const k in WORLDS) if (WORLDS[k].onEarth) WORLDS[k].onEarth(dt);   // la entrada de cada mundo (el túnel de la luna)
+  },
+  post(dt) { updateFireflies(dt); updateShootingStar(dt); },
+};
+world = EARTH;
+// Lo que otro mundo no trae: sin tiempo ni agua ni casa, la cámara sigue al suelo, nada que hacer. Puede poner `sky(force)` (su cielo
+// y su luz, en vez de applyDay; la hora sigue corriendo), `enter` y `leave`, y `build(M)`, que arma lo suyo en M.root y M.solids.
+const WORLD_BASE = {
+  rules: RULES, interacts: [], weather: false, wet: () => false, puddle: () => false, inHouse: () => false, collide() {}, slope: null,
+  camBase(p) { return this.ground(p.x, p.z); }, hills: () => true, edge(x, z) { return this.ground(x, z); }, camX: () => Infinity, camZ: Infinity,
+  surface: () => 'piedra', pre() {}, mid() {}, post() {},
+};
+// Lo de la Tierra va en EARTH.root: escondido, no se dibuja nada de adentro (ni su sombra) aunque sus sistemas prendan o apaguen
+// cosas. Afuera se quedan Tamachin, las tres luces, el cielo, el farolito y las partículas: no se esconden nunca (quitar una luz
+// recompilaría todos los materiales). Lo que se agrega después (makeTamachin, la fruta que vuela) se barre al cambiar de mundo.
+const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, ...particles.map((p) => p.s)]);
+function sweepEarth() { for (const o of scene.children.slice()) if (!KEEP.has(o) && !o.userData.world) EARTH.root.add(o); }
+EARTH.root.userData.world = EARTH.name; scene.add(EARTH.root); sweepEarth();
+function worldNamed(name) {
+  if (name === EARTH.name) return EARTH;
+  const M = WORLDS[name]; if (!M) return null;
+  if (!M.root) {                                                    // la primera vez: se arma (y se compila bajo el telón)
+    for (const k in WORLD_BASE) if (!(k in M)) M[k] = WORLD_BASE[k];
+    M.root = new THREE.Group(); M.root.userData.world = name; M.root.visible = false; M.solids = solids();
+    M.build(M); scene.add(M.root);
+  }
+  return M;
+}
+// Al instante (al arrancar, «Volver al inicio», las pruebas); enterWorld lo hace con el telón. `at`: { x, z, heading, yaw }.
+function setWorld(name, at) {
+  const N = worldNamed(name); if (!N) return false;
+  const P = player;
+  if (N !== world) {
+    if (world.leave) world.leave();
+    sweepEarth(); world.root.visible = false; N.root.visible = true; world = N;
+    if (N.enter) N.enter();
+    skyNow(true);                                                   // su cielo y su luz, ya (de vuelta, el de la hora)
+    for (const b of bubbles) if (b.who && b.who !== P) b.until = 0;   // lo que decían los de allá se queda allá
+    if (!N.compiled) { N.compiled = true; renderer.compile(scene, camera); }
+  }
+  P.vx = P.vz = P.vy = 0; P.perch = null; P.onGround = true; P.inWater = false;
+  if (at) { P.pos.set(at.x, world.ground(at.x, at.z), at.z); if (at.heading != null) P.heading = at.heading; if (at.yaw != null) camView.yaw = camView.yawT = at.yaw; }
+  P.inHouse = world.inHouse(P.pos); camInit = false;
+  return true;
+}
+// Con el telón: se cierra (0.45 s), cambia de mundo, y se abre. Va en una secuencia (startBusy), así `advance` también lo mueve.
+// o: { at, line, walkIn, walkOut }. walkIn y walkOut ({ x, z }, m/s) lo hacen caminar mientras se cierra y mientras se abre (por la
+// boca de un túnel): la secuencia es `ghost`, sin chocar con nada, porque la boca es una pared.
+const telonEl = $('#telon');
+function enterWorld(name, o) {
+  const P = player; o = o || {}; if (P.state !== 'normal' || !worldNamed(name)) return false;
+  telonEl.hidden = false;
+  const walk = (v) => { if (!v) return; P.vx = v.x; P.vz = v.z; P.heading = Math.atan2(v.x, v.z); };
+  startBusy({ dur: 1.15, cam: null, ghost: true,
+    update(dt, t) {
+      telonEl.style.opacity = (t < 0.45 ? t / 0.45 : Math.max(0, 1 - (t - 0.6) / 0.5)).toFixed(3);
+      if (t < 0.5) walk(o.walkIn); else if (t > 0.55 && t < 1.05) walk(o.walkOut);
+      if (once(this, 'swap', 0.5)) setWorld(name, o.at);
+    },
+    end() { telonEl.hidden = true; telonEl.style.opacity = '0'; if (o.line) say(P, o.line, 2.6); save(); },
+  });
+  return true;
+}
+
 // todo lo que pasa en un cuadro, sin dibujar (las pruebas lo repiten con `advance` para adelantar el juego sin esperar)
 function step(dt) {
-  clock += dt; updateDay(dt); updateDayCount(); updateWeather(dt); updateTownHours(dt);
+  clock += dt; updateDay(dt); updateDayCount();
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
-  houseWarm = damp(houseWarm, player.inHouse ? day.lamps : 0, 3, dt);   // adentro de la casa, de noche, las lámparas: luz cálida
-  if (houseWarm > 0.005) { hemi.color.lerp(IN_WARM.sky, 0.75 * houseWarm); hemi.groundColor.lerp(IN_WARM.gnd, 0.75 * houseWarm); hemi.intensity = lerp(hemi.intensity, 0.72, houseWarm); sun.intensity *= 1 - 0.6 * houseWarm; }
-  updateLights(clock); updatePedSigns(clock); updateCars(dt, clock); updatePlayer(dt); updateCrossing(); updateNPCs(dt);
-  for (const c of creatures) if (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90) c.update(dt);   // el conejo de Tofu vive en la ciudad
-  updateFish(dt); updateNeeds(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt);
-  updateButterflies(dt); updateScenery(dt); updateCamera(dt); updateLantern(dt); updateFireflies(dt); updateShootingStar(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
+  world.pre(dt); updatePlayer(dt); world.mid(dt); updateNeeds(dt);
+  updateCamera(dt); updateLantern(dt); world.post(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }
 }
 // para las pruebas: corre `sec` segundos de juego de golpe, en pasos de `dt`, y dibuja una vez (así quedan al día las matrices)
@@ -4407,11 +4711,12 @@ function boot(data) {
   if (Array.isArray(s.summits)) for (const n of s.summits) { const p = PEAKS.find((q) => q.name === n); if (p && !summits.includes(n)) { summits.push(n); p.reached = true; } }
   if (Array.isArray(s.fruits)) for (const k of s.fruits) if (FRUITS[k] && !fruitsTasted.includes(k)) fruitsTasted.push(k);
   restoreQuests();
-  if (typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
-    player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(groundY(player.pos.x, player.pos.z), top); }
-  if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
-  if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste
+  if (typeof s.yaw === 'number' && isFinite(s.yaw)) camView.yaw = camView.yawT = angDiff(0, s.yaw);   // la cámara como la dejaste (antes del mundo: la luna la baja al entrar)
   if (typeof s.pitch === 'number' && isFinite(s.pitch)) camView.pitch = camView.pitchT = clamp(s.pitch, PITCH.min, PITCH.max);
+  const away = typeof s.mundo === 'string' && s.mundo !== EARTH.name, there = away && setWorld(s.mundo);   // se quedó en otro mundo: ahí sigue
+  if ((!away || there) && typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
+    player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(world.ground(player.pos.x, player.pos.z), top); }   // (de un mundo que ya no existe: al inicio)
+  if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
   if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
   const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8
@@ -4509,6 +4814,7 @@ function offline() {
 offline();
 const hot = window.claude && window.claude.hot;
 if (hot && hot.snapshot) hot.snapshot(() => ({ shape: player.T.shape, color: player.T.color, mood: player.baseMood, x: player.pos.x, z: player.pos.z }));
-window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, advance, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; } };
+window.__tamachin = { player, cars, npcs, ui, view: camView, day, setHour, advance, togglePanel, makeDizzy, go: (x, z) => { player.pos.set(x, 0, z); camInit = false; },
+  world: () => world.name, setWorld: (name, x, z) => setWorld(name, x == null ? null : { x, z }) };
 if (hot && hot.ready) hot.ready(boot); else boot((hot && hot.data) || {});
 })();
