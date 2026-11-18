@@ -1,9 +1,9 @@
 // Tráfico amable: los autos nunca atropellan a Tamachin (frenan en seco); si uno tiene que frenar por él, pita y él se asusta, y la
-// primera vez un aviso dice cómo cruzar. Cada paso de cebra tiene su semáforo de peatones (el monito sale del reloj de los autos) y una
-// franja de su color en la orilla; cruzar con el monito verde da diversión. Todo con advance(): no depende del tiempo real.
+// primera vez un aviso dice cómo cruzar. Cada paso de cebra tiene su semáforo de peatones (el monito sale del reloj de los autos), en una
+// sola punta y uno por esquina; cruzar con el monito verde da diversión. Todo con advance(): no depende del tiempo real.
 const { openGame, sleep } = require('./lib.cjs');
 
-const EXPOSE = 'ZEBRAS, PED_SIGNS, pedState, lightState, cars, updateCars, carRect, traffic, keys, player, needs, needGate, circles, boxes, RW, screech, pedLit, pedStrips, PED_RGB';
+const EXPOSE = 'ZEBRAS, PED_SIGNS, pedState, lightState, cars, updateCars, carRect, traffic, keys, player, needs, needGate, circles, boxes, RW, screech, pedLit';
 
 module.exports = {
   titulo: 'tráfico: semáforos de peatones, los autos frenan y pitan sin atropellar, cruzar con el monito verde',
@@ -45,7 +45,7 @@ module.exports = {
     });
     T.check('con el monito verde no hay autos sobre las rayas (10 minutos de tráfico)', !clear.n, JSON.stringify(clear));
 
-    // los postes: uno por punta, en la banqueta junto a su paso, sin encimarse con nada
+    // los postes: uno por paso, en la banqueta junto a su paso, sin encimarse con nada, y uno en cada esquina (como un rehilete)
     const posts = await E(() => {
       const D = window.__dbg, bad = [];
       for (const p of D.PED_SIGNS) {
@@ -54,23 +54,25 @@ module.exports = {
         const near = D.circles.filter((c) => c !== me && Math.hypot(c.x - p.x, c.z - p.z) < c.r + 0.14 + 0.3).length + D.boxes.filter((b) => p.x > b.x0 - 0.4 && p.x < b.x1 + 0.4 && p.z > b.z0 - 0.4 && p.z < b.z1 + 0.4).length;
         if (!(u > D.RW + 0.28 && u < D.RW + 1.2 && off > 0 && off < 0.6 && me && !near)) bad.push([p.x, p.z, +u.toFixed(2), +off.toFixed(2), !!me, near]);
       }
-      return { n: D.PED_SIGNS.length, bad };
+      const corners = [...new Set(D.ZEBRAS.map((Z) => Z.I))].map((I) => { const ps = D.PED_SIGNS.filter((p) => p.Z.I === I); return ps.length + ':' + new Set(ps.map((p) => Math.sign(p.x - I.x) + ',' + Math.sign(p.z - I.z))).size; });
+      return { n: D.PED_SIGNS.length, bad, corners, one: D.ZEBRAS.every((Z) => Z.signs.length === 1) };
     });
-    T.check('32 postes, cada uno en la banqueta junto a su paso, sólidos y sin encimarse', posts.n === 32 && !posts.bad.length, JSON.stringify(posts.bad));
+    T.check('16 postes, uno por paso, cada uno en la banqueta junto a su paso, sólidos y sin encimarse', posts.n === 16 && posts.one && !posts.bad.length, JSON.stringify(posts.bad));
+    T.check('en cada cruce, un poste en cada esquina (sin dos juntos)', posts.corners.every((c) => c === '4:4'), posts.corners.join(' '));
 
-    // las luces y las franjas dicen lo mismo que el semáforo
+    // las luces dicen lo mismo que el semáforo
     await E(() => { window.__tamachin.go(18.3, 30.5); window.__tamachin.advance(0.2); });
     const lit = await E(() => {
-      const D = window.__dbg, wA = D.pedLit.walk.a.alpha, sA = D.pedLit.stop.a.alpha, col = D.pedStrips.col, bad = [];
+      const D = window.__dbg, wA = D.pedLit.walk.a.alpha, sA = D.pedLit.stop.a.alpha, bad = [];
       for (const p of D.PED_SIGNS) {
-        const s = p.Z.state, g = col.getY(p.i * 4) > 0.5 && col.getX(p.i * 4) < 0.5, r = col.getX(p.i * 4) > 0.9;
-        if ((wA.getX(p.i) > 0) !== (s !== 'stop') || (sA.getX(p.i) > 0) !== (s === 'stop') || (s === 'walk' && !g) || (s === 'stop' && !r)) bad.push(p.i + ':' + s);
+        const s = p.Z.state;
+        if ((wA.getX(p.i) > 0) !== (s !== 'stop') || (sA.getX(p.i) > 0) !== (s === 'stop')) bad.push(p.i + ':' + s);
       }
       return { bad, states: D.ZEBRAS.map((Z) => Z.state[0]).join('') };
     });
-    T.check('cada poste muestra el monito de su paso, y la franja de la orilla su color', !lit.bad.length && /s/.test(lit.states), JSON.stringify(lit));
+    T.check('cada poste muestra el monito de su paso', !lit.bad.length && /s/.test(lit.states), JSON.stringify(lit));
 
-    // un disco entre la cámara y Tamachin lo taparía (mide lo que él): se desvanece; los demás no (con cuadros de verdad: la cámara se mueve en frame)
+    // un disco entre la cámara y Tamachin lo taparía: se desvanece; los demás no (con cuadros de verdad: la cámara se mueve en frame)
     await E(() => window.__tamachin.go(19.4, 28.2)); await sleep(1200);
     const fade = await E(() => {
       const D = window.__dbg, a = (p) => D.pedLit.walk.a.alpha.getX(p.i) + D.pedLit.stop.a.alpha.getX(p.i), at = (x, z) => D.PED_SIGNS.find((p) => Math.abs(p.x - x) < 0.01 && Math.abs(p.z - z) < 0.01);
@@ -135,8 +137,8 @@ module.exports = {
     T.check('cruzar con el monito rojo no da nada', bad.crossed === 0 && bad.fun < 0.51 && bad.at[1] > 28.3, JSON.stringify(bad));
 
     // lejos de la ciudad no se dibujan
-    const away = await E(() => { window.__tamachin.go(0, -300); window.__tamachin.advance(0.1); const D = window.__dbg; return [D.pedLit.walk.pts.visible, D.pedLit.stop.pts.visible, D.pedStrips.m.visible]; });
-    T.check('fuera de la ciudad, luces y franjas no se dibujan', away.every((v) => !v), JSON.stringify(away));
+    const away = await E(() => { window.__tamachin.go(0, -300); window.__tamachin.advance(0.1); const D = window.__dbg; return [D.pedLit.walk.pts.visible, D.pedLit.stop.pts.visible]; });
+    T.check('fuera de la ciudad, las luces no se dibujan', away.every((v) => !v), JSON.stringify(away));
 
     // las llantas que rechinan: entre los efectos (picos de 0.02 a 0.08), unas 0.4 s
     const sq = await E(async () => {

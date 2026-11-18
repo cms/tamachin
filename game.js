@@ -1944,13 +1944,15 @@ function updateCars(dt, t) {
 
 // ───────────────────────── pasos de cebra y semáforos de peatones ─────────────────────────
 // Cuatro pasos de cebra por cruce (las rayas las pinta cityTex, 03-world.js). Cada uno cruza la calle de un eje (`ax`: los autos que pasan
-// por él); `along` es hacia dónde camina el que cruza, `c` el centro de esa calle y `w0..w1` el ancho de las rayas. Un poste por punta,
-// del lado de afuera de las rayas (lejos del semáforo de los autos, que está en la esquina), así cada uno queda junto a su paso.
+// por él); `along` es hacia dónde camina el que cruza, `c` el centro de esa calle y `w0..w1` el ancho de las rayas. Un poste por paso,
+// en una sola punta, del lado de afuera de las rayas (lejos del semáforo de los autos, que está en la esquina), así queda junto a su paso.
+// Las puntas van como un rehilete (el del norte en su punta del noreste, el del este en la del sureste, el del sur en la del suroeste, el
+// del oeste en la del noroeste): cada esquina tiene uno, y desde la otra punta se mira el del otro lado de la calle, como en la calle de verdad.
 const ZEBRAS = [], PED_SIGNS = [];
 for (const I of INTERS) for (const [ax, along, s] of [['EW', 'z', -1], ['EW', 'z', 1], ['NS', 'x', -1], ['NS', 'x', 1]]) {
   const o0 = s < 0 ? -6.9 : 4.5, o1 = s < 0 ? -4.5 : 6.9, out = s * 7.3;
   const Z = along === 'z' ? { I, ax, along, c: I.z, w0: I.x + o0, w1: I.x + o1, state: 'stop' } : { I, ax, along, c: I.x, w0: I.z + o0, w1: I.z + o1, state: 'stop' };
-  Z.signs = [-1, 1].map((e) => { const p = along === 'z' ? { x: I.x + out, z: I.z + e * 4.6 } : { x: I.x + e * 4.6, z: I.z + out }; p.i = PED_SIGNS.length; p.Z = Z; PED_SIGNS.push(p); return p; });
+  Z.signs = [along === 'z' ? s : -s].map((e) => { const p = along === 'z' ? { x: I.x + out, z: I.z + e * 4.6 } : { x: I.x + e * 4.6, z: I.z + out }; p.i = PED_SIGNS.length; p.Z = Z; PED_SIGNS.push(p); return p; });
   ZEBRAS.push(Z);
 }
 // El monito sale de lightState (un solo reloj): verde 3.5 s después del rojo de sus autos (medido: el último que pasó en amarillo tarda
@@ -1987,11 +1989,11 @@ function pedIcon(walk) {
     }
   });
 }
-const PED_Y = 2.85, PED_SIZE = 0.85;
+const PED_Y = 2.72, PED_SIZE = 0.6;   // el disco, arriba del poste (de 2.4 m)
 const pedLit = { walk: fireParts(PED_SIGNS.length, pedIcon(true), THREE.NormalBlending), stop: fireParts(PED_SIGNS.length, pedIcon(false), THREE.NormalBlending) };
 for (const S of [pedLit.walk, pedLit.stop]) { S.pts.renderOrder = 2.5; for (const p of PED_SIGNS) { S.a.position.setXYZ(p.i, p.x, PED_Y, p.z); S.a.size.setX(p.i, PED_SIZE); S.a.tint.setXYZ(p.i, 1, 1, 1); } }
 // después del halo del farolito y de la fogata (si no, de noche un brillo aditivo pintaba encima del disco), antes que la lluvia (3)
-// Un disco que queda entre la cámara y Tamachin lo taparía (mide lo que él): se desvanece. d es la distancia del disco a la línea
+// Un disco que queda entre la cámara y Tamachin lo taparía: se desvanece. d es la distancia del disco a la línea
 // cámara→Tamachin; el cono de su cuerpo mide 0.65·t ahí (t: qué tan cerca de él está el disco, de 0 en la cámara a 1 en él).
 function signFade(p, P) {
   const c = camera.position, dx = P.pos.x - c.x, dy = P.pos.y + 0.75 * P.T.scale - c.y, dz = P.pos.z - c.z, sx = p.x - c.x, sy = PED_Y - c.y, sz = p.z - c.z;
@@ -1999,35 +2001,19 @@ function signFade(p, P) {
   const d = Math.hypot(sx - t * dx, sy - t * dy, sz - t * dz), touch = PED_SIZE / 2 + 0.65 * t;
   return clamp((d - touch + 0.3) / 0.5, 0.15, 1);
 }
-// En el suelo, una franja del color del monito a lo largo de la orilla, en cada boca del paso (de la base del poste al otro lado de las
-// rayas): desde arriba se ve qué paso tiene verde aunque en la esquina haya dos postes con colores distintos. Sin luz: de noche brilla.
-const pedStrips = (() => {
-  const n = PED_SIGNS.length, pos = new Float32Array(n * 12), idx = [];
-  for (const p of PED_SIGNS) {
-    const Z = p.Z, s = Math.sign(Z.along === 'z' ? p.z - Z.c : p.x - Z.c), at = (w, u) => Z.along === 'z' ? [w, 0.045, Z.c + u] : [Z.c + u, 0.045, w];
-    [at(Z.w0, s * (RW + 0.36)), at(Z.w1, s * (RW + 0.36)), at(Z.w1, s * (RW + 0.72)), at(Z.w0, s * (RW + 0.72))].forEach((v, k) => pos.set(v, p.i * 12 + k * 3));
-    const b = p.i * 4; idx.push(b, b + 1, b + 2, b, b + 2, b + 3);
-  }
-  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.BufferAttribute(new Float32Array(n * 12), 3)); g.setIndex(idx);
-  const m = new THREE.Mesh(g, new THREE.MeshBasicMaterial({ vertexColors: true, side: THREE.DoubleSide, polygonOffset: true, polygonOffsetFactor: -4, polygonOffsetUnits: -4 }));
-  m.raycast = () => {}; scene.add(m);
-  return { m, col: g.attributes.color };
-})();
-const PED_RGB = { walk: new THREE.Color('#3ef07f'), off: new THREE.Color('#2f6b47'), stop: new THREE.Color('#ff4b3e') };
 function updatePedSigns(t) {
   const P = player, on = P.pos.z > -70, blink = (t * 2.5) % 1 < 0.6; let chirp = false;
-  pedLit.walk.pts.visible = pedLit.stop.pts.visible = pedStrips.m.visible = on;
+  pedLit.walk.pts.visible = pedLit.stop.pts.visible = on;
   for (const Z of ZEBRAS) {
     const s = pedState(Z, t), mid = (Z.w0 + Z.w1) / 2;
     if (s === 'walk' && Z.state === 'stop' && on && [-1, 1].some((e) => Math.hypot(P.pos.x - (Z.along === 'z' ? mid : Z.c + e * (RW + 0.8)), P.pos.z - (Z.along === 'z' ? Z.c + e * (RW + 0.8) : mid)) < 2.5)) chirp = true;   // esperando en una de sus bocas
     Z.state = s; if (!on) continue;
-    const dark = s === 'flash' && !blink, k = dark ? 0.25 : 1, rgb = s === 'stop' ? PED_RGB.stop : dark ? PED_RGB.off : PED_RGB.walk;
+    const k = s === 'flash' && !blink ? 0.25 : 1;                    // parpadeando: se apaga a ratos
     for (const p of Z.signs) {
       const f = signFade(p, P); pedLit.walk.a.alpha.setX(p.i, s === 'stop' ? 0 : f); pedLit.walk.a.tint.setXYZ(p.i, k, k, k); pedLit.stop.a.alpha.setX(p.i, s === 'stop' ? f : 0);
-      for (let v = 0; v < 4; v++) pedStrips.col.setXYZ(p.i * 4 + v, rgb.r, rgb.g, rgb.b);
     }
   }
-  if (on) { for (const S of [pedLit.walk, pedLit.stop]) { S.a.alpha.needsUpdate = true; S.a.tint.needsUpdate = true; } pedStrips.col.needsUpdate = true; }
+  if (on) for (const S of [pedLit.walk, pedLit.stop]) { S.a.alpha.needsUpdate = true; S.a.tint.needsUpdate = true; }
   if (chirp) SFX.walkSign();
 }
 

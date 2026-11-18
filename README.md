@@ -119,7 +119,7 @@ El reloj de arriba, junto a los medidores, marca la hora del juego; tocarlo dice
 
 Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. Con el mouse, moverlo en círculos a su alrededor también lo marea.
 
-En la ciudad, cada paso de cebra tiene su semáforo de peatones: un monito verde caminando o uno rojo parado, y una franja del mismo color en la orilla. El monito se pone verde un rato después de que los autos de esa calle tienen rojo y parpadea antes de que vuelvan a pasar. Cruzar por el paso de cebra con el monito verde da diversión. Los autos nunca atropellan a Tamachin: si se les pone enfrente, frenan (en seco si hace falta), pitan y él se lleva un susto; con el monito verde solo esperan.
+En la ciudad, cada paso de cebra tiene su semáforo de peatones: un monito verde caminando o uno rojo parado, en un poste junto a una de sus puntas (uno en cada esquina; desde la otra punta se mira el del otro lado de la calle). El monito se pone verde un rato después de que los autos de esa calle tienen rojo y parpadea antes de que vuelvan a pasar. Cruzar por el paso de cebra con el monito verde da diversión. Los autos nunca atropellan a Tamachin: si se les pone enfrente, frenan (en seco si hace falta), pitan y él se lleva un susto; con el monito verde solo esperan.
 
 Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
 
