@@ -9,7 +9,7 @@ const VIEWS = [0, 45, 90, 135, 180, 270].map((d) => [d, 34.2]).concat([[0, 15], 
 module.exports = {
   titulo: 'edificios, casa y árboles se apartan desde cualquier ángulo',
   async run(T) {
-    const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house, creatures' });
+    const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house, creatures, trees, renderer, FX' });
     await E(BLOCKER);
     const adv = (sec) => E((sec) => window.__tamachin.advance(sec), sec);   // corre el juego `sec` segundos de golpe, sin esperar
     const setView = (deg, p) => E(([y, p]) => { const V = window.__tamachin.view; V.yaw = V.yawT = y; V.pitch = V.pitchT = p; }, [deg * Math.PI / 180, p * Math.PI / 180]);
@@ -94,6 +94,30 @@ module.exports = {
       T.check('refri con la cámara a ' + deg + '°: toma fija y paredes enteras', s[0] === 'busy' && s[1] > 0.9, JSON.stringify(s));
       await adv(2.5);
     }
+    // Los árboles no se agachan: se abren en un círculo alrededor de Tamachin, solo lo que queda delante de él (FX.see, en el shader).
+    // Se mira en los píxeles (el raycast no ve el shader): se dibuja el mismo cuadro con el círculo y sin él. Detrás de un roble del bosque,
+    // sin círculo el árbol lo tapa y con círculo se le ve (amarillo); delante del mismo roble no cambia nada (lo de atrás no se abre).
+    // tree: el roble (índice en D.trees); dz: Tamachin al norte (−) o al sur (+) de él, con la cámara al sur (giro 0)
+    const LOOK = ([ti, dz]) => {
+      const D = window.__dbg, T = window.__tamachin, t = D.trees[ti];
+      const V = T.view; V.yaw = V.yawT = 0; V.pitch = V.pitchT = 34.2 * Math.PI / 180; T.go(t.x, t.z + dz); T.advance(1.2);
+      const P = D.player, cam = D.camera.position, tg = new THREE.Vector3(P.pos.x, P.pos.y + 0.75 * P.T.scale, P.pos.z), R = D.renderer, gl = R.getContext(), S = D.FX.see.value;
+      const rc = new THREE.Raycaster(cam.clone(), tg.clone().sub(cam).normalize(), 0, cam.distanceTo(tg) - 0.9); rc.camera = D.camera;
+      const front = rc.intersectObjects(D.scene.children, true).some((h) => h.object.material && h.object.material.userData && h.object.material.userData.see);   // ¿una planta delante?
+      const v = tg.clone().project(D.camera), cx = Math.round((v.x * 0.5 + 0.5) * gl.drawingBufferWidth), cy = Math.round((v.y * 0.5 + 0.5) * gl.drawingBufferHeight), n = Math.round(S.z * 0.9);
+      const grab = () => { R.render(D.scene, D.camera); const px = new Uint8Array(4 * n * n); gl.readPixels(cx - (n >> 1), cy - (n >> 1), n, n, gl.RGBA, gl.UNSIGNED_BYTE, px); return px; };
+      const yellow = (px, k) => { let y = 0, c = 0; for (let i = 0; i < px.length; i += 4) { const x = (i / 4) % n - n / 2, yy = Math.floor(i / 4 / n) - n / 2; if (Math.hypot(x, yy) > k) continue; c++; const r = px[i], g = px[i + 1], b = px[i + 2]; if (r > 140 && b < r * 0.6 && r >= g * 0.85) y++; } return y / c; };
+      const on = grab(), z0 = S.z; S.z = 0; const off = grab(); S.z = z0;
+      let diff = 0; for (let i = 0; i < on.length; i += 4) if (Math.abs(on[i] - off[i]) + Math.abs(on[i + 1] - off[i + 1]) + Math.abs(on[i + 2] - off[i + 2]) > 24) diff++;
+      const r = S.z / 2.3 * 0.6;                                     // el centro de su cuerpo
+      return { front, con: +yellow(on, r).toFixed(2), sin: +yellow(off, r).toFixed(2), cambia: +(diff / (n * n)).toFixed(3) };
+    };
+    // un roble con el que, a 3 m al sur de él, no hay ninguna planta entre la cámara y Tamachin (el roble queda atrás)
+    const oaks = await E(() => window.__dbg.trees.map((t, i) => [t, i]).filter(([t]) => t.type === 1 && t.s > 0.9 && t.z < -170 && t.z > -240).map(([, i]) => i));
+    let hid = null, ahead = null;
+    for (const ti of oaks) { const a = await E(LOOK, [ti, 3.0]); if (!a.front) { ahead = a; hid = await E(LOOK, [ti, -3.4]); break; } }
+    T.check('detrás de un roble: sin el círculo el árbol lo tapa, con él se le ve', !!hid && hid.front && hid.sin < 0.3 && hid.con > 0.7, JSON.stringify(hid));
+    T.check('delante del mismo roble (atrás de él) no se abre nada', !!ahead && ahead.cambia < 0.05 && ahead.con > 0.7, JSON.stringify(ahead));
     T.check('sin errores', !errors.length, errors.join(' | ') || undefined);
     await ctx.close();
   },

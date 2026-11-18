@@ -351,7 +351,10 @@ function canvasTex(w, h, draw) {
 // - Viento (`wind`: [fuerza, altura donde empieza, rapidez]): árboles, arbustos, hierba y flores se mecen, más arriba más; cada planta a su
 //   paso (según dónde está). La sombra no se mece: no se nota con tan poco.
 // - Borde (`rim`): las orillas de Tamachin y los vecinos brillan con la luz del cielo, como un juguete de vinil.
-// Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (duckify) y qué se agregó.
+// - Ventana (`see`): árboles y arbustos se abren en un círculo alrededor de Tamachin en la pantalla, solo lo que queda delante de él (más
+//   cerca de la cámara), con un tramado de 4×4 que se cierra suave en la orilla. El resto del árbol queda entero, y su sombra también.
+//   FX.see = (x, y en píxeles del lienzo con el origen abajo, radio, profundidad de Tamachin); lo pone updateCamera (06-main.js).
+// Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (si ya tenía su shader) y qué se agregó.
 const cloudTex = canvasTex(256, 256, (g) => {
   const R = mulberry(5150); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 11; i++) {                                  // manchas de 6 a 12 m de radio (la textura cubre 100 m): se ven varias, con orilla
@@ -364,7 +367,7 @@ const cloudTex = canvasTex(256, 256, (g) => {
 });
 cloudTex.wrapS = cloudTex.wrapT = THREE.RepeatWrapping;
 cloudTex.generateMipmaps = false; cloudTex.minFilter = THREE.LinearFilter;   // con mipmaps, a lo lejos se promediaban en un gris parejo que oscurecía todo
-const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) } };
+const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) }, see: { value: new THREE.Vector4(0, 0, 0, 0) } };
 const FX_WIND = `{
 #ifdef USE_INSTANCING
   vec2 fxO = instanceMatrix[3].xz;
@@ -383,26 +386,36 @@ const FX_WORLD = `#include <project_vertex>
   vFxW = (modelMatrix * fxP).xyz; }`;
 const FX_CLOUD = `uniform sampler2D uFxCloudTex;
 uniform vec4 uFxCloud;
+uniform vec4 uFxSee;
+float fxBayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float fxBayer(vec2 a) { return fxBayer2(0.5 * a) * 0.25 + fxBayer2(a); }
 uniform vec3 uFxRim;
 varying vec3 vFxW;
 float fxCloud() { if (uFxCloud.z < 0.001) return 1.0; return 1.0 - uFxCloud.z * texture2D(uFxCloudTex, vFxW.xz * uFxCloud.w + uFxCloud.xy).r; }
 `;
+// en el centro no queda nada; en la orilla, el tramado se va llenando hasta el árbol entero
+const FX_SEE = `#include <clipping_planes_fragment>
+if (uFxSee.z > 0.0 && gl_FragCoord.z < uFxSee.w) {
+  float fxS = length(gl_FragCoord.xy - uFxSee.xy) / uFxSee.z;
+  if (fxS < 1.0 && fxBayer(gl_FragCoord.xy) >= smoothstep(0.5, 1.0, fxS)) discard;
+}`;
 const FX_RIM = `{ float fxR = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0); gl_FragColor.rgb += uFxRim * pow(fxR, 2.5); }
 #include <tonemapping_fragment>`;
 function fxPatch(mat, o) {
   if (mat.userData.fx || !(mat.isMeshLambertMaterial || mat.isMeshStandardMaterial)) return mat;
-  o = o || {}; mat.userData.fx = true;
-  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
+  o = o || {}; mat.userData.fx = true; if (o.see) mat.userData.see = true;   // see: las pruebas (BLOCKER) no lo cuentan como estorbo
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : '') + (o.see ? 's' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
-    Object.assign(sh.uniforms, { uFxTime: FX.time, uFxCloud: FX.cloud, uFxCloudTex: FX.cloudTex, uFxRim: FX.rim, uFxWind: wind });
+    Object.assign(sh.uniforms, { uFxTime: FX.time, uFxCloud: FX.cloud, uFxCloudTex: FX.cloudTex, uFxRim: FX.rim, uFxSee: FX.see, uFxWind: wind });
     let v = 'uniform float uFxTime;\nuniform vec3 uFxWind;\nvarying vec3 vFxW;\n' + sh.vertexShader, f = FX_CLOUD + sh.fragmentShader;
     if (o.wind) v = v.replace('#include <morphtarget_vertex>', FX_WIND);
     v = v.replace('#include <project_vertex>', FX_WORLD);
     if (mat.isMeshLambertMaterial) f = f.replace('* getShadowMask();', '* getShadowMask() * fxCloud();');
     else f = f.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float fxC = fxCloud(); reflectedLight.directDiffuse *= fxC; reflectedLight.directSpecular *= fxC; }');
     if (o.rim) f = f.replace('#include <tonemapping_fragment>', FX_RIM);
+    if (o.see) f = f.replace('#include <clipping_planes_fragment>', FX_SEE);
     sh.vertexShader = v; sh.fragmentShader = f;
   };
   return mat;
@@ -1911,11 +1924,10 @@ const TREE_GEO = [
   new Batch().cyl(TRUNK, 0, 0.8, 0, 0.2, 0.3, 1.6, 7).cone('#2f9e62', 0, 2.3, 0, 1.7, 2.2, 9).cone('#38ad6c', 0, 3.5, 0, 1.35, 2.0, 9).cone('#46bd78', 0, 4.6, 0, 1.0, 1.8, 9).geometry(),
   new Batch().cyl(TRUNK, 0, 1.2, 0, 0.24, 0.34, 2.4, 7).ico('#5cc46a', 0, 3.7, 0, 1.75, 1.6, 1.75).ico('#4fb85f', 0.95, 3.1, 0.3, 1.15).ico('#69cf76', -0.85, 3.3, -0.35, 1.1).geometry(),
 ];
-const TREE_H = [5.5, 5.3], TREE_R = [1.5, 1.9];
 // viento (fxPatch, 01-core.js): [fuerza, desde qué altura, rapidez]; más arriba se mece más (las copas unos 10 cm, la hierba 3)
 const SWAY = { tree: [[0.006, 1.5, 1.3], [0.007, 2.2, 1.2]], bush: [0.03, 0.15, 1.7], tuft: [0.3, 0, 2.2], flower: [0.17, 0, 2] };
 const treeMesh = [0, 1].map((type) => {
-  const list = trees.filter((t) => t.type === type), m = new THREE.InstancedMesh(TREE_GEO[type], fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind: SWAY.tree[type] }), list.length);
+  const list = trees.filter((t) => t.type === type), m = new THREE.InstancedMesh(TREE_GEO[type], fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind: SWAY.tree[type], see: true }), list.length);
   list.forEach((t, i) => { t.idx = i; m.setColorAt(i, _ic.setRGB(t.tint, t.tint, t.tint * 0.96)); });
   m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m;
 });
@@ -1924,8 +1936,8 @@ function setTreeMatrix(t) {
   treeMesh[t.type].setMatrixAt(t.idx, _im);
 }
 trees.forEach(setTreeMatrix);
-function instanced(geo, list, fn, shadow, tint, wind) {
-  const m = new THREE.InstancedMesh(geo, fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind }), list.length);
+function instanced(geo, list, fn, shadow, tint, wind, see) {
+  const m = new THREE.InstancedMesh(geo, fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind, see }), list.length);
   list.forEach((it, i) => { fn(it); m.setMatrixAt(i, _im); m.setColorAt(i, _ic.set(tint && it.color ? it.color : '#ffffff')); });
   m.frustumCulled = false; m.castShadow = !!shadow; m.receiveShadow = true; scene.add(m); return m;
 }
@@ -1936,7 +1948,7 @@ instanced(new Batch().ico('#ffb81f', 0, 0.51, 0, 0.06, 0.05, 0.06, 0).geometry()
 instanced(new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry(), tufts,
   (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 7, 0)), _is.set(f.s, f.s, f.s)), false, false, SWAY.tuft);
 instanced(new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), bushes,
-  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 3, 0)), _is.set(f.s, f.s, f.s)), true, false, SWAY.bush);
+  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 3, 0)), _is.set(f.s, f.s, f.s)), true, false, SWAY.bush, true);   // los arbustos también se abren si lo tapan
 bushes.forEach((f) => solidCircle(f.x, f.z, 0.6 * f.s));
 instanced(new Batch().rock('#b3ada1', 0, 0.35, 0, 1, 0.7, 0.85).geometry(), rocks, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 5, 0)), _is.set(f.s, f.s, f.s)), true);
 
@@ -2569,24 +2581,9 @@ function northCollide(pos, r) {
   forestCollide(pos, r);
 }
 
-// ───────────────────────── árboles que se agachan (en el shader) ─────────────────────────
-// Los árboles del norte son miles: en vez de recorrerlos en cada cuadro, el vertex shader agacha a los que quedan entre
-// la cámara y Tamachin (misma prueba que updateScenery hace con los de casa), en el marco de la cámara (u a la derecha, d hacia ella).
-// uDuck = (x, z de Tamachin, c, s de camView); uDuckC = (u de la cámara, d de la cámara), relativos a Tamachin.
-const duckU = { uDuck: { value: new THREE.Vector4(0, 0, 1, 0) }, uDuckC: { value: new THREE.Vector2(0, 10) }, uDuckR: { value: 1 } };
-const DUCK_GLSL = `#include <begin_vertex>
-#ifdef USE_INSTANCING
-{ vec3 io = instanceMatrix[3].xyz; float sc = length(instanceMatrix[0].xyz);
-  vec2 q = io.xz - uDuck.xy; float u = q.x * uDuck.z - q.y * uDuck.w, dz = q.x * uDuck.w + q.y * uDuck.z, back = max(1.0, uDuckC.y);
-  float rx = uDuckC.x * clamp(dz / back, 0.0, 1.0), reach = (2.4 + 5.5 * sc) * uDuckR;
-  float k = smoothstep(0.3, 1.2, dz) * (1.0 - smoothstep(reach - 1.5, reach, dz)) * (1.0 - smoothstep(1.7 * sc + 0.6, 1.7 * sc + 1.6, abs(u - rx)));
-  transformed.y *= 1.0 - 0.72 * k; transformed.xz *= 1.0 + 0.25 * k; }
-#endif`;
-function duckify(m) {
-  m.onBeforeCompile = (sh) => { sh.uniforms.uDuck = duckU.uDuck; sh.uniforms.uDuckC = duckU.uDuckC; sh.uniforms.uDuckR = duckU.uDuckR; sh.vertexShader = 'uniform vec4 uDuck;\nuniform vec2 uDuckC;\nuniform float uDuckR;\n' + sh.vertexShader.replace('#include <begin_vertex>', DUCK_GLSL); };
-  m.customProgramCacheKey = () => 'agacharse'; return m;
-}
-const duckDepth = duckify(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));   // la sombra también se agacha
+// ───────────────────────── árboles que tapan a Tamachin ─────────────────────────
+// Los árboles del norte (miles) no se agachan: como los de casa, se abren en un círculo alrededor de Tamachin si lo tapan (`see` en
+// fxPatch, 01-core.js), sin recorrerlos en cada cuadro.
 // misma geometría, otra esfera envolvente: así cada sector o casilla se recorta solo cuando no se ve (no se libera nunca: comparte búferes)
 function geoView(base, center, radius) {
   const g = new THREE.BufferGeometry(); for (const k in base.attributes) g.setAttribute(k, base.attributes[k]);
@@ -2595,13 +2592,13 @@ function geoView(base, center, radius) {
 
 // ───────────────────────── vegetación fija del norte (montañas, pueblo) ─────────────────────────
 const SKIND = {
-  pine: { geo: TREE_GEO[0], duck: true, shadow: true }, oak: { geo: TREE_GEO[1], duck: true, shadow: true },
+  pine: { geo: TREE_GEO[0], see: true, shadow: true }, oak: { geo: TREE_GEO[1], see: true, shadow: true },
   rock: { geo: new Batch().rock('#b3ada1', 0, 0.35, 0, 1, 0.7, 0.85).geometry(), shadow: true },
-  bush: { geo: new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), shadow: true },
+  bush: { geo: new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), shadow: true, see: true },
   tuft: { geo: new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry() },
 };
 const SKIND_SWAY = { pine: SWAY.tree[0], oak: SWAY.tree[1], bush: SWAY.bush, tuft: SWAY.tuft };   // se mecen como los de casa
-for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); if (d.duck) duckify(d.mat); fxPatch(d.mat, { wind: SKIND_SWAY[k] }); d.list = []; }
+for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); fxPatch(d.mat, { wind: SKIND_SWAY[k], see: !!d.see }); d.list = []; }
 function addStatic(kind, x, y, z, s, ry, tint) { SKIND[kind].list.push({ x, y, z, s, ry, tint: tint || 1 }); }
 function buildStatic() {                                           // un InstancedMesh por tipo y por sector de 120 m
   for (const k in SKIND) {
@@ -2613,7 +2610,7 @@ function buildStatic() {                                           // un Instanc
       const m = new THREE.InstancedMesh(geoView(d.geo, c, rad), d.mat, items.length);
       items.forEach((it, i) => { _im.compose(_ip.set(it.x, it.y, it.z), _iq.setFromEuler(_ie.set(0, it.ry, 0)), _is.set(it.s, it.s, it.s)); m.setMatrixAt(i, _im); m.setColorAt(i, _ic.setRGB(it.tint, it.tint, it.tint * 0.96)); });
       m.frustumCulled = true;                                     // en r128 un InstancedMesh viene sin recorte; esta esfera sí envuelve a todos
-      m.castShadow = !!d.shadow; m.receiveShadow = true; if (d.duck) m.customDepthMaterial = duckDepth; scene.add(m);
+      m.castShadow = !!d.shadow; m.receiveShadow = true; scene.add(m);
     }
   }
 }
@@ -2846,13 +2843,13 @@ const MELON_GEO = (() => {
     for (let q = 0; q < 3; q++) c.set([col.r, col.g, col.b], (i + q) * 3); }
   g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.rotateZ(Math.PI / 2); g.scale(0.44, 0.3, 0.32); g.translate(0, 0.27, 0); return g;
 })();
-const FK = {                                                       // tipo: geometría, cupo por casilla, sombra, se agacha, color por vértice
-  pine: { geo: TREE_GEO[0], cap: 16, shadow: true, duck: true },
-  oak: { geo: TREE_GEO[1], cap: 3, shadow: true, duck: true },
-  ftree: { geo: new Batch().cyl(TRUNK, 0, 1.0, 0, 0.17, 0.26, 2.0, 7).ico('#5ec46a', 0, 3.0, 0, 1.55, 1.3, 1.55).ico('#52b860', 0.85, 2.65, 0.3, 0.9).ico('#69cf76', -0.8, 2.8, -0.3, 0.9).geometry(), cap: 3, shadow: true, duck: true },
+const FK = {                                                       // tipo: geometría, cupo por casilla, sombra, se abre si lo tapa (see), color por vértice
+  pine: { geo: TREE_GEO[0], cap: 16, shadow: true, see: true },
+  oak: { geo: TREE_GEO[1], cap: 3, shadow: true, see: true },
+  ftree: { geo: new Batch().cyl(TRUNK, 0, 1.0, 0, 0.17, 0.26, 2.0, 7).ico('#5ec46a', 0, 3.0, 0, 1.55, 1.3, 1.55).ico('#52b860', 0.85, 2.65, 0.3, 0.9).ico('#69cf76', -0.8, 2.8, -0.3, 0.9).geometry(), cap: 3, shadow: true, see: true },
   arbor: { geo: new Batch().cyl(WOOD, -1.25, 1.1, 0, 0.08, 0.1, 2.2, 7).cyl(WOOD, 1.25, 1.1, 0, 0.08, 0.1, 2.2, 7).box(WOOD, 0, 2.18, 0, 2.9, 0.12, 0.14).box(WOOD, 0, 2.18, -0.6, 2.9, 0.1, 0.1).box(WOOD, 0, 2.18, 0.6, 2.9, 0.1, 0.1)
-    .ico('#4fae5a', -0.7, 2.36, 0, 0.85, 0.3, 0.8).ico('#5cc06c', 0.55, 2.38, 0.1, 0.9, 0.3, 0.75).ico('#47a352', 0, 2.32, -0.3, 0.7, 0.25, 0.6).geometry(), cap: 1, shadow: true, duck: true },
-  bush: { geo: SKIND.bush.geo, cap: 5 },
+    .ico('#4fae5a', -0.7, 2.36, 0, 0.85, 0.3, 0.8).ico('#5cc06c', 0.55, 2.38, 0.1, 0.9, 0.3, 0.75).ico('#47a352', 0, 2.32, -0.3, 0.7, 0.25, 0.6).geometry(), cap: 1, shadow: true, see: true },
+  bush: { geo: SKIND.bush.geo, cap: 5, see: true },
   patch: { geo: new Batch().ico('#58b368', 0, 0.12, 0, 0.55, 0.16, 0.5).ico('#4fa95c', 0.45, 0.1, 0.2, 0.35, 0.12, 0.3).ico('#62bd6f', -0.4, 0.1, -0.15, 0.35, 0.12, 0.32).geometry(), cap: 2 },
   rock: { geo: SKIND.rock.geo, cap: 1 },
   shroom: { geo: new Batch().cyl('#fff1d6', 0, 0.16, 0, 0.07, 0.1, 0.32, 8).sph('#ef4b4b', 0, 0.33, 0, 0.24, 0.15, 0.24).sph('#ffffff', 0.1, 0.43, 0.08, 0.045).sph('#ffffff', -0.12, 0.4, 0.02, 0.04).sph('#ffffff', 0, 0.45, -0.1, 0.04).geometry(), cap: 2 },
@@ -2867,10 +2864,10 @@ const CS = 26, WIN = { w: 2, n: 2, s: 1 }, SLOTS = (2 * WIN.w + 1) * (WIN.n + WI
 const _z0 = new THREE.Matrix4().makeScale(0, 0, 0);
 for (const k in FK) {
   const d = FK[k]; d.mesh = null;
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: !d.plain }); if (d.duck) duckify(mat);
+  const mat = fxPatch(new THREE.MeshLambertMaterial({ vertexColors: !d.plain }), { see: !!d.see });   // árboles y arbustos: se abren si lo tapan
   d.mesh = new THREE.InstancedMesh(d.geo, mat, SLOTS * d.cap);
   for (let i = 0; i < SLOTS * d.cap; i++) { d.mesh.setMatrixAt(i, _z0); d.mesh.setColorAt(i, _ic.setRGB(1, 1, 1)); }
-  d.mesh.frustumCulled = false; d.mesh.castShadow = !!d.shadow; d.mesh.receiveShadow = true; if (d.duck) d.mesh.customDepthMaterial = duckDepth; d.mesh.visible = false; scene.add(d.mesh);
+  d.mesh.frustumCulled = false; d.mesh.castShadow = !!d.shadow; d.mesh.receiveShadow = true; d.mesh.visible = false; scene.add(d.mesh);
 }
 const forest = { live: new Map(), free: Array.from({ length: SLOTS }, (_, i) => i), pci: null, pcj: null, wk: -1, eaten: new Map() };
 function genChunk(ci, cj) {
@@ -4326,7 +4323,10 @@ function updateCamera(dt) {
   skyMesh.position.copy(camPos);
   sun.target.position.set(P.pos.x - 6 * s, base, P.pos.z - 6 * c); sun.position.copy(sun.target.position).add(SUN_OFF);   // la sombra cubre más hacia donde se mira
   _sv.set(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z).project(camera);
+  const seeZ = _sv.z * 0.5 + 0.5;                                    // su profundidad (antes de pxRadius, que vuelve a usar _sv)
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
+  // la ventana en árboles y arbustos (01-core.js): en píxeles del lienzo (con el origen abajo), un poco más grande que él, y su profundidad
+  const dpr = renderer.getPixelRatio(); FX.see.value.set(pScreen.x * dpr, (VH - pScreen.y) * dpr, pScreen.r * 2.3 * dpr, seeZ);
 }
 
 // Las pruebas de visibilidad van en el marco de la cámara: u a la derecha de la pantalla y d hacia la cámara, en metros desde Tamachin.
@@ -4390,7 +4390,7 @@ function cutMats(mats, walls, plane, on) {
     m.clippingPlanes = on ? [plane] : null; if (walls.includes(m)) m.side = on ? THREE.DoubleSide : THREE.FrontSide; m.needsUpdate = true;
   }
 }
-const treeDirty = [false, false], GRASS_P = 2000 / 260;
+const GRASS_P = 2000 / 260;
 function updateScenery(dt) {
   const P = player, x = P.pos.x, z = P.pos.z, c = camView.vc, s = camView.vs;
   // Las pruebas siguen el rayo real cámara→Tamachin: con el adelanto la cámara puede quedar más lejos y de lado.
@@ -4430,15 +4430,7 @@ function updateScenery(dt) {
     if (!o.plane) o.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);
     o.plane.constant = cutY(o.k, o.h); o.cut = o.k < 0.999; cutMats(o.mats, o.walls ? [o.walls] : [], o.plane, o.cut);
   }
-  // árboles: se agachan si quedan entre la cámara y Tamachin
-  const reach = ui.closeup ? 1 : Math.max(1, CAM_SLOPE0 / camSlope);   // con el rayo más plano, tapan árboles más lejanos
-  for (const t of trees) {
-    const tx = t.x - x, tz = t.z - z, d = tx * s + tz * c; let target = 1;
-    if (d > 0.5 && d < (2.4 + TREE_H[t.type] * t.s) * reach && Math.abs(tx * c - tz * s - rayU(d)) < TREE_R[t.type] * t.s + 0.9) target = 0.28;
-    if (Math.abs(t.k - target) > 0.004) { t.k = damp(t.k, target, 9, dt); setTreeMatrix(t); treeDirty[t.type] = true; }
-  }
-  for (let i = 0; i < 2; i++) if (treeDirty[i]) { treeMesh[i].instanceMatrix.needsUpdate = true; treeDirty[i] = false; }
-  duckU.uDuck.value.set(x, z, c, s); duckU.uDuckC.value.set(cu, back); duckU.uDuckR.value = reach;     // los del norte se agachan en el shader
+  // los árboles y arbustos que tapan a Tamachin no se mueven: se abren en un círculo alrededor de él (FX.see, en updateCamera)
   ground.position.set(Math.round(x / GRASS_P) * GRASS_P, 0, -100 + Math.round((z + 100) / GRASS_P) * GRASS_P);   // el pasto sigue a Tamachin sin que se mueva el dibujo
   windmill.rotation.z -= dt * 0.9;
   waterTex.offset.y -= dt * 0.16;

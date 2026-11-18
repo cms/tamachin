@@ -351,7 +351,10 @@ function canvasTex(w, h, draw) {
 // - Viento (`wind`: [fuerza, altura donde empieza, rapidez]): árboles, arbustos, hierba y flores se mecen, más arriba más; cada planta a su
 //   paso (según dónde está). La sombra no se mece: no se nota con tan poco.
 // - Borde (`rim`): las orillas de Tamachin y los vecinos brillan con la luz del cielo, como un juguete de vinil.
-// Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (duckify) y qué se agregó.
+// - Ventana (`see`): árboles y arbustos se abren en un círculo alrededor de Tamachin en la pantalla, solo lo que queda delante de él (más
+//   cerca de la cámara), con un tramado de 4×4 que se cierra suave en la orilla. El resto del árbol queda entero, y su sombra también.
+//   FX.see = (x, y en píxeles del lienzo con el origen abajo, radio, profundidad de Tamachin); lo pone updateCamera (06-main.js).
+// Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (si ya tenía su shader) y qué se agregó.
 const cloudTex = canvasTex(256, 256, (g) => {
   const R = mulberry(5150); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.globalCompositeOperation = 'lighter';
   for (let i = 0; i < 11; i++) {                                  // manchas de 6 a 12 m de radio (la textura cubre 100 m): se ven varias, con orilla
@@ -364,7 +367,7 @@ const cloudTex = canvasTex(256, 256, (g) => {
 });
 cloudTex.wrapS = cloudTex.wrapT = THREE.RepeatWrapping;
 cloudTex.generateMipmaps = false; cloudTex.minFilter = THREE.LinearFilter;   // con mipmaps, a lo lejos se promediaban en un gris parejo que oscurecía todo
-const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) } };
+const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) }, see: { value: new THREE.Vector4(0, 0, 0, 0) } };
 const FX_WIND = `{
 #ifdef USE_INSTANCING
   vec2 fxO = instanceMatrix[3].xz;
@@ -383,26 +386,36 @@ const FX_WORLD = `#include <project_vertex>
   vFxW = (modelMatrix * fxP).xyz; }`;
 const FX_CLOUD = `uniform sampler2D uFxCloudTex;
 uniform vec4 uFxCloud;
+uniform vec4 uFxSee;
+float fxBayer2(vec2 a) { a = floor(a); return fract(a.x / 2.0 + a.y * a.y * 0.75); }
+float fxBayer(vec2 a) { return fxBayer2(0.5 * a) * 0.25 + fxBayer2(a); }
 uniform vec3 uFxRim;
 varying vec3 vFxW;
 float fxCloud() { if (uFxCloud.z < 0.001) return 1.0; return 1.0 - uFxCloud.z * texture2D(uFxCloudTex, vFxW.xz * uFxCloud.w + uFxCloud.xy).r; }
 `;
+// en el centro no queda nada; en la orilla, el tramado se va llenando hasta el árbol entero
+const FX_SEE = `#include <clipping_planes_fragment>
+if (uFxSee.z > 0.0 && gl_FragCoord.z < uFxSee.w) {
+  float fxS = length(gl_FragCoord.xy - uFxSee.xy) / uFxSee.z;
+  if (fxS < 1.0 && fxBayer(gl_FragCoord.xy) >= smoothstep(0.5, 1.0, fxS)) discard;
+}`;
 const FX_RIM = `{ float fxR = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0); gl_FragColor.rgb += uFxRim * pow(fxR, 2.5); }
 #include <tonemapping_fragment>`;
 function fxPatch(mat, o) {
   if (mat.userData.fx || !(mat.isMeshLambertMaterial || mat.isMeshStandardMaterial)) return mat;
-  o = o || {}; mat.userData.fx = true;
-  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
+  o = o || {}; mat.userData.fx = true; if (o.see) mat.userData.see = true;   // see: las pruebas (BLOCKER) no lo cuentan como estorbo
+  const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : '') + (o.see ? 's' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (sh, r) => {
     prev.call(mat, sh, r);
-    Object.assign(sh.uniforms, { uFxTime: FX.time, uFxCloud: FX.cloud, uFxCloudTex: FX.cloudTex, uFxRim: FX.rim, uFxWind: wind });
+    Object.assign(sh.uniforms, { uFxTime: FX.time, uFxCloud: FX.cloud, uFxCloudTex: FX.cloudTex, uFxRim: FX.rim, uFxSee: FX.see, uFxWind: wind });
     let v = 'uniform float uFxTime;\nuniform vec3 uFxWind;\nvarying vec3 vFxW;\n' + sh.vertexShader, f = FX_CLOUD + sh.fragmentShader;
     if (o.wind) v = v.replace('#include <morphtarget_vertex>', FX_WIND);
     v = v.replace('#include <project_vertex>', FX_WORLD);
     if (mat.isMeshLambertMaterial) f = f.replace('* getShadowMask();', '* getShadowMask() * fxCloud();');
     else f = f.replace('#include <lights_fragment_end>', '#include <lights_fragment_end>\n{ float fxC = fxCloud(); reflectedLight.directDiffuse *= fxC; reflectedLight.directSpecular *= fxC; }');
     if (o.rim) f = f.replace('#include <tonemapping_fragment>', FX_RIM);
+    if (o.see) f = f.replace('#include <clipping_planes_fragment>', FX_SEE);
     sh.vertexShader = v; sh.fragmentShader = f;
   };
   return mat;

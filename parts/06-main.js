@@ -1125,7 +1125,10 @@ function updateCamera(dt) {
   skyMesh.position.copy(camPos);
   sun.target.position.set(P.pos.x - 6 * s, base, P.pos.z - 6 * c); sun.position.copy(sun.target.position).add(SUN_OFF);   // la sombra cubre más hacia donde se mira
   _sv.set(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z).project(camera);
+  const seeZ = _sv.z * 0.5 + 0.5;                                    // su profundidad (antes de pxRadius, que vuelve a usar _sv)
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
+  // la ventana en árboles y arbustos (01-core.js): en píxeles del lienzo (con el origen abajo), un poco más grande que él, y su profundidad
+  const dpr = renderer.getPixelRatio(); FX.see.value.set(pScreen.x * dpr, (VH - pScreen.y) * dpr, pScreen.r * 2.3 * dpr, seeZ);
 }
 
 // Las pruebas de visibilidad van en el marco de la cámara: u a la derecha de la pantalla y d hacia la cámara, en metros desde Tamachin.
@@ -1189,7 +1192,7 @@ function cutMats(mats, walls, plane, on) {
     m.clippingPlanes = on ? [plane] : null; if (walls.includes(m)) m.side = on ? THREE.DoubleSide : THREE.FrontSide; m.needsUpdate = true;
   }
 }
-const treeDirty = [false, false], GRASS_P = 2000 / 260;
+const GRASS_P = 2000 / 260;
 function updateScenery(dt) {
   const P = player, x = P.pos.x, z = P.pos.z, c = camView.vc, s = camView.vs;
   // Las pruebas siguen el rayo real cámara→Tamachin: con el adelanto la cámara puede quedar más lejos y de lado.
@@ -1229,15 +1232,7 @@ function updateScenery(dt) {
     if (!o.plane) o.plane = new THREE.Plane(new THREE.Vector3(0, -1, 0), 1e4);
     o.plane.constant = cutY(o.k, o.h); o.cut = o.k < 0.999; cutMats(o.mats, o.walls ? [o.walls] : [], o.plane, o.cut);
   }
-  // árboles: se agachan si quedan entre la cámara y Tamachin
-  const reach = ui.closeup ? 1 : Math.max(1, CAM_SLOPE0 / camSlope);   // con el rayo más plano, tapan árboles más lejanos
-  for (const t of trees) {
-    const tx = t.x - x, tz = t.z - z, d = tx * s + tz * c; let target = 1;
-    if (d > 0.5 && d < (2.4 + TREE_H[t.type] * t.s) * reach && Math.abs(tx * c - tz * s - rayU(d)) < TREE_R[t.type] * t.s + 0.9) target = 0.28;
-    if (Math.abs(t.k - target) > 0.004) { t.k = damp(t.k, target, 9, dt); setTreeMatrix(t); treeDirty[t.type] = true; }
-  }
-  for (let i = 0; i < 2; i++) if (treeDirty[i]) { treeMesh[i].instanceMatrix.needsUpdate = true; treeDirty[i] = false; }
-  duckU.uDuck.value.set(x, z, c, s); duckU.uDuckC.value.set(cu, back); duckU.uDuckR.value = reach;     // los del norte se agachan en el shader
+  // los árboles y arbustos que tapan a Tamachin no se mueven: se abren en un círculo alrededor de él (FX.see, en updateCamera)
   ground.position.set(Math.round(x / GRASS_P) * GRASS_P, 0, -100 + Math.round((z + 100) / GRASS_P) * GRASS_P);   // el pasto sigue a Tamachin sin que se mueva el dibujo
   windmill.rotation.z -= dt * 0.9;
   waterTex.offset.y -= dt * 0.16;

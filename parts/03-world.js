@@ -640,11 +640,10 @@ const TREE_GEO = [
   new Batch().cyl(TRUNK, 0, 0.8, 0, 0.2, 0.3, 1.6, 7).cone('#2f9e62', 0, 2.3, 0, 1.7, 2.2, 9).cone('#38ad6c', 0, 3.5, 0, 1.35, 2.0, 9).cone('#46bd78', 0, 4.6, 0, 1.0, 1.8, 9).geometry(),
   new Batch().cyl(TRUNK, 0, 1.2, 0, 0.24, 0.34, 2.4, 7).ico('#5cc46a', 0, 3.7, 0, 1.75, 1.6, 1.75).ico('#4fb85f', 0.95, 3.1, 0.3, 1.15).ico('#69cf76', -0.85, 3.3, -0.35, 1.1).geometry(),
 ];
-const TREE_H = [5.5, 5.3], TREE_R = [1.5, 1.9];
 // viento (fxPatch, 01-core.js): [fuerza, desde qué altura, rapidez]; más arriba se mece más (las copas unos 10 cm, la hierba 3)
 const SWAY = { tree: [[0.006, 1.5, 1.3], [0.007, 2.2, 1.2]], bush: [0.03, 0.15, 1.7], tuft: [0.3, 0, 2.2], flower: [0.17, 0, 2] };
 const treeMesh = [0, 1].map((type) => {
-  const list = trees.filter((t) => t.type === type), m = new THREE.InstancedMesh(TREE_GEO[type], fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind: SWAY.tree[type] }), list.length);
+  const list = trees.filter((t) => t.type === type), m = new THREE.InstancedMesh(TREE_GEO[type], fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind: SWAY.tree[type], see: true }), list.length);
   list.forEach((t, i) => { t.idx = i; m.setColorAt(i, _ic.setRGB(t.tint, t.tint, t.tint * 0.96)); });
   m.castShadow = true; m.receiveShadow = true; m.frustumCulled = false; scene.add(m); return m;
 });
@@ -653,8 +652,8 @@ function setTreeMatrix(t) {
   treeMesh[t.type].setMatrixAt(t.idx, _im);
 }
 trees.forEach(setTreeMatrix);
-function instanced(geo, list, fn, shadow, tint, wind) {
-  const m = new THREE.InstancedMesh(geo, fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind }), list.length);
+function instanced(geo, list, fn, shadow, tint, wind, see) {
+  const m = new THREE.InstancedMesh(geo, fxPatch(new THREE.MeshLambertMaterial({ vertexColors: true }), { wind, see }), list.length);
   list.forEach((it, i) => { fn(it); m.setMatrixAt(i, _im); m.setColorAt(i, _ic.set(tint && it.color ? it.color : '#ffffff')); });
   m.frustumCulled = false; m.castShadow = !!shadow; m.receiveShadow = true; scene.add(m); return m;
 }
@@ -665,6 +664,6 @@ instanced(new Batch().ico('#ffb81f', 0, 0.51, 0, 0.06, 0.05, 0.06, 0).geometry()
 instanced(new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry(), tufts,
   (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 7, 0)), _is.set(f.s, f.s, f.s)), false, false, SWAY.tuft);
 instanced(new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), bushes,
-  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 3, 0)), _is.set(f.s, f.s, f.s)), true, false, SWAY.bush);
+  (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 3, 0)), _is.set(f.s, f.s, f.s)), true, false, SWAY.bush, true);   // los arbustos también se abren si lo tapan
 bushes.forEach((f) => solidCircle(f.x, f.z, 0.6 * f.s));
 instanced(new Batch().rock('#b3ada1', 0, 0.35, 0, 1, 0.7, 0.85).geometry(), rocks, (f) => _im.compose(_ip.set(f.x, 0, f.z), _iq.setFromEuler(_ie.set(0, f.x * 5, 0)), _is.set(f.s, f.s, f.s)), true);

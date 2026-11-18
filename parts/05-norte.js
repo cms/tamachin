@@ -100,24 +100,9 @@ function northCollide(pos, r) {
   forestCollide(pos, r);
 }
 
-// ───────────────────────── árboles que se agachan (en el shader) ─────────────────────────
-// Los árboles del norte son miles: en vez de recorrerlos en cada cuadro, el vertex shader agacha a los que quedan entre
-// la cámara y Tamachin (misma prueba que updateScenery hace con los de casa), en el marco de la cámara (u a la derecha, d hacia ella).
-// uDuck = (x, z de Tamachin, c, s de camView); uDuckC = (u de la cámara, d de la cámara), relativos a Tamachin.
-const duckU = { uDuck: { value: new THREE.Vector4(0, 0, 1, 0) }, uDuckC: { value: new THREE.Vector2(0, 10) }, uDuckR: { value: 1 } };
-const DUCK_GLSL = `#include <begin_vertex>
-#ifdef USE_INSTANCING
-{ vec3 io = instanceMatrix[3].xyz; float sc = length(instanceMatrix[0].xyz);
-  vec2 q = io.xz - uDuck.xy; float u = q.x * uDuck.z - q.y * uDuck.w, dz = q.x * uDuck.w + q.y * uDuck.z, back = max(1.0, uDuckC.y);
-  float rx = uDuckC.x * clamp(dz / back, 0.0, 1.0), reach = (2.4 + 5.5 * sc) * uDuckR;
-  float k = smoothstep(0.3, 1.2, dz) * (1.0 - smoothstep(reach - 1.5, reach, dz)) * (1.0 - smoothstep(1.7 * sc + 0.6, 1.7 * sc + 1.6, abs(u - rx)));
-  transformed.y *= 1.0 - 0.72 * k; transformed.xz *= 1.0 + 0.25 * k; }
-#endif`;
-function duckify(m) {
-  m.onBeforeCompile = (sh) => { sh.uniforms.uDuck = duckU.uDuck; sh.uniforms.uDuckC = duckU.uDuckC; sh.uniforms.uDuckR = duckU.uDuckR; sh.vertexShader = 'uniform vec4 uDuck;\nuniform vec2 uDuckC;\nuniform float uDuckR;\n' + sh.vertexShader.replace('#include <begin_vertex>', DUCK_GLSL); };
-  m.customProgramCacheKey = () => 'agacharse'; return m;
-}
-const duckDepth = duckify(new THREE.MeshDepthMaterial({ depthPacking: THREE.RGBADepthPacking }));   // la sombra también se agacha
+// ───────────────────────── árboles que tapan a Tamachin ─────────────────────────
+// Los árboles del norte (miles) no se agachan: como los de casa, se abren en un círculo alrededor de Tamachin si lo tapan (`see` en
+// fxPatch, 01-core.js), sin recorrerlos en cada cuadro.
 // misma geometría, otra esfera envolvente: así cada sector o casilla se recorta solo cuando no se ve (no se libera nunca: comparte búferes)
 function geoView(base, center, radius) {
   const g = new THREE.BufferGeometry(); for (const k in base.attributes) g.setAttribute(k, base.attributes[k]);
@@ -126,13 +111,13 @@ function geoView(base, center, radius) {
 
 // ───────────────────────── vegetación fija del norte (montañas, pueblo) ─────────────────────────
 const SKIND = {
-  pine: { geo: TREE_GEO[0], duck: true, shadow: true }, oak: { geo: TREE_GEO[1], duck: true, shadow: true },
+  pine: { geo: TREE_GEO[0], see: true, shadow: true }, oak: { geo: TREE_GEO[1], see: true, shadow: true },
   rock: { geo: new Batch().rock('#b3ada1', 0, 0.35, 0, 1, 0.7, 0.85).geometry(), shadow: true },
-  bush: { geo: new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), shadow: true },
+  bush: { geo: new Batch().ico('#57c06a', 0, 0.5, 0, 0.8, 0.6, 0.8).ico('#4db460', 0.5, 0.4, 0.2, 0.55, 0.45, 0.55).ico('#66cc78', -0.45, 0.42, -0.15, 0.5, 0.42, 0.5).geometry(), shadow: true, see: true },
   tuft: { geo: new Batch().cone('#6fbf55', 0, 0.16, 0, 0.07, 0.34, 4).cone('#7ccb62', 0.09, 0.12, 0.03, 0.06, 0.26, 4).cone('#63b34a', -0.07, 0.13, -0.05, 0.06, 0.28, 4).geometry() },
 };
 const SKIND_SWAY = { pine: SWAY.tree[0], oak: SWAY.tree[1], bush: SWAY.bush, tuft: SWAY.tuft };   // se mecen como los de casa
-for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); if (d.duck) duckify(d.mat); fxPatch(d.mat, { wind: SKIND_SWAY[k] }); d.list = []; }
+for (const k in SKIND) { const d = SKIND[k]; d.mat = new THREE.MeshLambertMaterial({ vertexColors: true }); fxPatch(d.mat, { wind: SKIND_SWAY[k], see: !!d.see }); d.list = []; }
 function addStatic(kind, x, y, z, s, ry, tint) { SKIND[kind].list.push({ x, y, z, s, ry, tint: tint || 1 }); }
 function buildStatic() {                                           // un InstancedMesh por tipo y por sector de 120 m
   for (const k in SKIND) {
@@ -144,7 +129,7 @@ function buildStatic() {                                           // un Instanc
       const m = new THREE.InstancedMesh(geoView(d.geo, c, rad), d.mat, items.length);
       items.forEach((it, i) => { _im.compose(_ip.set(it.x, it.y, it.z), _iq.setFromEuler(_ie.set(0, it.ry, 0)), _is.set(it.s, it.s, it.s)); m.setMatrixAt(i, _im); m.setColorAt(i, _ic.setRGB(it.tint, it.tint, it.tint * 0.96)); });
       m.frustumCulled = true;                                     // en r128 un InstancedMesh viene sin recorte; esta esfera sí envuelve a todos
-      m.castShadow = !!d.shadow; m.receiveShadow = true; if (d.duck) m.customDepthMaterial = duckDepth; scene.add(m);
+      m.castShadow = !!d.shadow; m.receiveShadow = true; scene.add(m);
     }
   }
 }
@@ -377,13 +362,13 @@ const MELON_GEO = (() => {
     for (let q = 0; q < 3; q++) c.set([col.r, col.g, col.b], (i + q) * 3); }
   g.setAttribute('color', new THREE.BufferAttribute(c, 3)); g.rotateZ(Math.PI / 2); g.scale(0.44, 0.3, 0.32); g.translate(0, 0.27, 0); return g;
 })();
-const FK = {                                                       // tipo: geometría, cupo por casilla, sombra, se agacha, color por vértice
-  pine: { geo: TREE_GEO[0], cap: 16, shadow: true, duck: true },
-  oak: { geo: TREE_GEO[1], cap: 3, shadow: true, duck: true },
-  ftree: { geo: new Batch().cyl(TRUNK, 0, 1.0, 0, 0.17, 0.26, 2.0, 7).ico('#5ec46a', 0, 3.0, 0, 1.55, 1.3, 1.55).ico('#52b860', 0.85, 2.65, 0.3, 0.9).ico('#69cf76', -0.8, 2.8, -0.3, 0.9).geometry(), cap: 3, shadow: true, duck: true },
+const FK = {                                                       // tipo: geometría, cupo por casilla, sombra, se abre si lo tapa (see), color por vértice
+  pine: { geo: TREE_GEO[0], cap: 16, shadow: true, see: true },
+  oak: { geo: TREE_GEO[1], cap: 3, shadow: true, see: true },
+  ftree: { geo: new Batch().cyl(TRUNK, 0, 1.0, 0, 0.17, 0.26, 2.0, 7).ico('#5ec46a', 0, 3.0, 0, 1.55, 1.3, 1.55).ico('#52b860', 0.85, 2.65, 0.3, 0.9).ico('#69cf76', -0.8, 2.8, -0.3, 0.9).geometry(), cap: 3, shadow: true, see: true },
   arbor: { geo: new Batch().cyl(WOOD, -1.25, 1.1, 0, 0.08, 0.1, 2.2, 7).cyl(WOOD, 1.25, 1.1, 0, 0.08, 0.1, 2.2, 7).box(WOOD, 0, 2.18, 0, 2.9, 0.12, 0.14).box(WOOD, 0, 2.18, -0.6, 2.9, 0.1, 0.1).box(WOOD, 0, 2.18, 0.6, 2.9, 0.1, 0.1)
-    .ico('#4fae5a', -0.7, 2.36, 0, 0.85, 0.3, 0.8).ico('#5cc06c', 0.55, 2.38, 0.1, 0.9, 0.3, 0.75).ico('#47a352', 0, 2.32, -0.3, 0.7, 0.25, 0.6).geometry(), cap: 1, shadow: true, duck: true },
-  bush: { geo: SKIND.bush.geo, cap: 5 },
+    .ico('#4fae5a', -0.7, 2.36, 0, 0.85, 0.3, 0.8).ico('#5cc06c', 0.55, 2.38, 0.1, 0.9, 0.3, 0.75).ico('#47a352', 0, 2.32, -0.3, 0.7, 0.25, 0.6).geometry(), cap: 1, shadow: true, see: true },
+  bush: { geo: SKIND.bush.geo, cap: 5, see: true },
   patch: { geo: new Batch().ico('#58b368', 0, 0.12, 0, 0.55, 0.16, 0.5).ico('#4fa95c', 0.45, 0.1, 0.2, 0.35, 0.12, 0.3).ico('#62bd6f', -0.4, 0.1, -0.15, 0.35, 0.12, 0.32).geometry(), cap: 2 },
   rock: { geo: SKIND.rock.geo, cap: 1 },
   shroom: { geo: new Batch().cyl('#fff1d6', 0, 0.16, 0, 0.07, 0.1, 0.32, 8).sph('#ef4b4b', 0, 0.33, 0, 0.24, 0.15, 0.24).sph('#ffffff', 0.1, 0.43, 0.08, 0.045).sph('#ffffff', -0.12, 0.4, 0.02, 0.04).sph('#ffffff', 0, 0.45, -0.1, 0.04).geometry(), cap: 2 },
@@ -398,10 +383,10 @@ const CS = 26, WIN = { w: 2, n: 2, s: 1 }, SLOTS = (2 * WIN.w + 1) * (WIN.n + WI
 const _z0 = new THREE.Matrix4().makeScale(0, 0, 0);
 for (const k in FK) {
   const d = FK[k]; d.mesh = null;
-  const mat = new THREE.MeshLambertMaterial({ vertexColors: !d.plain }); if (d.duck) duckify(mat);
+  const mat = fxPatch(new THREE.MeshLambertMaterial({ vertexColors: !d.plain }), { see: !!d.see });   // árboles y arbustos: se abren si lo tapan
   d.mesh = new THREE.InstancedMesh(d.geo, mat, SLOTS * d.cap);
   for (let i = 0; i < SLOTS * d.cap; i++) { d.mesh.setMatrixAt(i, _z0); d.mesh.setColorAt(i, _ic.setRGB(1, 1, 1)); }
-  d.mesh.frustumCulled = false; d.mesh.castShadow = !!d.shadow; d.mesh.receiveShadow = true; if (d.duck) d.mesh.customDepthMaterial = duckDepth; d.mesh.visible = false; scene.add(d.mesh);
+  d.mesh.frustumCulled = false; d.mesh.castShadow = !!d.shadow; d.mesh.receiveShadow = true; d.mesh.visible = false; scene.add(d.mesh);
 }
 const forest = { live: new Map(), free: Array.from({ length: SLOTS }, (_, i) => i), pci: null, pcj: null, wk: -1, eaten: new Map() };
 function genChunk(ci, cj) {

@@ -119,7 +119,8 @@ async function touchscreen(ctx, page) {
 
 // Raycast cámara→Tamachin contra la escena (la página debe exponer scene, camera, player, occluders, house).
 // Devuelve qué tapa: 'edificio', 'casa', 'árbol' (InstancedMesh), 'otro' o null. El raycast no sabe de planos de corte ni del
-// shader: lo cortado se descarta a mano, pero los árboles del norte agachados no, así que ahí 'árbol' puede ser falso.
+// shader: lo cortado se descarta a mano, y también los árboles y arbustos (`userData.see`): en el shader se abren en un círculo
+// alrededor de Tamachin en lo que queda delante de él, y este rayo va a su centro (vista lo revisa con los píxeles).
 // Lo que camina (autos, vecinos, animales) no cuenta: pasa por delante un momento y hacía que la prueba fallara al azar.
 const BLOCKER = () => {
   const D = window.__dbg, rc = new THREE.Raycaster(), own = new Set(); rc.camera = D.camera; D.player.T.group.traverse((o) => own.add(o));
@@ -134,6 +135,7 @@ const BLOCKER = () => {
       let m = o.material; if (Array.isArray(m)) m = m[hit.face ? hit.face.materialIndex : 0];
       if (!m || m.side === THREE.BackSide || (m.transparent && m.opacity < 0.5)) continue;
       if (m.clippingPlanes && m.clippingPlanes.some((p) => p.distanceToPoint(hit.point) < 0)) continue;   // la parte cortada no se dibuja
+      if (m.userData && m.userData.see) continue;                    // árboles y arbustos: ahí se abren (FX.see, 01-core.js)
       const at = [hit.point.x, hit.point.y, hit.point.z].map((v) => v.toFixed(1)).join(',');
       if (D.occluders.some((q) => q.mats.includes(m))) return 'edificio@' + at;
       if (houseMats.includes(m)) return 'casa@' + at;
