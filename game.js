@@ -4866,13 +4866,13 @@ function worldNamed(name) {
   return M;
 }
 // Al instante (al arrancar, «Volver al inicio», las pruebas); enterWorld lo hace con el telón. `at`: { x, z, heading, yaw, pet }; `pet`
-// es dónde aparece quien viaja con él: un conejo que lo sigue, si está cerca (de otro mundo, siempre: allá no se pierde).
+// es dónde aparece quien viaja con él: un conejo que lo sigue, si está a menos de 16 m (de otro mundo, siempre: allá no se pierde).
 function setWorld(name, at) {
   const N = worldNamed(name); if (!N) return false;
   const P = player;
   if (N !== world) {
     const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && (c.world || EARTH.name) === world.name
-      && (world !== EARTH || Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 10)), from = world;
+      && (world !== EARTH || Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 16)), from = world;   // 16 m: brincando se queda un poco atrás
     if (world.leave) world.leave();
     sweepEarth(); world.root.visible = false; N.root.visible = true; world = N;
     if (N.enter) N.enter();
