@@ -110,13 +110,16 @@ module.exports = {
       const on = grab(), z0 = S.z; S.z = 0; const off = grab(); S.z = z0;
       let diff = 0; for (let i = 0; i < on.length; i += 4) if (Math.abs(on[i] - off[i]) + Math.abs(on[i + 1] - off[i + 1]) + Math.abs(on[i + 2] - off[i + 2]) > 24) diff++;
       const r = S.z / 2.3 * 0.6;                                     // el centro de su cuerpo
-      return { front, con: +yellow(on, r).toFixed(2), sin: +yellow(off, r).toFixed(2), cambia: +(diff / (n * n)).toFixed(3) };
+      return { front, seeOn: D.FX.seeOn, con: +yellow(on, r).toFixed(2), sin: +yellow(off, r).toFixed(2), cambia: +(diff / (n * n)).toFixed(3) };
     };
     // un roble con el que, a 3 m al sur de él, no hay ninguna planta entre la cámara y Tamachin (el roble queda atrás)
     const oaks = await E(() => window.__dbg.trees.map((t, i) => [t, i]).filter(([t]) => t.type === 1 && t.s > 0.9 && t.z < -170 && t.z > -240).map(([, i]) => i));
     let hid = null, ahead = null;
     for (const ti of oaks) { const a = await E(LOOK, [ti, 3.0]); if (!a.front) { ahead = a; hid = await E(LOOK, [ti, -3.4]); break; } }
-    T.check('detrás de un roble: sin el círculo el árbol lo tapa, con él se le ve', !!hid && hid.front && hid.sin < 0.3 && hid.con > 0.7, JSON.stringify(hid));
+    T.check('detrás de un roble: sin el círculo el árbol lo tapa, con él se le ve', !!hid && hid.front && hid.seeOn && hid.sin < 0.3 && hid.con > 0.7, JSON.stringify(hid));
+    // y solo se prende cuando algo lo tapa (con `discard` en el shader, el iPhone dibuja los árboles sin una optimización)
+    const open = await E(() => { const T = window.__tamachin, V = T.view; V.yaw = V.yawT = -0.5; T.go(6, 6); T.advance(1.2); const a = window.__dbg.FX.seeOn; V.yaw = V.yawT = 0; T.go(24, 10); T.advance(1.2); return [a, window.__dbg.FX.seeOn]; });
+    T.check('en el jardín abierto y en la calle la ventana está apagada; detrás del roble, prendida', open.every((v) => v === false), JSON.stringify(open));
     T.check('delante del mismo roble (atrás de él) no se abre nada', !!ahead && ahead.cambia < 0.05 && ahead.con > 0.7, JSON.stringify(ahead));
     T.check('sin errores', !errors.length, errors.join(' | ') || undefined);
     await ctx.close();

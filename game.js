@@ -354,6 +354,8 @@ function canvasTex(w, h, draw) {
 // - Ventana (`see`): árboles y arbustos se abren en un círculo alrededor de Tamachin en la pantalla, solo lo que queda delante de él (más
 //   cerca de la cámara), con un tramado de 4×4 que se cierra suave en la orilla. El resto del árbol queda entero, y su sombra también.
 //   FX.see = (x, y en píxeles del lienzo con el origen abajo, radio, profundidad de Tamachin); lo pone updateCamera (06-main.js).
+//   Solo se prende cuando algo lo tapa (fxSee, seeCheck en 06-main.js): un shader con `discard` le quita a la GPU del iPhone una
+//   optimización en todo lo que dibuja, así que cada material tiene dos versiones (con FX_SEE y sin), compiladas al arrancar.
 // Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (si ya tenía su shader) y qué se agregó.
 const cloudTex = canvasTex(256, 256, (g) => {
   const R = mulberry(5150); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.globalCompositeOperation = 'lighter';
@@ -367,7 +369,7 @@ const cloudTex = canvasTex(256, 256, (g) => {
 });
 cloudTex.wrapS = cloudTex.wrapT = THREE.RepeatWrapping;
 cloudTex.generateMipmaps = false; cloudTex.minFilter = THREE.LinearFilter;   // con mipmaps, a lo lejos se promediaban en un gris parejo que oscurecía todo
-const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) }, see: { value: new THREE.Vector4(0, 0, 0, 0) } };
+const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) }, see: { value: new THREE.Vector4(0, 0, 0, 0) }, seeMats: [], seeOn: false };
 const FX_WIND = `{
 #ifdef USE_INSTANCING
   vec2 fxO = instanceMatrix[3].xz;
@@ -395,15 +397,17 @@ float fxCloud() { if (uFxCloud.z < 0.001) return 1.0; return 1.0 - uFxCloud.z * 
 `;
 // en el centro no queda nada; en la orilla, el tramado se va llenando hasta el árbol entero
 const FX_SEE = `#include <clipping_planes_fragment>
+#ifdef FX_SEE
 if (uFxSee.z > 0.0 && gl_FragCoord.z < uFxSee.w) {
   float fxS = length(gl_FragCoord.xy - uFxSee.xy) / uFxSee.z;
   if (fxS < 1.0 && fxBayer(gl_FragCoord.xy) >= smoothstep(0.5, 1.0, fxS)) discard;
-}`;
+}
+#endif`;
 const FX_RIM = `{ float fxR = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0); gl_FragColor.rgb += uFxRim * pow(fxR, 2.5); }
 #include <tonemapping_fragment>`;
 function fxPatch(mat, o) {
   if (mat.userData.fx || !(mat.isMeshLambertMaterial || mat.isMeshStandardMaterial)) return mat;
-  o = o || {}; mat.userData.fx = true; if (o.see) mat.userData.see = true;   // see: las pruebas (BLOCKER) no lo cuentan como estorbo
+  o = o || {}; mat.userData.fx = true; if (o.see) { mat.userData.see = true; FX.seeMats.push(mat); }   // see: las pruebas (BLOCKER) no lo cuentan como estorbo
   const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : '') + (o.see ? 's' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (sh, r) => {
@@ -419,6 +423,11 @@ function fxPatch(mat, o) {
     sh.vertexShader = v; sh.fragmentShader = f;
   };
   return mat;
+}
+// prende o apaga la ventana en todos los árboles y arbustos (cambia de programa; los dos ya están compilados)
+function fxSee(on) {
+  if (FX.seeOn === on) return; FX.seeOn = on;
+  for (const m of FX.seeMats) { m.defines = m.defines || {}; if (on) m.defines.FX_SEE = ''; else delete m.defines.FX_SEE; m.needsUpdate = true; }
 }
 // todo lo que recibe luz debajo de `root` (los materiales compartidos, una vez)
 function fxAll(root) { root.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) fxPatch(m); }); }
@@ -4327,6 +4336,7 @@ function updateCamera(dt) {
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
   // la ventana en árboles y arbustos (01-core.js): en píxeles del lienzo (con el origen abajo), un poco más grande que él, y su profundidad
   const dpr = renderer.getPixelRatio(); FX.see.value.set(pScreen.x * dpr, (VH - pScreen.y) * dpr, pScreen.r * 2.3 * dpr, seeZ);
+  seeCheck(P, sc);                                                  // y si algo lo tapa, se prende
 }
 
 // Las pruebas de visibilidad van en el marco de la cámara: u a la derecha de la pantalla y d hacia la cámara, en metros desde Tamachin.
@@ -4764,6 +4774,40 @@ function updateBlobs() {
   m.count = n; m.instanceMatrix.needsUpdate = true;
 }
 
+// ───────────────────────── la ventana en árboles y arbustos: ¿algo lo tapa? ─────────────────────────
+// La ventana (FX.see, 01-core.js) solo se prende cuando una planta queda entre la cámara y Tamachin: con el `discard` en su shader, la
+// GPU del iPhone dibuja los árboles sin una optimización, así que solo se paga mientras hace falta. Cada planta es un cilindro (alto y
+// radio de su copa, por su escala). Se revisan las que caen cerca del segmento cámara→Tamachin: una rejilla de 24 m con las fijas (los
+// árboles y arbustos de casa y del norte) y las del bosque sin fin que están cargadas. Queda prendida 0.4 s después (sin parpadeos).
+const SEE_SIZE = { pine: [5.5, 1.7], oak: [5.4, 1.9], bush: [1.1, 1.0], ftree: [4.4, 1.6], arbor: [2.7, 1.6] }, SEE_CELL = 24, seeGrid = new Map();
+{
+  const put = (k, x, y, z, s) => { const [H, R] = SEE_SIZE[k], key = Math.floor(x / SEE_CELL) + ',' + Math.floor(z / SEE_CELL); let a = seeGrid.get(key); if (!a) seeGrid.set(key, (a = [])); a.push([x, z, y, H * s, R * s]); };
+  for (const t of trees) put(t.type ? 'oak' : 'pine', t.x, 0, t.z, t.s);
+  for (const b of bushes) put('bush', b.x, 0, b.z, b.s);
+  for (const k of ['pine', 'oak', 'bush']) for (const it of SKIND[k].list) put(k, it.x, it.y, it.z, it.s);
+}
+let seeHold = -9;
+function seeCheck(P, sc) {
+  const C = camPos, dx = P.pos.x - C.x, dy = P.pos.y + 0.75 * sc - C.y, dz = P.pos.z - C.z, L2 = dx * dx + dz * dz, L = Math.sqrt(L2), seeR = 2.3 * 0.75 * sc;
+  const covers = (x, z, y0, H, R) => {                               // ¿el cilindro de la planta toca el cono de la cámara al círculo?
+    const t = ((x - C.x) * dx + (z - C.z) * dz) / L2; if (t <= 0 || t > 1 + R / L) return false;   // detrás de la cámara, o más allá de él
+    const u = Math.min(t, 1), lx = C.x + dx * u - x, lz = C.z + dz * u - z, rc = u * seeR, y = C.y + dy * u, m = R + rc + 0.4;
+    return lx * lx + lz * lz < m * m && y > y0 - rc && y < y0 + H + rc;
+  };
+  let hit = false;
+  if (world === EARTH && L2 > 0.01) {
+    const i0 = Math.floor((Math.min(C.x, P.pos.x) - 6) / SEE_CELL), i1 = Math.floor((Math.max(C.x, P.pos.x) + 6) / SEE_CELL);
+    const j0 = Math.floor((Math.min(C.z, P.pos.z) - 6) / SEE_CELL), j1 = Math.floor((Math.max(C.z, P.pos.z) + 6) / SEE_CELL);
+    for (let i = i0; i <= i1 && !hit; i++) for (let j = j0; j <= j1 && !hit; j++) { const a = seeGrid.get(i + ',' + j); if (a) hit = a.some((q) => covers(q[0], q[1], q[2], q[3], q[4])); }
+    if (!hit) for (const c of forest.live.values()) {
+      for (const k in SEE_SIZE) { const d = FK[k]; if (!d || !d.see) continue; const [H, R] = SEE_SIZE[k]; if (c.it[k].some((it) => covers(it.x, it.z, it.y, H * it.s, R * it.s))) { hit = true; break; } }
+      if (hit) break;
+    }
+  }
+  if (hit) seeHold = clock + 0.4;
+  fxSee(clock < seeHold);
+}
+
 // ───────────────────────── mundos ─────────────────────────
 // La Tierra: todo lo de siempre. Cada gancho es lo que el juego ya hacía, movido aquí. Lo que se pregunta "¿dónde estoy?" (el suelo,
 // el agua, la casa, la cámara, el nombre del lugar, la música, los pasos) se lo pregunta al mundo de ahora (`world`), nunca a x y z
@@ -4808,6 +4852,7 @@ const WORLD_BASE = {
 const KEEP = new Set([player.T.group, sun, sun.target, hemi, lanternLight, lantern.g, skyMesh, blobLive, ...particles.map((p) => p.s)]);
 function sweepEarth() { for (const o of scene.children.slice()) if (!KEEP.has(o) && !o.userData.world) EARTH.root.add(o); }
 fxAll(scene);                                                       // nubes que pasan en todo lo que recibe luz (01-core.js)
+fxSee(true); renderer.compile(scene, camera); fxSee(false);         // la versión con ventana de árboles y arbustos, compilada desde ya
 EARTH.root.userData.world = EARTH.name; scene.add(EARTH.root); sweepEarth();
 function worldNamed(name) {
   if (name === EARTH.name) return EARTH;

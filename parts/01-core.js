@@ -354,6 +354,8 @@ function canvasTex(w, h, draw) {
 // - Ventana (`see`): árboles y arbustos se abren en un círculo alrededor de Tamachin en la pantalla, solo lo que queda delante de él (más
 //   cerca de la cámara), con un tramado de 4×4 que se cierra suave en la orilla. El resto del árbol queda entero, y su sombra también.
 //   FX.see = (x, y en píxeles del lienzo con el origen abajo, radio, profundidad de Tamachin); lo pone updateCamera (06-main.js).
+//   Solo se prende cuando algo lo tapa (fxSee, seeCheck en 06-main.js): un shader con `discard` le quita a la GPU del iPhone una
+//   optimización en todo lo que dibuja, así que cada material tiene dos versiones (con FX_SEE y sin), compiladas al arrancar.
 // Cada combinación es otro programa: `customProgramCacheKey` lleva la del material de antes (si ya tenía su shader) y qué se agregó.
 const cloudTex = canvasTex(256, 256, (g) => {
   const R = mulberry(5150); g.fillStyle = '#000'; g.fillRect(0, 0, 256, 256); g.globalCompositeOperation = 'lighter';
@@ -367,7 +369,7 @@ const cloudTex = canvasTex(256, 256, (g) => {
 });
 cloudTex.wrapS = cloudTex.wrapT = THREE.RepeatWrapping;
 cloudTex.generateMipmaps = false; cloudTex.minFilter = THREE.LinearFilter;   // con mipmaps, a lo lejos se promediaban en un gris parejo que oscurecía todo
-const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) }, see: { value: new THREE.Vector4(0, 0, 0, 0) } };
+const FX = { time: { value: 0 }, cloud: { value: new THREE.Vector4(0, 0, 0, 1 / 100) }, cloudTex: { value: cloudTex }, rim: { value: new THREE.Color(0, 0, 0) }, see: { value: new THREE.Vector4(0, 0, 0, 0) }, seeMats: [], seeOn: false };
 const FX_WIND = `{
 #ifdef USE_INSTANCING
   vec2 fxO = instanceMatrix[3].xz;
@@ -395,15 +397,17 @@ float fxCloud() { if (uFxCloud.z < 0.001) return 1.0; return 1.0 - uFxCloud.z * 
 `;
 // en el centro no queda nada; en la orilla, el tramado se va llenando hasta el árbol entero
 const FX_SEE = `#include <clipping_planes_fragment>
+#ifdef FX_SEE
 if (uFxSee.z > 0.0 && gl_FragCoord.z < uFxSee.w) {
   float fxS = length(gl_FragCoord.xy - uFxSee.xy) / uFxSee.z;
   if (fxS < 1.0 && fxBayer(gl_FragCoord.xy) >= smoothstep(0.5, 1.0, fxS)) discard;
-}`;
+}
+#endif`;
 const FX_RIM = `{ float fxR = 1.0 - clamp(dot(normalize(normal), normalize(vViewPosition)), 0.0, 1.0); gl_FragColor.rgb += uFxRim * pow(fxR, 2.5); }
 #include <tonemapping_fragment>`;
 function fxPatch(mat, o) {
   if (mat.userData.fx || !(mat.isMeshLambertMaterial || mat.isMeshStandardMaterial)) return mat;
-  o = o || {}; mat.userData.fx = true; if (o.see) mat.userData.see = true;   // see: las pruebas (BLOCKER) no lo cuentan como estorbo
+  o = o || {}; mat.userData.fx = true; if (o.see) { mat.userData.see = true; FX.seeMats.push(mat); }   // see: las pruebas (BLOCKER) no lo cuentan como estorbo
   const prev = mat.onBeforeCompile, key = mat.customProgramCacheKey() + '|fx' + (o.wind ? 'w' : '') + (o.rim ? 'r' : '') + (o.see ? 's' : ''), wind = { value: new THREE.Vector3(...(o.wind || [0, 0, 0])) };
   mat.customProgramCacheKey = () => key;
   mat.onBeforeCompile = (sh, r) => {
@@ -419,6 +423,11 @@ function fxPatch(mat, o) {
     sh.vertexShader = v; sh.fragmentShader = f;
   };
   return mat;
+}
+// prende o apaga la ventana en todos los árboles y arbustos (cambia de programa; los dos ya están compilados)
+function fxSee(on) {
+  if (FX.seeOn === on) return; FX.seeOn = on;
+  for (const m of FX.seeMats) { m.defines = m.defines || {}; if (on) m.defines.FX_SEE = ''; else delete m.defines.FX_SEE; m.needsUpdate = true; }
 }
 // todo lo que recibe luz debajo de `root` (los materiales compartidos, una vez)
 function fxAll(root) { root.traverse((o) => { if (o.isMesh && o.material) for (const m of [].concat(o.material)) fxPatch(m); }); }
