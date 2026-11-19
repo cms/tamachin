@@ -109,6 +109,7 @@ Hay quince grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `contro
 | Interactuar / truco | E | Botón de acción |
 | Personalizar | C | Botón Personalizar |
 | Diario (necesidades y encargos) | J, botón Diario o clic en los medidores | Botón del libro o tocar los medidores |
+| Ver los controles otra vez (la ayuda) | H | En el diario, «Ver los controles» |
 | Girar la cámara | Arrastrar con el mouse de lado, o Z y X | Arrastrar con un dedo (o con dos) de lado |
 | Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
 | Zoom | Rueda del mouse o botón Acercar | Pellizcar (en pantallas táctiles no aparece el botón) |

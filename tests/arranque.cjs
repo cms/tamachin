@@ -17,6 +17,17 @@ module.exports = {
       T.check('Escape lo cierra', await E(() => document.querySelector('#diary').hidden));
       await page.screenshot({ path: T.out('escritorio.jpg'), type: 'jpeg', quality: 70 });
       T.check('sin ?stats no hay medidor de rendimiento', await E(() => !document.querySelector('#stats')));
+      // la ayuda de los controles: sale sola una vez; después, con H o desde el diario, y vista así no se va sola al caminar
+      const help = () => E(() => !document.querySelector('#help').hidden);
+      await page.click('#helpOk'); await sleep(150); const closed = !(await help());
+      await page.keyboard.press('KeyH'); await sleep(150); const byKey = await help();
+      await E(() => { const K = window.__tamachin; window.dispatchEvent(new KeyboardEvent('keydown', { code: 'KeyW' })); K.advance(5); window.dispatchEvent(new KeyboardEvent('keyup', { code: 'KeyW' })); });
+      const stays = await help();
+      await page.keyboard.press('KeyH'); await sleep(150); const offAgain = !(await help());
+      await page.keyboard.press('KeyJ'); await sleep(250); await page.click('#dHelp'); await sleep(250);
+      const fromDiary = await E(() => ({ help: !document.querySelector('#help').hidden, diary: !document.querySelector('#diary').hidden }));
+      T.check('la ayuda se vuelve a ver: con H (y no se va sola al caminar), y con «Ver los controles» del diario', closed && byKey && stays && offAgain && fromDiary.help && !fromDiary.diary,
+        JSON.stringify({ closed, byKey, stays, offAgain, fromDiary }));
       await ctx.close();
     }
     {

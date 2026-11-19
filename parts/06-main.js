@@ -232,7 +232,7 @@ function openFridge() {
       if (t >= 1.4 && keep) { const k = Math.min(1, (t - 1.4) / 0.5); _ev.set(P.pos.x, P.pos.y + (P.T.def.H + 0.35) * P.T.scale, P.pos.z); food.position.lerp(_ev, k); }
       if (once(s, 'close', keep ? 1.9 : 2.05)) fr.target = 0;
     },
-    end() { if (keep) P.carry = { kind, mesh: food }; },
+    end() { if (keep) { P.carry = { kind, mesh: food }; toast('Llévale la gelatina a Nube, en la manzana al este de tu casa: platica con ella.', 5); } },   // la lleva arriba de la cabeza
   });
 }
 
@@ -631,7 +631,7 @@ window.addEventListener('keydown', (e) => {
   if (e.repeat) return;
   keys[c] = true; unlockAudio();
   if (tg === 'BUTTON' && (c === 'Space' || c === 'Enter')) return;
-  if (c === 'Space') jump(); else if (c === 'KeyE' || c === 'Enter') doAction(); else if (c === 'KeyC') togglePanel(); else if (c === 'KeyJ') toggleDiary();
+  if (c === 'Space') jump(); else if (c === 'KeyE' || c === 'Enter') doAction(); else if (c === 'KeyC') togglePanel(); else if (c === 'KeyJ') toggleDiary(); else if (c === 'KeyH') showHelp();
   else if (c === 'Escape') { if (!diaryEl.hidden) toggleDiary(false); else if (ui.closeup) togglePanel(false); }
 });
 // en macOS no llega keyup de las teclas soltadas mientras Cmd está abajo: al soltar Cmd se liberan todas
@@ -884,8 +884,13 @@ function updateMusic(dt) {
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
-function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }   // vista una vez, no vuelve a salir
+// La ayuda de los controles sale sola la primera vez y se va al cerrarla o al caminar un poco (helpAuto); después no vuelve sola, pero se
+// puede ver otra vez con la tecla H o con «Ver los controles» del diario. Vista así, se queda hasta cerrarla (Entendido o H otra vez).
+let helpAuto = true;
+function hideHelp() { if (!helpEl.hidden) { helpEl.hidden = true; save(); } }
+function showHelp(on) { if (on === undefined) on = helpEl.hidden; if (on) toggleDiary(false); helpAuto = false; if (on) helpEl.hidden = false; else hideHelp(); }
 $('#helpOk').addEventListener('click', hideHelp);
+$('#dHelp').addEventListener('click', () => showHelp(true));
 
 // ───────────────────────── actualización por cuadro ─────────────────────────
 // pos.y todavía es la altura del cuadro anterior: lo bajo que ya libró no lo empuja (pasa por encima o está parado ahí)
@@ -1314,7 +1319,7 @@ function updateHud(dt) {
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = world.zone(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
-  if (!helpEl.hidden && P.moved > 14) hideHelp();
+  if (helpAuto && !helpEl.hidden && P.moved > 14) hideHelp();       // solo la primera vez
   if (homeArmed && clock > homeArmed) { homeArmed = 0; bHome.textContent = 'Volver al inicio'; }   // se pasó el segundo toque
 }
 
