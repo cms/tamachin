@@ -49,11 +49,22 @@ function roadAt(R, d, o) {
 }
 // la ciudad termina en z −62; la boca sur está en z −280 y la carretera sigue 10 m adentro (ahí se pierden los autos)
 const ROAD_FACE = -280, ROAD = roadPath([[-24, -62], [-24, -76], [-31, -92], [-36, -106], [-36, -120], [-30, -136], [-24, -152], [-24, -170], [-24, ROAD_FACE - 10]]);
-const ROAD_N_FACE = { x: 34, z: -1262 }, ROAD_N = roadPath([[34, -1252], [34, -1266], [30, -1274], [20, -1280], [9, -1281]]);
-// qué tan lejos está (x, z) del centro de la carretera (de cualquiera de las dos); Infinity si está a más de `d`
+const ROAD_N_FACE = { x: 34, z: -1262 }, ROAD_N = roadPath([[34, -1252], [34, -1268]]);
+// Las terminales del autobús (04-life.js): una glorieta en el prado, al oeste de la salida de la ciudad, y otra en la explanada al sur de
+// Valle Alegre. Se le da la vuelta al revés de las manecillas (la isla a la izquierda) y la parada queda afuera, a la derecha, donde el
+// autobús va hacia el sur. Cada una empieza y termina en un carril de su carretera: así el autobús pasa de una a otra sin brincos.
+const lanePt = (R, d, side) => { const o = roadAt(R, d, {}); return [o.x + o.nx * 2 * side, o.z + o.nz * 2 * side]; };
+const ringPts = (cx, cz, r, a0, a1, n) => Array.from({ length: n + 1 }, (_, i) => { const a = lerp(a0, a1, i / n); return [cx + Math.cos(a) * r, cz + Math.sin(a) * r]; });
+const BUS_HALF = 3.2;                                                // las terminales son de un carril (6.4 m)
+const BUS_RING = { c: { x: -41, z: -75, r: 6.5 }, v: { x: 26, z: -1278, r: 6 } };
+const BUS_C = roadPath([lanePt(ROAD, 30, -1), lanePt(ROAD, 26, -1), [-35.5, -83.5], ...ringPts(BUS_RING.c.x, BUS_RING.c.z, BUS_RING.c.r, -Math.PI / 2, -1.5 * Math.PI, 12),
+  [-34.5, -68.6], [-28.5, -69.2], [-23.8, -70.8], lanePt(ROAD, 10, 1), lanePt(ROAD, 14, 1)]);
+const BUS_V = roadPath([lanePt(ROAD_N, ROAD_N.len - 4, 1), lanePt(ROAD_N, ROAD_N.len, 1), [34.5, -1273], ...ringPts(BUS_RING.v.x, BUS_RING.v.z, BUS_RING.v.r, 0, -1.5 * Math.PI, 14),
+  [29.8, -1271.2], lanePt(ROAD_N, ROAD_N.len, -1), lanePt(ROAD_N, ROAD_N.len - 4, -1)]);
+// qué tan lejos está (x, z) del centro de la carretera (de cualquiera, también de las terminales); Infinity si está a más de `d`
 function roadDist(x, z, d) {
   let best = Infinity;
-  for (const R of [ROAD, ROAD_N]) {
+  for (const R of [ROAD, ROAD_N, BUS_C, BUS_V]) {
     const b = R.box; if (x < b.x0 - d || x > b.x1 + d || z < b.z0 - d || z > b.z1 + d) continue;
     for (let i = 0; i < R.n - 1; i++) {
       const ax = R.x[i], az = R.z[i]; if (Math.abs(az - z) > d + 1.5 || Math.abs(ax - x) > d + 1.5) continue;

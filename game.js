@@ -1344,11 +1344,22 @@ function roadAt(R, d, o) {
 }
 // la ciudad termina en z −62; la boca sur está en z −280 y la carretera sigue 10 m adentro (ahí se pierden los autos)
 const ROAD_FACE = -280, ROAD = roadPath([[-24, -62], [-24, -76], [-31, -92], [-36, -106], [-36, -120], [-30, -136], [-24, -152], [-24, -170], [-24, ROAD_FACE - 10]]);
-const ROAD_N_FACE = { x: 34, z: -1262 }, ROAD_N = roadPath([[34, -1252], [34, -1266], [30, -1274], [20, -1280], [9, -1281]]);
-// qué tan lejos está (x, z) del centro de la carretera (de cualquiera de las dos); Infinity si está a más de `d`
+const ROAD_N_FACE = { x: 34, z: -1262 }, ROAD_N = roadPath([[34, -1252], [34, -1268]]);
+// Las terminales del autobús (04-life.js): una glorieta en el prado, al oeste de la salida de la ciudad, y otra en la explanada al sur de
+// Valle Alegre. Se le da la vuelta al revés de las manecillas (la isla a la izquierda) y la parada queda afuera, a la derecha, donde el
+// autobús va hacia el sur. Cada una empieza y termina en un carril de su carretera: así el autobús pasa de una a otra sin brincos.
+const lanePt = (R, d, side) => { const o = roadAt(R, d, {}); return [o.x + o.nx * 2 * side, o.z + o.nz * 2 * side]; };
+const ringPts = (cx, cz, r, a0, a1, n) => Array.from({ length: n + 1 }, (_, i) => { const a = lerp(a0, a1, i / n); return [cx + Math.cos(a) * r, cz + Math.sin(a) * r]; });
+const BUS_HALF = 3.2;                                                // las terminales son de un carril (6.4 m)
+const BUS_RING = { c: { x: -41, z: -75, r: 6.5 }, v: { x: 26, z: -1278, r: 6 } };
+const BUS_C = roadPath([lanePt(ROAD, 30, -1), lanePt(ROAD, 26, -1), [-35.5, -83.5], ...ringPts(BUS_RING.c.x, BUS_RING.c.z, BUS_RING.c.r, -Math.PI / 2, -1.5 * Math.PI, 12),
+  [-34.5, -68.6], [-28.5, -69.2], [-23.8, -70.8], lanePt(ROAD, 10, 1), lanePt(ROAD, 14, 1)]);
+const BUS_V = roadPath([lanePt(ROAD_N, ROAD_N.len - 4, 1), lanePt(ROAD_N, ROAD_N.len, 1), [34.5, -1273], ...ringPts(BUS_RING.v.x, BUS_RING.v.z, BUS_RING.v.r, 0, -1.5 * Math.PI, 14),
+  [29.8, -1271.2], lanePt(ROAD_N, ROAD_N.len, -1), lanePt(ROAD_N, ROAD_N.len - 4, -1)]);
+// qué tan lejos está (x, z) del centro de la carretera (de cualquiera, también de las terminales); Infinity si está a más de `d`
 function roadDist(x, z, d) {
   let best = Infinity;
-  for (const R of [ROAD, ROAD_N]) {
+  for (const R of [ROAD, ROAD_N, BUS_C, BUS_V]) {
     const b = R.box; if (x < b.x0 - d || x > b.x1 + d || z < b.z0 - d || z > b.z1 + d) continue;
     for (let i = 0; i < R.n - 1; i++) {
       const ax = R.x[i], az = R.z[i]; if (Math.abs(az - z) > d + 1.5 || Math.abs(ax - x) > d + 1.5) continue;
@@ -2116,7 +2127,7 @@ for (const L of lanes) {
   if (L.axis === 'z' && L.road < 0) { L.ext = true; L.lo = -62 - ROAD.len; }
 }
 const cars = [], _la = { x: 0, z: 0, fx: 0, fz: 1, y: 0 };
-function placeCar(c) { c.L.at(c.s, _la); c.x = _la.x; c.z = _la.z; c.fx = _la.fx; c.fz = _la.fz; c.y = _la.y; }
+function placeCar(c) { _la.hidden = false; _la.leg = 0; c.L.at(c.s, _la); c.x = _la.x; c.z = _la.z; c.fx = _la.fx; c.fz = _la.fz; c.y = _la.y; c.hidden = _la.hidden; c.leg = _la.leg; }
 const PAINTS = ['#ff6b6b', '#5aa9ff', '#4fc3a1', '#ffffff', '#c58bff', '#ff9f6b', '#2f3a56', '#f78fb3'];
 function addCar(L, s, type, paint) {
   const mesh = new THREE.Mesh(carGeo(type, paint), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
@@ -2129,6 +2140,51 @@ lanes.forEach((L, i) => {
   const n = i % 3 === 0 ? 1 : 2;
   for (let k = 0; k < n; k++) addCar(L, -62 + k * 58 + rr(0, 26), (i === 2 || i === 5) && k === 0 ? 'bus' : (i === 0 || i === 7) ? 'taxi' : 'auto', (i === 0 || i === 7) ? '#ffcf33' : (i === 2 || i === 5) && k === 0 ? pick(['#ff8a5c', '#4fc3a1']) : pick(PAINTS));
 });
+// ───────────────────────── el autobús a Valle Alegre ─────────────────────────
+// Un auto más (está en `cars`: los demás lo ven y él los ve, frena por Tamachin y prende sus luces), pero su carril es una línea cerrada
+// (`BUS_LINE`): la terminal de la ciudad, la carretera al norte, el túnel (un tramo escondido), la terminal de Valle Alegre y de regreso.
+// En el túnel no se ve (`c.hidden`): si Tamachin va arriba, 06-main.js lo lleva por el tubo de verdad. Espera `BUS.dwell` s en cada
+// parada (`BUS_STOPS`); en las terminales va más despacio. No usa `rnd` (addCar sí): todo lo demás queda igual.
+const BUS = { dwell: 14, road: 9.5, slow: 4.5, hidden: 380 };
+const BUS_LINE = (() => {
+  const legs = [], add = (o) => { if (o.len == null) o.len = Math.abs(o.d1 - o.d0); o.s0 = legs.length ? legs[legs.length - 1].s0 + legs[legs.length - 1].len : 0; legs.push(o); };
+  add({ path: BUS_C, d0: 0, d1: BUS_C.len, side: 0, limit: BUS.slow, north: true });                       // 0: la terminal de la ciudad
+  add({ path: ROAD, d0: 14, d1: ROAD.len, side: 1, limit: BUS.road, north: true });                      // 1: la carretera, al norte
+  add({ hidden: 'norte', len: BUS.hidden, limit: BUS.road, north: true });                                // 2: el túnel
+  add({ path: ROAD_N, d0: 0, d1: ROAD_N.len, side: 1, limit: BUS.slow, north: true });                   // 3: de la boca norte
+  add({ path: BUS_V, d0: 0, d1: BUS_V.len, side: 0, limit: BUS.slow });                                  // 4: la terminal de Valle Alegre
+  add({ path: ROAD_N, d0: ROAD_N.len, d1: 0, side: -1, limit: BUS.slow });                               // 5: a la boca norte
+  add({ hidden: 'sur', len: BUS.hidden, limit: BUS.road });                                               // 6: el túnel, de regreso
+  add({ path: ROAD, d0: ROAD.len, d1: 30, side: -1, limit: BUS.road });                                  // 7: la carretera, al sur
+  const L = { legs, dir: 1, lo: 0, hi: legs[7].s0 + legs[7].len, stops: [], lightAxis: 'NS', bus: true, _o: {} };
+  L.leg = (s) => { s = ((s % L.hi) + L.hi) % L.hi; let i = legs.length - 1; while (i > 0 && legs[i].s0 > s) i--; return legs[i]; };
+  L.at = function (s, o) {
+    s = ((s % L.hi) + L.hi) % L.hi; const g = L.leg(s), u = s - g.s0; o.leg = legs.indexOf(g); o.hidden = !!g.hidden;
+    if (g.hidden) { const R = g.hidden === 'norte' ? ROAD : ROAD_N, d = g.hidden === 'norte' ? ROAD.len : 0; roadAt(R, d, this._o); o.x = this._o.x; o.z = this._o.z; o.fx = 0; o.fz = g.north ? -1 : 1; o.y = 0; return o; }
+    const back = g.d1 < g.d0, d = back ? g.d0 - u : g.d0 + u, q = roadAt(g.path, d, this._o), k = back ? -1 : 1;
+    o.x = q.x + q.nx * 2 * g.side; o.z = q.z + q.nz * 2 * g.side; o.fx = q.tx * k; o.fz = q.tz * k;
+    o.y = (g.path === ROAD && d > ROAD.len - 10) || (g.path === ROAD_N && d < 10) ? 0 : Math.max(0, groundY(o.x, o.z));   // dentro de una boca, a nivel
+    return o;
+  };
+  return L;
+})();
+// las paradas: donde el autobús se detiene (s), dónde espera Tamachin (at, afuera, a la derecha del autobús) y hacia dónde mira al bajarse
+const BUS_STOPS = [['ciudad', BUS_C, 0, BUS_RING.c, '¡Llegamos a la ciudad!'], ['valle', BUS_V, 4, BUS_RING.v, '¡Llegamos a Valle Alegre!']].map(([key, R, leg, ring, line]) => {
+  let best = Infinity, bd = 0; for (let i = 0; i < R.n; i++) { const q = Math.hypot(R.x[i] - (ring.x - ring.r), R.z[i] - ring.z); if (q < best) { best = q; bd = i; } }   // en el lado oeste de su glorieta
+  const o = roadAt(R, bd, {}), out = BUS_HALF + 1.3;
+  return { key, s: BUS_LINE.legs[leg].s0 + bd, x: o.x, z: o.z, at: { x: o.x + o.nx * out, z: o.z + o.nz * out }, heading: Math.atan2(o.nx, o.nz), line };
+});
+const bus = (() => {
+  const mesh = new THREE.Mesh(carGeo('bus', '#4f78d6'), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+  const c = { L: BUS_LINE, s: BUS_STOPS[0].s - 40, v: 0, vmax: BUS.road, half: 4.05, hw: 1.2, h: 2.8, mesh, pause: 0, honkT: 0, stuck: 0, x: 0, z: 0, y: 0, fx: 0, fz: 1, line: true, halt: null, done: null };
+  c.bubblePos = (v) => v.set(c.x, c.y + c.h + 0.5, c.z);
+  c.signs = ['Valle Alegre', 'Ciudad'].map((t) => {                 // el letrero de enfrente dice a dónde va
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.36, 0.28), new THREE.MeshBasicMaterial({ map: canvasTex(256, 52, (g, W, H) => {
+      g.fillStyle = '#1d1a14'; g.fillRect(0, 0, W, H); g.fillStyle = '#ffb83d'; g.font = '900 34px Nunito, "Trebuchet MS", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, W / 2, H / 2 + 2); }) }));
+    m.position.set(0, 2.62, 4.03); mesh.add(m); return m;
+  });
+  cars.push(c); return c;
+})();
 // Luces de los autos: de noche (y con lluvia, como las ventanas: day.lamps) se prenden los faros y las calaveras, y los faros alumbran el
 // piso de enfrente. Sin luces de verdad: las mismas bolitas del auto otra vez, un poco más grandes y de luz propia (nightMat), y una mancha
 // que suma luz en el piso. Un InstancedMesh para las de los autos, otro para las del autobús y otro para las manchas; siguen a cada auto
@@ -2151,9 +2207,9 @@ const _clm = new THREE.Matrix4(), _clq = new THREE.Quaternion(), _clv = new THRE
 function updateCarLights() {
   if (day.lamps < 0.01) return;                                     // apagadas: nightMat ni las dibuja
   cars.forEach((c, i) => {
-    const ry = c.mesh.rotation.y, fx = Math.sin(ry), fz = Math.cos(ry); _clq.setFromAxisAngle(_clUp, ry);
-    c.lm.setMatrixAt(c.li, _clm.compose(c.mesh.position, _clq, _cls.set(1, 1, 1)));
-    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), c.y + 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6, 1, 6.5)));   // 6.5 m enfrente
+    const ry = c.mesh.rotation.y, fx = Math.sin(ry), fz = Math.cos(ry), k = c.hidden ? 0 : 1; _clq.setFromAxisAngle(_clUp, ry);   // en el túnel, apagadas
+    c.lm.setMatrixAt(c.li, _clm.compose(c.mesh.position, _clq, _cls.set(k, k, k)));
+    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), c.y + 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6 * k, 1, 6.5 * k)));   // 6.5 m enfrente
   });
   for (const k in carLights) carLights[k].instanceMatrix.needsUpdate = true;
 }
@@ -2176,7 +2232,7 @@ function updateCars(dt, t) {
       const s = lightState(st.I, L.lightAxis, t); if (s === 'r' || (s === 'y' && d > 2.5)) gap = Math.min(gap, d);
     }
     for (const o of cars) {
-      if (o === c) continue;
+      if (o === c || o.hidden || c.hidden) continue;                 // en el túnel (el autobús) no estorba ni lo estorban
       const dx = o.x - c.x, dz = o.z - c.z, fwd = dx * fx + dz * fz; if (fwd <= 0 || fwd > 30) continue;
       const lat = Math.abs(dx * fz - dz * fx), same = Math.abs(fx * o.fx + fz * o.fz) > 0.7;   // en la misma dirección o en la contraria
       if (lat < c.hw + (same ? o.hw : o.half) + 0.25) {
@@ -2185,11 +2241,24 @@ function updateCars(dt, t) {
       }
     }
     let pg = 999;                                                    // qué tan lejos va Tamachin delante, en su carril
-    if (P.state !== 'fly' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera
+    if (!c.hidden && P.state !== 'fly' && P.state !== 'ride' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera (arriba del autobús, no)
       const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = dx * fx + dz * fz, lat = Math.abs(dx * fz - dz * fx);
       if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < c.y + 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
     }
     let target = c.vmax; if (c.pause > 0) { c.pause -= dt; target = 0; }
+    if (L.bus) {                                                     // el autobús: más despacio en las terminales, sus paradas como un alto
+      const g = L.leg(c.s); target = Math.min(target, g.limit);
+      for (const h of BUS_STOPS) {
+        let d = h.s - c.s; if (d < -1) d += L.hi;
+        if (c.done === h) { if (d > 60) c.done = null; continue; }    // ya se paró ahí: hasta la siguiente vuelta
+        if (d < 40) gap = Math.min(gap, d);
+        if (d < 0.4 && c.v < 0.6) { c.pause = BUS.dwell; c.halt = h; c.done = h; if (c.onHalt) c.onHalt(h); }
+      }
+      if (c.pause <= 0) c.halt = null;
+      if (c.hidden && g.s0 + g.len - c.s < 3) {                        // al salir del túnel cede el paso a quien salga justo ahí
+        const e = L.at(g.s0 + g.len + 0.1, {}); if (cars.some((o) => o !== c && !o.hidden && Math.hypot(o.x - e.x, o.z - e.z) < 14)) target = 0;
+      }
+    }
     if (gap < 999) target = Math.min(target, Math.sqrt(Math.max(0, 18 * gap)));
     c.v = c.v < target ? Math.min(target, c.v + 4.5 * dt) : Math.max(target, c.v - 13 * dt);
     // Tráfico amable: nunca lo atropella. Si Tamachin se le pone enfrente de golpe frena en seco (hasta 40 m/s²) y para antes de tocarlo
@@ -2204,6 +2273,7 @@ function updateCars(dt, t) {
     c.s += dir * c.v * dt; if (dir > 0 ? c.s > L.hi : c.s < L.lo) c.s -= dir * (L.hi - L.lo);
     placeCar(c);
     c.mesh.position.set(c.x, c.y + Math.sin(t * 9 + c.vmax * 7) * 0.012 * Math.min(1, c.v / 4), c.z); c.mesh.rotation.y = Math.atan2(c.fx, c.fz);
+    c.mesh.visible = !c.hidden; if (c.signs) { const n = !!L.legs[c.leg].north; c.signs[0].visible = n; c.signs[1].visible = !n; }
     c.honkT -= dt;
     if (honk && c.v < 3.5 && c.honkT <= 0) { c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Muévete, porfa!']), 1.4); SFX.honk(); }
   }
@@ -2860,18 +2930,42 @@ const roadTex = canvasTex(128, 128, (g, W, H) => {
 });
 roadTex.wrapT = THREE.RepeatWrapping;
 const roadMat = new THREE.MeshLambertMaterial(decal({ map: roadTex }));
-function roadRibbon(R, d0, d1) {                                   // tres filas, como el sendero: sigue al suelo de orilla a orilla
+function roadRibbon(R, d0, d1, half, mat) {                       // tres filas, como el sendero: sigue al suelo de orilla a orilla
   const pos = [], uv = [], idx = [], o = {}; let i = 0;
   for (let d = d0; ; d = Math.min(d1, d + 1)) {
     roadAt(R, d, o);
-    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * ROAD_HALF * sd, z = o.z + o.nz * ROAD_HALF * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(0.5 - sd * 0.5, d / 3.2); }
+    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * half * sd, z = o.z + o.nz * half * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(0.5 - sd * 0.5, d / 3.2); }
     if (i) { const q = i * 3; idx.push(q - 3, q, q - 2, q - 2, q, q + 1, q - 2, q + 1, q - 1, q - 1, q + 1, q + 2); }
     i++; if (d >= d1) break;
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, roadMat); m.receiveShadow = true; scene.add(m); return m;
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m); return m;
 }
-roadRibbon(ROAD, 0, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);   // desde la orilla de la ciudad: tapa la franja del seto
+roadRibbon(ROAD, 0, ROAD.len - 10, ROAD_HALF, roadMat); roadRibbon(ROAD_N, 10, ROAD_N.len, ROAD_HALF, roadMat);   // desde la orilla de la ciudad: tapa la franja del seto
+// las terminales del autobús (BUS_C, BUS_V; 04-life.js): un carril con orillas, un poco abajo de la carretera donde se juntan
+const busTex = canvasTex(64, 64, (g, W, H) => { const R = mulberry(3132); g.fillStyle = '#4b4e5a'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 70; i++) { g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; g.fillRect(R() * W, R() * H, 1 + R() * 2, 1 + R() * 2); }
+  const e = Math.max(2, Math.round(W * 0.25 / (2 * BUS_HALF))); g.fillStyle = '#f4f1e8'; g.fillRect(0, 0, e, H); g.fillRect(W - e, 0, e, H); });
+busTex.wrapT = THREE.RepeatWrapping;
+const busMat = new THREE.MeshLambertMaterial({ map: busTex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+roadRibbon(BUS_C, 0, BUS_C.len, BUS_HALF, busMat); roadRibbon(BUS_V, 0, BUS_V.len, BUS_HALF, busMat);
+// las paradas: un techito con su banca, la placa a dónde va, y el piso; el techo va aparte para quitarlo cuando Tamachin está abajo (06-main.js)
+for (const r of [BUS_RING.c, BUS_RING.v]) {                       // en cada glorieta, un farol en la isla; ahí el autobús no le pita a nadie
+  northB.merge(PF_LAMP, r.x, 0, r.z, 0); solidCircle(r.x, r.z, 0.18); lampAt(r.x, r.z, 0);
+  CALM.push({ x0: r.x - r.r - 8, x1: r.x + r.r + 4, z0: r.z - r.r - 4, z1: r.z + r.r + 4 });
+}
+for (const st of BUS_STOPS) {
+  const B = new Batch(), ry = st.heading, c = Math.cos(ry), sn = Math.sin(ry), P = (u, v) => [st.at.x + sn * u + c * v, st.at.z + c * u - sn * v];   // u: hacia afuera, v: a lo largo
+  const [px, pz] = P(0.2, 0); B.box('#cfc9bd', px, 0.03, pz, 4.6, 0.06, 2.6, ry);   // en Batch.box, el ancho va a lo largo (v) y el fondo hacia afuera (u)
+  for (const v of [-1.7, 1.7]) { const [x, z] = P(0.9, v); B.cyl('#8a8f99', x, 1.2, z, 0.06, 0.06, 2.4, 8); solidCircle(x, z, 0.12); }
+  { const [x, z] = P(1.0, 0); B.box('#bfe6ff', x, 1.3, z, 3.4, 1.6, 0.08, ry).box('#8a8f99', x, 0.45, z, 3.4, 0.2, 0.1, ry); solidBox(...[P(0.92, -1.75), P(1.08, 1.75), P(0.92, 1.75), P(1.08, -1.75)].reduce((a, q) => [Math.min(a[0], q[0]), Math.max(a[1], q[0]), Math.min(a[2], q[1]), Math.max(a[3], q[1])], [Infinity, -Infinity, Infinity, -Infinity])); }
+  { const [x, z] = P(0.6, 0); B.box(WOOD, x, 0.46, z, 2.6, 0.08, 0.5, ry).box('#8a8f99', x, 0.22, z, 2.2, 0.44, 0.08, ry); }
+  const [rx, rz] = P(0.35, 0), roof = new Batch().box('#4f78d6', rx, 2.45, rz, 4.0, 0.12, 1.9, ry).mesh(); roof.castShadow = true; scene.add(roof); st.roof = roof; st.under = P(0.4, 0);
+  const [sx, sz] = P(0.2, 2.6); B.cyl('#8a8f99', sx, 1.4, sz, 0.06, 0.06, 2.8, 8); solidCircle(sx, sz, 0.12);   // la placa: a dónde va
+  const mat = new THREE.MeshLambertMaterial({ map: roadSignTex(st.key === 'ciudad' ? 'Autobús a Valle Alegre' : 'Autobús a la ciudad') });
+  for (const k of [0, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9 * 160 / 512), mat); m.position.set(sx + Math.cos(ry) * 0.03 * (k ? 1 : -1), 2.65, sz - Math.sin(ry) * 0.03 * (k ? 1 : -1)); m.rotation.y = ry + (k ? Math.PI / 2 : -Math.PI / 2); scene.add(m); }   // de los dos lados
+  const mesh = B.mesh(); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+}
 
 // ───────────────────────── montañas: árboles, rocas, cimas ─────────────────────────
 { const R = mulberry(9101), r2 = (a, b) => a + (b - a) * R();
@@ -3011,7 +3105,7 @@ terrainRibbon([[0, Z_TOWN_N + 1], [0, Z_TOWN_N - 8], [forestTrailX(Z_FOREST2 + 6
   addNPC({ rng: R, name: 'Miel', shape: 'huevo', color: '#ffd23f', mood: 'enamorado', loop: tl(0, 2), lines: ['El bosque del norte no tiene fin… y está lleno de fruta.', 'Hay naranjas, manzanas, granadas, uvas, arándanos, fresas y sandías.', 'Dicen que nadie ha llegado al final del bosque.'] });
   addNPC({ rng: R, name: 'Chabacano', shape: 'gatito', color: '#ffb347', mood: 'contento', loop: tl(2, 0), lines: ['Las granadas son mis favoritas. Búscalas en los árboles del bosque.', 'Las uvas cuelgan de unos techitos de madera.', '¡Miau! ¿Ya probaste la sandía?'] });
   addNPC({ rng: R, name: 'Nopal', shape: 'cubito', color: '#58b368', mood: 'enojado', loop: tl(0, 0), lines: ['¡Hmpf! Alguien se comió todas las fresas.', '¡Grr! Subir la montaña me cansa.', 'Las fresas crecen a ras del suelo, por si no lo sabías.'] });
-  addNPC({ rng: R, name: 'Brote', shape: 'hongo', color: '#ff8a5c', mood: 'contento', loop: tl(2, 2), lines: ['¡El kiosco de la plaza es mi lugar favorito!', 'Aquí no pasan autos: puedes caminar por donde quieras.'] });
+  addNPC({ rng: R, name: 'Brote', shape: 'hongo', color: '#ff8a5c', mood: 'contento', loop: tl(2, 2), lines: ['¡El kiosco de la plaza es mi lugar favorito!', 'Aquí no pasan autos: el autobús de la ciudad da la vuelta afuera, junto al portón.'] });
   addNPC({ rng: R, name: 'Copo', shape: 'fantasma', color: '#dff3ff', mood: 'dormido', home: { x: TOWN.hammock.x - 3.6, z: TOWN.hammock.z + 2.8, ry: 0.6 }, lines: ['Zzz… la hamaca es la más cómoda del valle…', 'Zzz… cinco minutitos…'] });
   addNPC({ rng: R, name: 'Lila', shape: 'estrella', color: '#c58bff', mood: 'contento', home: { x: TOWN.stalls[1] + 1.2, z: TOWN.market.z - 2.3, ry: 0 }, lines: ['¡Fruta fresca del bosque sin fin! Toma la que quieras.', 'Todo lo del mercado viene del bosque, al norte del pueblo.'] });
 }
@@ -3648,11 +3742,11 @@ function finishQuest(id, quiet) {   // quiet: ya sonó otra cosa (la fanfarria d
 }
 
 function save() {
-  const P = player, at = P.state === 'sleep' ? (BEDS[P.sleepSpot] || BEDS.cama).exit : P.pos;   // dormido: donde se levanta, no dentro de la cama
+  const P = player, R = P.state === 'ride' && P.ride, at = R ? R.to.at : P.state === 'sleep' ? (BEDS[P.sleepSpot] || BEDS.cama).exit : P.pos;   // dormido: donde se levanta, no dentro de la cama; en el autobús: como si ya hubiera llegado
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
-      mundo: world.name, x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +(world.homePitch != null ? world.homePitch : camView.pitchT).toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
+      mundo: R ? EARTH.name : world.name, x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +(world.homePitch != null ? world.homePitch : camView.pitchT).toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
   } catch (e) { /* sin almacenamiento */ }
 }
 
@@ -3690,6 +3784,7 @@ function perched(s) {
 function doAction() {
   const P = player;
   if (P.state === 'sleep') { wake(); return; }
+  if (P.state === 'ride') { if (!P.bubbleT || clock - P.bubbleT > 1.2) { P.bubbleT = clock; say(P, choose(['¡Hola, hola!', '¡Qué divertido!', '¡Vamos en autobús!', '¡Adiós, adiós!']), 1.6); } return; }   // desde el autobús
   if (P.state !== 'normal') return;
   if (!ui.closeup && curInteract) curInteract.act(); else playerTrick();
 }
@@ -4117,7 +4212,7 @@ const UMB_GEO = (() => {
 const UMB_MAT = new THREE.MeshStandardMaterial({ vertexColors: true, roughness: 0.6, side: THREE.DoubleSide });
 const umbrella = (() => { const m = new THREE.Mesh(UMB_GEO, UMB_MAT); m.visible = false; m.castShadow = true; scene.add(m); return { m, k: 0 }; })();
 function updateUmbrellas(dt) {
-  const P = player, U = umbrella, want = weather.here > 0.25 && !P.inHouse && P.state !== 'sleep' && !ui.closeup ? 1 : 0, sc = P.T.scale;
+  const P = player, U = umbrella, want = weather.here > 0.25 && !P.inHouse && P.state !== 'sleep' && P.state !== 'ride' && !ui.closeup ? 1 : 0, sc = P.T.scale;
   U.k = damp(U.k, want, 5, dt); U.m.visible = U.k > 0.02;
   if (U.m.visible) {
     U.m.position.set(P.pos.x + Math.cos(camView.yaw) * 0.18 * sc, P.pos.y + (P.T.def.H + 0.75) * sc * (1 - 0.6 * P.T.lieK), P.pos.z - Math.sin(camView.yaw) * 0.18 * sc);
@@ -4217,12 +4312,12 @@ canvas.addEventListener('pointerdown', (e) => {
 canvas.addEventListener('pointermove', (e) => {
   if (e.pointerType === 'touch') {
     const t = touches.get(e.pointerId); if (!t) return; t.x = e.clientX; t.y = e.clientY;
-    if (two.on) { if (touches.size >= 2) { const g = twoFingers(); camView.yawT += (g.mx - two.mx) * DRAG_K; tilt(g.my - two.my); two.mx = g.mx; two.my = g.my; ui.zoomTarget = clamp(two.z0 * two.d0 / g.d, 0.5, 1.6); } return; }
+    if (two.on) { if (touches.size >= 2) { const g = twoFingers(); camView.yawT += (g.mx - two.mx) * DRAG_K; camView.userT = clock; tilt(g.my - two.my); two.mx = g.mx; two.my = g.my; ui.zoomTarget = clamp(two.z0 * two.d0 / g.d, 0.5, 1.6); } return; }
     if (e.pointerId !== ptr.id) return;
   }
   if (ptr.down && e.pointerId === ptr.id) {
     if (!drag.on && Math.hypot(e.clientX - ptr.sx, e.clientY - ptr.sy) >= 12) { drag.on = true; drag.x = e.clientX; drag.y = e.clientY; }
-    if (drag.on) { camView.yawT += (e.clientX - drag.x) * DRAG_K; tilt(e.clientY - drag.y); drag.x = e.clientX; drag.y = e.clientY; setPtr(e, true); return; }
+    if (drag.on) { camView.yawT += (e.clientX - drag.x) * DRAG_K; camView.userT = clock; tilt(e.clientY - drag.y); drag.x = e.clientX; drag.y = e.clientY; setPtr(e, true); return; }
   }
   setPtr(e);
 });
@@ -4369,6 +4464,7 @@ function goHome() {
   const P = player; if (P.state === 'busy') return;
   if ((world !== EARTH || Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40) && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
+  if (P.state === 'ride') leaveBus(START);                          // del autobús, también a casa
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
   setWorld(EARTH.name, START);                                      // desde otro mundo (la luna), también de vuelta a la Tierra (y el conejo que lo sigue)
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
@@ -4445,7 +4541,7 @@ function resolvePlayer() {
 }
 function earthCollide(pos, r) {
   if (clock > 0) for (const c of cars) {                            // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
-    if (Math.abs(c.x - pos.x) > 7 || Math.abs(c.z - pos.z) > 7 || pos.y >= c.y + c.h * 0.8) continue;
+    if (c.hidden || Math.abs(c.x - pos.x) > 7 || Math.abs(c.z - pos.z) > 7 || pos.y >= c.y + c.h * 0.8) continue;
     if (Math.abs(c.fx) > 0.999 || Math.abs(c.fz) > 0.999) pushOutBox(pos, r * 0.8, carRect(c, 0));   // un choque solo lo empuja (antes: knock(c) si el auto iba a más de 2.2 m/s)
     else for (let k = -1; k <= 1; k++) { const o = k * (c.half - c.hw); pushOutCircle(pos, r * 0.8, c.x + c.fx * o, c.z + c.fz * o, c.hw); }   // en una curva de la carretera
   }
@@ -4474,7 +4570,7 @@ function startle(c, hard) {
   if (P.state !== 'normal' || ui.closeup || clock - traffic.at < 2.5) return;
   traffic.at = clock; traffic.startles++;
   P.T.doTrick('hop'); if (!P.tempMood) setTemp('asombrado', 1.3); say(P, choose(['¡Uy!', '¡Ay, un auto!', '¡Uf, qué susto!']), 1.4);
-  if (!traffic.hinted) { traffic.hinted = true; toast('¡Cuidado con los autos! Cruza por el paso de cebra cuando el monito del semáforo esté verde.', 5); }
+  if (!traffic.hinted && P.pos.z > -66) { traffic.hinted = true; toast('¡Cuidado con los autos! Cruza por el paso de cebra cuando el monito del semáforo esté verde.', 5); }   // en la ciudad, donde hay pasos de cebra
 }
 function updateCrossing() {
   const P = player, T = traffic, x = P.pos.x, z = P.pos.z;
@@ -4501,6 +4597,66 @@ function updateCrossing() {
 // queda en `foot.err`, sin apagar la música).
 const foot = { n: {}, total: 0, played: 0, lands: 0, last: null, at: -1, err: null };
 const inRect = (x, z, r) => x >= r[0] && x <= r[2] && z >= r[1] && z <= r[3];
+// ───────────────────────── en autobús ─────────────────────────
+// El autobús (`bus`, BUS_LINE y BUS_STOPS en 04-life.js) lo mueve updateCars. «Subir al autobús» sale en su parada solo con él parado ahí;
+// si no, dice en cuánto llega. Arriba (estado `ride`), Tamachin y el conejo que lo sigue no se ven y la cámara sigue al autobús (por
+// detrás, salvo que la acabes de girar). En la otra parada se baja solo. Por el túnel: el telón, el autobús recorre el tubo
+// (mundos/tunel.js) con él, otro telón, y sale por la otra boca; mientras tanto, en la Tierra nada se mueve, como con la luna.
+const RIDE_TUBE_V = 10;
+function boardBus(stop) {
+  const P = player; if (P.state !== 'normal' || bus.halt !== stop) return;
+  const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && !c.world && Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 16);
+  for (const c of pals) { c.riding = true; c.mesh.visible = false; }
+  P.ride = { to: BUS_STOPS.find((q) => q !== stop), pals, tele: null, tun: null };
+  P.state = 'ride'; P.vx = P.vz = P.vy = 0; P.T.group.visible = false; bus.pause = Math.max(bus.pause, 1.5);
+  say(bus, choose(['¡Súbete!', '¡Bienvenido a bordo!', '¡Vámonos!']), 1.8); SFX.nice();
+  if (!bus.hinted) { bus.hinted = true; toast('Vas en el autobús: en la otra parada te bajas solo.', 4); }
+}
+function leaveBus(at) {
+  const P = player, R = P.ride; if (!R) return;
+  if (R.tele) { telonEl.hidden = true; telonEl.style.opacity = '0'; }
+  if (R.tun) { EARTH.root.add(bus.mesh); placeCar(bus); }               // (con «Volver al inicio» a medio túnel) el autobús sigue en la Tierra
+  const to = at || R.to.at; P.ride = null; P.state = 'normal'; P.T.group.visible = true;
+  P.pos.set(to.x, world.ground(to.x, to.z), to.z); P.heading = R.to.heading; P.vx = P.vz = P.vy = 0; P.onGround = true; P.perch = null;
+  R.pals.forEach((c, i) => { const x = to.x + Math.cos(P.heading) * (1.2 + i * 0.8), z = to.z - Math.sin(P.heading) * (1.2 + i * 0.8); c.riding = false; c.mesh.visible = true; c.pos.set(x, Math.max(0, groundY(x, z)), z); c.tx = x; c.tz = z; c.hopP = 0; c.rest = 0.5; });
+}
+bus.onHalt = (h) => {
+  const P = player; if (P.state !== 'ride' || P.ride.to !== h) return;
+  leaveBus(); say(P, h.line, 2.6); P.T.doTrick('hop'); gain('diversion', 0.15, 'autobus', 20); save();
+};
+function busEta(st) { let d = st.s - bus.s; if (d < 0) d += BUS_LINE.hi; return d / 7.5 + Math.max(0, bus.pause); }   // segundos, más o menos
+const busEtaLine = (st) => { const t = busEta(st), m = Math.round(t / 60); return t < 25 ? '¡Ya casi llega el autobús!' : m <= 1 ? 'El autobús llega en un minuto.' : 'El autobús llega en ' + m + ' minutos.'; };
+for (const st of BUS_STOPS) interacts.push({ pos: st.at, range: 3.2, label: () => (bus.halt === st ? 'Subir al autobús' : 'Esperar el autobús'),
+  act: () => { if (bus.halt === st) boardBus(st); else say(player, busEtaLine(st), 2.8); } });
+function updateBusStops() { for (const st of BUS_STOPS) st.roof.visible = Math.hypot(player.pos.x - st.under[0], player.pos.z - st.under[1]) > 2.4; }   // abajo del techito, no lo tapa
+// arriba del autobús, cada cuadro (updatePlayer): Tamachin va donde va él; en las bocas, el telón y el tubo
+function updateRide(dt) {
+  const P = player, R = P.ride;
+  if (R.tele) {
+    const T = R.tele; T.t += dt; telonEl.hidden = false; telonEl.style.opacity = (T.t < 0.45 ? T.t / 0.45 : Math.max(0, 1 - (T.t - 0.6) / 0.5)).toFixed(3);
+    if (T.t >= 0.5 && !T.done) { T.done = true; T.swap(); }
+    if (T.t >= 1.15) { R.tele = null; telonEl.hidden = true; telonEl.style.opacity = '0'; }
+  }
+  if (world === EARTH && !R.tun) {
+    const L = BUS_LINE, g = L.leg(bus.s), next = L.legs[(L.legs.indexOf(g) + 1) % L.legs.length], hid = g.hidden ? g : next.hidden ? next : null;
+    if (hid && !R.tele && (g.hidden || next.s0 - bus.s < 4)) {     // llega a una boca: al túnel
+      const north = !!hid.north;
+      R.tele = { t: 0, swap: () => {
+        const d = north ? TUBE.door + 0.5 : TUBE.len - TUBE.door - 0.5, o = roadAt(TUBE_PATH, d, {}), h = Math.atan2(o.tx * (north ? 1 : -1), o.tz * (north ? 1 : -1));
+        R.tun = { d, north, hid }; setWorld('tunel', { x: o.x, z: o.z, yaw: h + Math.PI }); WORLDS.tunel.root.add(bus.mesh); bus.mesh.visible = true; bus.v = RIDE_TUBE_V;
+      } };
+    }
+  } else if (R.tun) {
+    const T = R.tun, k = T.north ? 1 : -1; T.d += k * RIDE_TUBE_V * dt;
+    const o = roadAt(TUBE_PATH, T.d, {}); bus.x = o.x + o.nx * 2 * k; bus.z = o.z + o.nz * 2 * k; bus.fx = o.tx * k; bus.fz = o.tz * k; bus.y = 0;
+    bus.mesh.position.set(bus.x, 0, bus.z); bus.mesh.rotation.y = Math.atan2(bus.fx, bus.fz);
+    if (!R.tele && (T.north ? T.d > TUBE.len - TUBE.door - 1 : T.d < TUBE.door + 1)) R.tele = { t: 0, swap: () => {   // la otra punta: a la otra boca
+      bus.s = T.hid.s0 + T.hid.len + 0.5; bus.v = 4; placeCar(bus); R.tun = null; EARTH.root.add(bus.mesh); bus.mesh.visible = true;
+      setWorld('tierra', { x: bus.x, z: bus.z, yaw: Math.atan2(bus.fx, bus.fz) + Math.PI });
+    } };
+  }
+  P.pos.set(bus.x, bus.y + 0.3, bus.z); P.heading = Math.atan2(bus.fx, bus.fz); P.vx = bus.fx * bus.v; P.vz = bus.fz * bus.v; P.vy = 0; P.onGround = true;
+}
 function stepSurface(x, z, perch) {   // qué pisa: con las mismas medidas con que se pinta cada suelo
   const P = player;
   if (perch) return perch.step || 'piedra';
@@ -4536,6 +4692,7 @@ function updatePlayer(dt) {
   const P = player, T = P.T, pos = P.pos;
   if (P.tempT > 0) { P.tempT -= dt; if (P.tempT <= 0) { const f = P.onTempEnd; P.tempMood = null; P.onTempEnd = null; applyMood(); if (f) f(); } }
   P.inv = Math.max(0, P.inv - dt);
+  if (P.state === 'ride') { updateRide(dt); P.speedN = 0; P.running = false; P.inHouse = false; return; }   // arriba del autobús
   let ix = 0, iz = 0, run = false;
   if (P.state === 'normal' && !ui.closeup) {
     ix = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) + joy.x;
@@ -4631,7 +4788,8 @@ function updateCamera(dt) {
   ui.zoom = damp(ui.zoom, ui.zoomTarget, 6, dt);
   // girar: el arrastre y las teclas Z y X mueven yawT; yaw lo sigue suave
   const V = camView, kz = (keys.KeyZ ? 1 : 0) - (keys.KeyX ? 1 : 0);
-  if (kz && P.state !== 'busy') V.yawT += kz * 1.9 * dt;
+  if (kz && P.state !== 'busy') { V.yawT += kz * 1.9 * dt; V.userT = clock; }
+  else if (P.state === 'ride' && clock - (V.userT || -9) > 2.5) V.yawT += angDiff(V.yawT, P.heading + Math.PI) * Math.min(1, dt * 1.6);   // en el autobús, detrás de él
   const yaw0 = V.yaw; V.yaw = camInit ? damp(V.yaw, V.yawT, 14, dt) : V.yawT; V.pitch = camInit ? damp(V.pitch, V.pitchT, 14, dt) : V.pitchT;
   if (V.yaw > Math.PI) { V.yaw -= TAU; V.yawT -= TAU; } else if (V.yaw < -Math.PI) { V.yaw += TAU; V.yawT += TAU; }
   const c = V.c = Math.cos(V.yaw), s = V.s = Math.sin(V.yaw), fixed = P.state === 'busy' && P.busy.cam;
@@ -4643,7 +4801,7 @@ function updateCamera(dt) {
   updateLead(dt);
   if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) { tx += 1.3 * c; tz -= 1.3 * s; } else { oy = 0.75; oz = 6.2; } }   // en teléfono también a la altura de sus ojos (desde arriba se veía con sueño)
   else {
-    const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z, p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
+    const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z * (P.state === 'ride' ? 1.45 : 1), p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
     oy = d * Math.sin(p); oz = d * Math.cos(p); ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
     const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = world.camX(P.pos.z);
     tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, world.camZ);   // sin mirar más allá del borde
@@ -4841,6 +4999,7 @@ function updateCampfire(dt) {
 function zoneName() {
   const P = player, x = P.pos.x, z = P.pos.z;
   if (P.inHouse) return 'Casa de Tamachin';
+  for (const st of BUS_STOPS) if (Math.hypot(x - st.at.x, z - st.at.z) < 6) return st.key === 'ciudad' ? 'Terminal del autobús' : 'Parada del autobús de Valle Alegre';
   if (z < -63 && z > Z_TOWN_S && nearRoad(x, z, ROAD_HALF + 1.5)) return onRoadBridge(x, z) ? 'Puente de la carretera' : 'Carretera a Valle Alegre';
   if (z < NORTH_Z) {
     if (z < Z_FOREST2) return 'Bosque sin fin · ' + Math.max(1, Math.round(Z_FOREST2 - z)) + ' m';
@@ -4864,7 +5023,7 @@ function updateHud(dt) {
     const fp = world === EARTH && forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
   }
   curInteract = best; updateClock();
-  const label = P.state === 'sleep' ? 'Despertar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
+  const label = P.state === 'sleep' ? 'Despertar' : P.state === 'ride' ? 'Saludar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = world.zone(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
@@ -4992,7 +5151,7 @@ function tapShootingStar(px, py) {
 }
 // el farolito flota a la derecha de Tamachin (en la pantalla), un poco hacia la cámara, para no taparle la cara
 function updateLantern(dt) {
-  const P = player, L = lantern, k = Math.max(smooth(0.55, 0.2, day.light), world.lantern || 0), sc = P.T.scale;   // en un lugar oscuro (el túnel), también de día
+  const P = player, L = lantern, k = P.state === 'ride' ? 0 : Math.max(smooth(0.55, 0.2, day.light), world.lantern || 0), sc = P.T.scale;   // en un lugar oscuro (el túnel), también de día; en el autobús, no
   lanternLight.intensity = 0.95 * k; L.g.visible = k > 0.02;
   if (!L.g.visible) { L.init = false; return; }
   const c = camView.c, s = camView.s; L.t += dt;
@@ -5105,13 +5264,13 @@ function updateBlobs() {
   const P = player, m = blobLive; let n = 0;
   const put = (x, y, z, w, d, ry) => { if (n < BLOB_MAX) { _im.compose(_ip.set(x, y + BLOB_UP, z), _iq.setFromAxisAngle(_yAxis, ry || 0), _is.set(w, 1, d)); m.setMatrixAt(n++, _im); } };
   const near = (x, z) => Math.abs(x - P.pos.x) < 70 && Math.abs(z - P.pos.z) < 70;
-  if (P.state !== 'sleep') {                                        // sobre el suelo o sobre lo que tiene debajo; más alto, más chica
+  if (P.state !== 'sleep' && P.state !== 'ride') {                  // sobre el suelo o sobre lo que tiene debajo; más alto, más chica
     const g = world.ground(P.pos.x, P.pos.z), pr = perchUnder(P.pos.x, P.pos.z, P.pos.y), base = pr ? Math.max(g, pr.top) : g, k = clamp(1 - (P.pos.y - base) / 4, 0.35, 1), s = 1.55 * P.T.scale * k;
     put(P.pos.x, base, P.pos.z, s, s);
   }
   if (world === EARTH) {
     for (const v of npcs) if (v.T.group.visible && near(v.pos.x, v.pos.z)) put(v.pos.x, v.pos.y, v.pos.z, 1.4 * v.T.scale, 1.4 * v.T.scale);
-    for (const c of cars) if (near(c.x, c.z)) put(c.x, c.y, c.z, c.hw * 2.3, c.half * 2.15, Math.atan2(c.fx, c.fz));
+    for (const c of cars) if (!c.hidden && near(c.x, c.z)) put(c.x, c.y, c.z, c.hw * 2.3, c.half * 2.15, Math.atan2(c.fx, c.fz));
   }
   for (const c of creatures) {
     const size = BLOB_SIZE[c.kind]; if (!size || (c.world || EARTH.name) !== world.name || !near(c.pos.x, c.pos.z) || (c.mesh && !c.mesh.visible)) continue;
@@ -5179,8 +5338,8 @@ const EARTH = {
   },
   mid(dt) {
     updateCrossing(); updateNPCs(dt);
-    for (const c of creatures) if (!c.world && (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90)) c.update(dt);   // el conejo de Tofu vive en la ciudad
-    updateFish(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt); updateButterflies(dt); updateScenery(dt);
+    for (const c of creatures) if (!c.world && !c.riding && (c.buddy || c.follow > 0 || Math.abs(c.pos.z - player.pos.z) < 90)) c.update(dt);   // el conejo de Tofu vive en la ciudad; uno en el autobús no
+    updateFish(dt); updateQuests(dt); updateBerries(dt); updateFridge(dt); updateNorth(dt); updateButterflies(dt); updateScenery(dt); updateBusStops();
     for (const k in WORLDS) if (WORLDS[k].onEarth) WORLDS[k].onEarth(dt);   // la entrada de cada mundo (el túnel de la luna)
   },
   post(dt) { updateFireflies(dt); updateShootingStar(dt); },
@@ -5218,7 +5377,7 @@ function setWorld(name, at) {
   const N = worldNamed(name); if (!N) return false;
   const P = player;
   if (N !== world) {
-    const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && (c.world || EARTH.name) === world.name
+    const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && !c.riding && (c.world || EARTH.name) === world.name
       && (world !== EARTH || Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 16)), from = world;   // 16 m: brincando se queda un poco atrás
     if (world.leave) world.leave();
     sweepEarth(); world.root.visible = false; N.root.visible = true; world = N;
@@ -5272,7 +5431,7 @@ function step(dt) {
   clock += dt; updateDay(dt); updateDayCount();
   const glow = 0.14 * (1 - day.light); if (Math.abs(glow - player.T.glowK) > 0.004) player.T.glow(glow);   // de noche brilla un poco (además del farolito)
   world.pre(dt); updatePlayer(dt); world.mid(dt);
-  if (world !== EARTH) for (const c of creatures) if (c.world === world.name) c.update(dt);   // quien vino con él (un conejo)
+  if (world !== EARTH) for (const c of creatures) if (c.world === world.name && !c.riding) c.update(dt);   // quien vino con él (un conejo)
   updateNeeds(dt); updateBlobs(); updateFx(dt);
   updateCamera(dt); updateLantern(dt); world.post(dt); updateParticles(dt); updateHud(dt); updateBubbles(VW, VH);
   try { updateMusic(dt); } catch (e) { musErr = e; if (mus) try { const t = snd.ctx.currentTime; mus.stop(t); mus.amb.out.gain.setTargetAtTime(0, t, 0.1); } catch (_) { /* nada */ } }

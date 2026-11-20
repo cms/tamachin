@@ -9,7 +9,7 @@ const VIEWS = [0, 45, 90, 135, 180, 270].map((d) => [d, 34.2]).concat([[0, 15], 
 module.exports = {
   titulo: 'edificios, casa y árboles se apartan desde cualquier ángulo',
   async run(T) {
-    const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house, creatures, trees, renderer, FX' });
+    const { ctx, page, errors, E } = await openGame(T, { expose: 'scene, camera, player, occluders, house, creatures, trees, renderer, FX, BUS_STOPS' });
     await E(BLOCKER);
     const adv = (sec) => E((sec) => window.__tamachin.advance(sec), sec);   // corre el juego `sec` segundos de golpe, sin esperar
     const setView = (deg, p) => E(([y, p]) => { const V = window.__tamachin.view; V.yaw = V.yawT = y; V.pitch = V.pitchT = p; }, [deg * Math.PI / 180, p * Math.PI / 180]);
@@ -20,6 +20,7 @@ module.exports = {
       out.push([-4, -11], [4, -11], [-4, -6], [4, -6], [0, -8.5], [0, -14.5], [-7.5, -8.5], [7.5, -8.5], [0, -2.5]);   // la casa
       out.push([3, -175], [-6, -190], [12, -232], [-20, -250], [30, -170], [-35, -186]);                            // el bosque
       out.push([-24, -58], [-22, -68], [-36, -112], [-24, -212], [-24, -276], [34, -1266]);                         // la carretera: la salida, el molino, el puente y las bocas
+      for (const st of window.__dbg.BUS_STOPS) out.push([st.at.x, st.at.z], [st.under[0], st.under[1]]);              // las paradas del autobús: junto y abajo del techito
       return out;
     });
     for (const [deg, p] of VIEWS) {

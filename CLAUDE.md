@@ -199,6 +199,43 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - **Tráfico amable:** frenan ante Tamachin también en la carretera, y en la boca está `CALM`.
   - **Animales:** los autos no frenan por animales; los conejos y el venado de junto escogen sus paseos fuera del asfalto.
 
+## El autobús a Valle Alegre (`04-life.js`; subir, ir arriba y bajarse en `06-main.js`)
+
+- **La línea** (`BUS_LINE`) es una ruta cerrada de 8 tramos (`legs`):
+  1. la terminal de la ciudad (`BUS_C`);
+  2. la carretera al norte;
+  3. el túnel (escondido);
+  4. la boca norte (`ROAD_N`);
+  5. la terminal de Valle Alegre (`BUS_V`);
+  6. la boca norte, de regreso;
+  7. el túnel, de regreso;
+  8. la carretera al sur.
+
+  La vuelta dura unos 3 minutos.
+- **Las terminales** son glorietas fuera de la ciudad y del pueblo (`BUS_RING`, en `03-world.js` con la carretera), y se recorren al revés de las manecillas.
+  - Empiezan y terminan en un carril de su carretera, así el autobús pasa sin brincos.
+  - En la isla hay un farol, y alrededor `CALM`: ahí el autobús no le pita a nadie.
+  - Su asfalto (`busMat`, un carril) va un poco abajo de la carretera donde se juntan.
+- **El autobús** (`bus`) es un auto más en `cars`, agregado antes de `carLights` para que tenga luces.
+  - No usa `rnd`.
+  - En las terminales va a `BUS.slow` y en la carretera a `BUS.road`.
+  - Sus paradas (`BUS_STOPS`) son como un alto: se detiene `BUS.dwell` s (`halt`, `done`) y avisa con `onHalt`.
+  - En el túnel está escondido (`c.hidden`): no se dibuja, no estorba ni lo estorban, y sus luces y su sombra se apagan. Al salir de la boca sur cede el paso a quien salga ahí.
+  - El letrero de enfrente dice a dónde va (los tramos `north`).
+- **Las paradas** (`05-norte.js`) tienen techito, banca y su placa por los dos lados.
+  - El techo va aparte y se quita con Tamachin abajo (`updateBusStops`).
+  - Arriba dice «Terminal del autobús» o «Parada del autobús de Valle Alegre».
+  - «Subir al autobús» sale solo con él parado ahí; si no, «Esperar el autobús» y Tamachin dice en cuánto llega (`busEta`).
+- **Arriba** (estado `ride`, `P.ride`; `boardBus`, `updateRide`, `leaveBus`):
+  - Tamachin y el conejo que lo sigue (`c.riding`) no se ven, y Tamachin va donde va el autobús.
+  - La cámara va más lejos (×1.45) y se pone detrás del autobús, salvo 2.5 s después de girarla a mano (`camView.userT`).
+  - El botón de acción saluda.
+  - En la otra parada se baja solo.
+  - **Por el túnel:** el telón, y el autobús recorre el tubo de `mundos/tunel.js` (lo mueve `updateRide`, con su malla en la raíz del túnel). Al otro extremo, otro telón, y sale por la otra boca (`bus.s` al final del tramo escondido). Mientras, la Tierra no se mueve.
+  - **Guardar arriba** cuenta como si ya hubiera llegado a la otra parada.
+  - **«Volver al inicio»** lo baja (`leaveBus(START)`), también a medio túnel.
+- **La prueba** `autobus` revisa la vuelta, subirse, el túnel, bajarse con el conejo, que frene por Tamachin, guardar arriba y «Volver al inicio».
+
 ## La ayuda de los controles
 
 `#help` sale sola la primera vez y se va con «Entendido» o al caminar 14 m (`helpAuto`); queda guardado (`helpSeen`). Después se ve con la tecla H o con «Ver los controles» del diario (`showHelp`, que cierra el diario: con él abierto, el CSS la esconde), y vista así se queda hasta cerrarla. En la compu muestra las teclas (`.k`) y en pantallas táctiles la palanca y los toques (`.t`).
@@ -271,6 +308,7 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
   - **Las fuentes en `performance`.** Que con `crossorigin` aparezcan ahí los archivos de fuente. Si Safari no los anota, las fuentes se guardan desde la segunda visita, no desde la primera.
 - La ventana en los árboles en un teléfono: mientras está prendida (una planta lo tapa), el `discard` le quita a la GPU del iPhone una optimización en todo lo que dibujan árboles y arbustos; cuánto cuesta ahí, sobre todo en el bosque, donde casi siempre hay uno delante.
 - La luz de más en un teléfono: cuánto cuestan el viento y las nubes en el shader (una lectura de textura por pixel en todo lo que recibe luz) y las sombras de contacto (hasta 90 que se mueven, más las fijas); cómo se ven las sombras de las nubes al aire libre.
+- El autobús en un teléfono: si la cámara que lo sigue (más lejos, detrás de él) se ve bien en las curvas de las terminales y en el túnel.
 - La carretera y el túnel en un teléfono: cuánto cuesta el tubo (no echa sombra, pero sí la recibe) y si la luz tibia y la cámara baja, debajo de la bóveda, se ven bien.
 - La luna en un teléfono: cuánto cuesta (la malla del suelo, de unos 33 000 triángulos, también echa sombra), cómo se ven el cielo negro y la Tierra, y si con la cámara baja (16°) se juega bien. Que en iPhone empujar contra la boca del túnel con la palanca se sienta natural.
 - La versión nueva en un iPhone de verdad:

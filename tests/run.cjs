@@ -9,7 +9,7 @@ const fs = require('fs');
 const path = require('path');
 const { OUT, serve, launch } = require('./lib.cjs');
 
-const SUITES = ['arranque', 'mundo', 'guardado', 'cuidados', 'vista', 'controles', 'saltos', 'musica', 'dia', 'clima', 'pasos', 'trafico', 'pwa', 'luna', 'carretera', 'caminata'];
+const SUITES = ['arranque', 'mundo', 'guardado', 'cuidados', 'vista', 'controles', 'saltos', 'musica', 'dia', 'clima', 'pasos', 'trafico', 'pwa', 'luna', 'carretera', 'autobus', 'caminata'];
 
 (async () => {
   const args = process.argv.slice(2), flags = new Set(args.filter((a) => a.startsWith('--'))), names = args.filter((a) => !a.startsWith('--'));

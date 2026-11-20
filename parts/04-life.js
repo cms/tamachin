@@ -41,7 +41,7 @@ for (const L of lanes) {
   if (L.axis === 'z' && L.road < 0) { L.ext = true; L.lo = -62 - ROAD.len; }
 }
 const cars = [], _la = { x: 0, z: 0, fx: 0, fz: 1, y: 0 };
-function placeCar(c) { c.L.at(c.s, _la); c.x = _la.x; c.z = _la.z; c.fx = _la.fx; c.fz = _la.fz; c.y = _la.y; }
+function placeCar(c) { _la.hidden = false; _la.leg = 0; c.L.at(c.s, _la); c.x = _la.x; c.z = _la.z; c.fx = _la.fx; c.fz = _la.fz; c.y = _la.y; c.hidden = _la.hidden; c.leg = _la.leg; }
 const PAINTS = ['#ff6b6b', '#5aa9ff', '#4fc3a1', '#ffffff', '#c58bff', '#ff9f6b', '#2f3a56', '#f78fb3'];
 function addCar(L, s, type, paint) {
   const mesh = new THREE.Mesh(carGeo(type, paint), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
@@ -54,6 +54,51 @@ lanes.forEach((L, i) => {
   const n = i % 3 === 0 ? 1 : 2;
   for (let k = 0; k < n; k++) addCar(L, -62 + k * 58 + rr(0, 26), (i === 2 || i === 5) && k === 0 ? 'bus' : (i === 0 || i === 7) ? 'taxi' : 'auto', (i === 0 || i === 7) ? '#ffcf33' : (i === 2 || i === 5) && k === 0 ? pick(['#ff8a5c', '#4fc3a1']) : pick(PAINTS));
 });
+// ───────────────────────── el autobús a Valle Alegre ─────────────────────────
+// Un auto más (está en `cars`: los demás lo ven y él los ve, frena por Tamachin y prende sus luces), pero su carril es una línea cerrada
+// (`BUS_LINE`): la terminal de la ciudad, la carretera al norte, el túnel (un tramo escondido), la terminal de Valle Alegre y de regreso.
+// En el túnel no se ve (`c.hidden`): si Tamachin va arriba, 06-main.js lo lleva por el tubo de verdad. Espera `BUS.dwell` s en cada
+// parada (`BUS_STOPS`); en las terminales va más despacio. No usa `rnd` (addCar sí): todo lo demás queda igual.
+const BUS = { dwell: 14, road: 9.5, slow: 4.5, hidden: 380 };
+const BUS_LINE = (() => {
+  const legs = [], add = (o) => { if (o.len == null) o.len = Math.abs(o.d1 - o.d0); o.s0 = legs.length ? legs[legs.length - 1].s0 + legs[legs.length - 1].len : 0; legs.push(o); };
+  add({ path: BUS_C, d0: 0, d1: BUS_C.len, side: 0, limit: BUS.slow, north: true });                       // 0: la terminal de la ciudad
+  add({ path: ROAD, d0: 14, d1: ROAD.len, side: 1, limit: BUS.road, north: true });                      // 1: la carretera, al norte
+  add({ hidden: 'norte', len: BUS.hidden, limit: BUS.road, north: true });                                // 2: el túnel
+  add({ path: ROAD_N, d0: 0, d1: ROAD_N.len, side: 1, limit: BUS.slow, north: true });                   // 3: de la boca norte
+  add({ path: BUS_V, d0: 0, d1: BUS_V.len, side: 0, limit: BUS.slow });                                  // 4: la terminal de Valle Alegre
+  add({ path: ROAD_N, d0: ROAD_N.len, d1: 0, side: -1, limit: BUS.slow });                               // 5: a la boca norte
+  add({ hidden: 'sur', len: BUS.hidden, limit: BUS.road });                                               // 6: el túnel, de regreso
+  add({ path: ROAD, d0: ROAD.len, d1: 30, side: -1, limit: BUS.road });                                  // 7: la carretera, al sur
+  const L = { legs, dir: 1, lo: 0, hi: legs[7].s0 + legs[7].len, stops: [], lightAxis: 'NS', bus: true, _o: {} };
+  L.leg = (s) => { s = ((s % L.hi) + L.hi) % L.hi; let i = legs.length - 1; while (i > 0 && legs[i].s0 > s) i--; return legs[i]; };
+  L.at = function (s, o) {
+    s = ((s % L.hi) + L.hi) % L.hi; const g = L.leg(s), u = s - g.s0; o.leg = legs.indexOf(g); o.hidden = !!g.hidden;
+    if (g.hidden) { const R = g.hidden === 'norte' ? ROAD : ROAD_N, d = g.hidden === 'norte' ? ROAD.len : 0; roadAt(R, d, this._o); o.x = this._o.x; o.z = this._o.z; o.fx = 0; o.fz = g.north ? -1 : 1; o.y = 0; return o; }
+    const back = g.d1 < g.d0, d = back ? g.d0 - u : g.d0 + u, q = roadAt(g.path, d, this._o), k = back ? -1 : 1;
+    o.x = q.x + q.nx * 2 * g.side; o.z = q.z + q.nz * 2 * g.side; o.fx = q.tx * k; o.fz = q.tz * k;
+    o.y = (g.path === ROAD && d > ROAD.len - 10) || (g.path === ROAD_N && d < 10) ? 0 : Math.max(0, groundY(o.x, o.z));   // dentro de una boca, a nivel
+    return o;
+  };
+  return L;
+})();
+// las paradas: donde el autobús se detiene (s), dónde espera Tamachin (at, afuera, a la derecha del autobús) y hacia dónde mira al bajarse
+const BUS_STOPS = [['ciudad', BUS_C, 0, BUS_RING.c, '¡Llegamos a la ciudad!'], ['valle', BUS_V, 4, BUS_RING.v, '¡Llegamos a Valle Alegre!']].map(([key, R, leg, ring, line]) => {
+  let best = Infinity, bd = 0; for (let i = 0; i < R.n; i++) { const q = Math.hypot(R.x[i] - (ring.x - ring.r), R.z[i] - ring.z); if (q < best) { best = q; bd = i; } }   // en el lado oeste de su glorieta
+  const o = roadAt(R, bd, {}), out = BUS_HALF + 1.3;
+  return { key, s: BUS_LINE.legs[leg].s0 + bd, x: o.x, z: o.z, at: { x: o.x + o.nx * out, z: o.z + o.nz * out }, heading: Math.atan2(o.nx, o.nz), line };
+});
+const bus = (() => {
+  const mesh = new THREE.Mesh(carGeo('bus', '#4f78d6'), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+  const c = { L: BUS_LINE, s: BUS_STOPS[0].s - 40, v: 0, vmax: BUS.road, half: 4.05, hw: 1.2, h: 2.8, mesh, pause: 0, honkT: 0, stuck: 0, x: 0, z: 0, y: 0, fx: 0, fz: 1, line: true, halt: null, done: null };
+  c.bubblePos = (v) => v.set(c.x, c.y + c.h + 0.5, c.z);
+  c.signs = ['Valle Alegre', 'Ciudad'].map((t) => {                 // el letrero de enfrente dice a dónde va
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.36, 0.28), new THREE.MeshBasicMaterial({ map: canvasTex(256, 52, (g, W, H) => {
+      g.fillStyle = '#1d1a14'; g.fillRect(0, 0, W, H); g.fillStyle = '#ffb83d'; g.font = '900 34px Nunito, "Trebuchet MS", Arial, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t, W / 2, H / 2 + 2); }) }));
+    m.position.set(0, 2.62, 4.03); mesh.add(m); return m;
+  });
+  cars.push(c); return c;
+})();
 // Luces de los autos: de noche (y con lluvia, como las ventanas: day.lamps) se prenden los faros y las calaveras, y los faros alumbran el
 // piso de enfrente. Sin luces de verdad: las mismas bolitas del auto otra vez, un poco más grandes y de luz propia (nightMat), y una mancha
 // que suma luz en el piso. Un InstancedMesh para las de los autos, otro para las del autobús y otro para las manchas; siguen a cada auto
@@ -76,9 +121,9 @@ const _clm = new THREE.Matrix4(), _clq = new THREE.Quaternion(), _clv = new THRE
 function updateCarLights() {
   if (day.lamps < 0.01) return;                                     // apagadas: nightMat ni las dibuja
   cars.forEach((c, i) => {
-    const ry = c.mesh.rotation.y, fx = Math.sin(ry), fz = Math.cos(ry); _clq.setFromAxisAngle(_clUp, ry);
-    c.lm.setMatrixAt(c.li, _clm.compose(c.mesh.position, _clq, _cls.set(1, 1, 1)));
-    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), c.y + 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6, 1, 6.5)));   // 6.5 m enfrente
+    const ry = c.mesh.rotation.y, fx = Math.sin(ry), fz = Math.cos(ry), k = c.hidden ? 0 : 1; _clq.setFromAxisAngle(_clUp, ry);   // en el túnel, apagadas
+    c.lm.setMatrixAt(c.li, _clm.compose(c.mesh.position, _clq, _cls.set(k, k, k)));
+    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), c.y + 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6 * k, 1, 6.5 * k)));   // 6.5 m enfrente
   });
   for (const k in carLights) carLights[k].instanceMatrix.needsUpdate = true;
 }
@@ -101,7 +146,7 @@ function updateCars(dt, t) {
       const s = lightState(st.I, L.lightAxis, t); if (s === 'r' || (s === 'y' && d > 2.5)) gap = Math.min(gap, d);
     }
     for (const o of cars) {
-      if (o === c) continue;
+      if (o === c || o.hidden || c.hidden) continue;                 // en el túnel (el autobús) no estorba ni lo estorban
       const dx = o.x - c.x, dz = o.z - c.z, fwd = dx * fx + dz * fz; if (fwd <= 0 || fwd > 30) continue;
       const lat = Math.abs(dx * fz - dz * fx), same = Math.abs(fx * o.fx + fz * o.fz) > 0.7;   // en la misma dirección o en la contraria
       if (lat < c.hw + (same ? o.hw : o.half) + 0.25) {
@@ -110,11 +155,24 @@ function updateCars(dt, t) {
       }
     }
     let pg = 999;                                                    // qué tan lejos va Tamachin delante, en su carril
-    if (P.state !== 'fly' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera
+    if (!c.hidden && P.state !== 'fly' && P.state !== 'ride' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera (arriba del autobús, no)
       const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = dx * fx + dz * fz, lat = Math.abs(dx * fz - dz * fx);
       if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < c.y + 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
     }
     let target = c.vmax; if (c.pause > 0) { c.pause -= dt; target = 0; }
+    if (L.bus) {                                                     // el autobús: más despacio en las terminales, sus paradas como un alto
+      const g = L.leg(c.s); target = Math.min(target, g.limit);
+      for (const h of BUS_STOPS) {
+        let d = h.s - c.s; if (d < -1) d += L.hi;
+        if (c.done === h) { if (d > 60) c.done = null; continue; }    // ya se paró ahí: hasta la siguiente vuelta
+        if (d < 40) gap = Math.min(gap, d);
+        if (d < 0.4 && c.v < 0.6) { c.pause = BUS.dwell; c.halt = h; c.done = h; if (c.onHalt) c.onHalt(h); }
+      }
+      if (c.pause <= 0) c.halt = null;
+      if (c.hidden && g.s0 + g.len - c.s < 3) {                        // al salir del túnel cede el paso a quien salga justo ahí
+        const e = L.at(g.s0 + g.len + 0.1, {}); if (cars.some((o) => o !== c && !o.hidden && Math.hypot(o.x - e.x, o.z - e.z) < 14)) target = 0;
+      }
+    }
     if (gap < 999) target = Math.min(target, Math.sqrt(Math.max(0, 18 * gap)));
     c.v = c.v < target ? Math.min(target, c.v + 4.5 * dt) : Math.max(target, c.v - 13 * dt);
     // Tráfico amable: nunca lo atropella. Si Tamachin se le pone enfrente de golpe frena en seco (hasta 40 m/s²) y para antes de tocarlo
@@ -129,6 +187,7 @@ function updateCars(dt, t) {
     c.s += dir * c.v * dt; if (dir > 0 ? c.s > L.hi : c.s < L.lo) c.s -= dir * (L.hi - L.lo);
     placeCar(c);
     c.mesh.position.set(c.x, c.y + Math.sin(t * 9 + c.vmax * 7) * 0.012 * Math.min(1, c.v / 4), c.z); c.mesh.rotation.y = Math.atan2(c.fx, c.fz);
+    c.mesh.visible = !c.hidden; if (c.signs) { const n = !!L.legs[c.leg].north; c.signs[0].visible = n; c.signs[1].visible = !n; }
     c.honkT -= dt;
     if (honk && c.v < 3.5 && c.honkT <= 0) { c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Muévete, porfa!']), 1.4); SFX.honk(); }
   }

@@ -91,7 +91,7 @@ module.exports = {
         const s0 = c.s; T.advance(0.25);
         if (c.s > s0 + 50) { wrapped = +c.z.toFixed(1); break; }
         minZ = Math.min(minZ, c.z); maxY = Math.max(maxY, c.y);
-        if (c.z < -66 && c.z > D.ROAD_FACE) off = Math.max(off, Math.abs(D.roadDist(c.x, c.z, 10) - 2));   // en su carril: a 2 m del centro
+        if (c.z < -66 && c.z > D.ROAD_FACE) { let q = 1e9; for (let i = 0; i < D.ROAD.n; i++) q = Math.min(q, Math.hypot(D.ROAD.x[i] - c.x, D.ROAD.z[i] - c.z)); off = Math.max(off, Math.abs(q - 2)); }   // en su carril: a 2 m del centro de la carretera (no de la terminal)
       }
       const taxi = D.cars.find((q) => q.L.ext && q.L.dir > 0); taxi.s = taxi.L.lo + 2; taxi.v = taxi.vmax; taxi.pause = 0; T.advance(0.1);
       const t0 = { z: +taxi.z.toFixed(1), fz: taxi.fz }; T.advance(6);

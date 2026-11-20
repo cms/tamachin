@@ -232,18 +232,42 @@ const roadTex = canvasTex(128, 128, (g, W, H) => {
 });
 roadTex.wrapT = THREE.RepeatWrapping;
 const roadMat = new THREE.MeshLambertMaterial(decal({ map: roadTex }));
-function roadRibbon(R, d0, d1) {                                   // tres filas, como el sendero: sigue al suelo de orilla a orilla
+function roadRibbon(R, d0, d1, half, mat) {                       // tres filas, como el sendero: sigue al suelo de orilla a orilla
   const pos = [], uv = [], idx = [], o = {}; let i = 0;
   for (let d = d0; ; d = Math.min(d1, d + 1)) {
     roadAt(R, d, o);
-    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * ROAD_HALF * sd, z = o.z + o.nz * ROAD_HALF * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(0.5 - sd * 0.5, d / 3.2); }
+    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * half * sd, z = o.z + o.nz * half * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(0.5 - sd * 0.5, d / 3.2); }
     if (i) { const q = i * 3; idx.push(q - 3, q, q - 2, q - 2, q, q + 1, q - 2, q + 1, q - 1, q - 1, q + 1, q + 2); }
     i++; if (d >= d1) break;
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
-  const m = new THREE.Mesh(g, roadMat); m.receiveShadow = true; scene.add(m); return m;
+  const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m); return m;
 }
-roadRibbon(ROAD, 0, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);   // desde la orilla de la ciudad: tapa la franja del seto
+roadRibbon(ROAD, 0, ROAD.len - 10, ROAD_HALF, roadMat); roadRibbon(ROAD_N, 10, ROAD_N.len, ROAD_HALF, roadMat);   // desde la orilla de la ciudad: tapa la franja del seto
+// las terminales del autobús (BUS_C, BUS_V; 04-life.js): un carril con orillas, un poco abajo de la carretera donde se juntan
+const busTex = canvasTex(64, 64, (g, W, H) => { const R = mulberry(3132); g.fillStyle = '#4b4e5a'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 70; i++) { g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; g.fillRect(R() * W, R() * H, 1 + R() * 2, 1 + R() * 2); }
+  const e = Math.max(2, Math.round(W * 0.25 / (2 * BUS_HALF))); g.fillStyle = '#f4f1e8'; g.fillRect(0, 0, e, H); g.fillRect(W - e, 0, e, H); });
+busTex.wrapT = THREE.RepeatWrapping;
+const busMat = new THREE.MeshLambertMaterial({ map: busTex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
+roadRibbon(BUS_C, 0, BUS_C.len, BUS_HALF, busMat); roadRibbon(BUS_V, 0, BUS_V.len, BUS_HALF, busMat);
+// las paradas: un techito con su banca, la placa a dónde va, y el piso; el techo va aparte para quitarlo cuando Tamachin está abajo (06-main.js)
+for (const r of [BUS_RING.c, BUS_RING.v]) {                       // en cada glorieta, un farol en la isla; ahí el autobús no le pita a nadie
+  northB.merge(PF_LAMP, r.x, 0, r.z, 0); solidCircle(r.x, r.z, 0.18); lampAt(r.x, r.z, 0);
+  CALM.push({ x0: r.x - r.r - 8, x1: r.x + r.r + 4, z0: r.z - r.r - 4, z1: r.z + r.r + 4 });
+}
+for (const st of BUS_STOPS) {
+  const B = new Batch(), ry = st.heading, c = Math.cos(ry), sn = Math.sin(ry), P = (u, v) => [st.at.x + sn * u + c * v, st.at.z + c * u - sn * v];   // u: hacia afuera, v: a lo largo
+  const [px, pz] = P(0.2, 0); B.box('#cfc9bd', px, 0.03, pz, 4.6, 0.06, 2.6, ry);   // en Batch.box, el ancho va a lo largo (v) y el fondo hacia afuera (u)
+  for (const v of [-1.7, 1.7]) { const [x, z] = P(0.9, v); B.cyl('#8a8f99', x, 1.2, z, 0.06, 0.06, 2.4, 8); solidCircle(x, z, 0.12); }
+  { const [x, z] = P(1.0, 0); B.box('#bfe6ff', x, 1.3, z, 3.4, 1.6, 0.08, ry).box('#8a8f99', x, 0.45, z, 3.4, 0.2, 0.1, ry); solidBox(...[P(0.92, -1.75), P(1.08, 1.75), P(0.92, 1.75), P(1.08, -1.75)].reduce((a, q) => [Math.min(a[0], q[0]), Math.max(a[1], q[0]), Math.min(a[2], q[1]), Math.max(a[3], q[1])], [Infinity, -Infinity, Infinity, -Infinity])); }
+  { const [x, z] = P(0.6, 0); B.box(WOOD, x, 0.46, z, 2.6, 0.08, 0.5, ry).box('#8a8f99', x, 0.22, z, 2.2, 0.44, 0.08, ry); }
+  const [rx, rz] = P(0.35, 0), roof = new Batch().box('#4f78d6', rx, 2.45, rz, 4.0, 0.12, 1.9, ry).mesh(); roof.castShadow = true; scene.add(roof); st.roof = roof; st.under = P(0.4, 0);
+  const [sx, sz] = P(0.2, 2.6); B.cyl('#8a8f99', sx, 1.4, sz, 0.06, 0.06, 2.8, 8); solidCircle(sx, sz, 0.12);   // la placa: a dónde va
+  const mat = new THREE.MeshLambertMaterial({ map: roadSignTex(st.key === 'ciudad' ? 'Autobús a Valle Alegre' : 'Autobús a la ciudad') });
+  for (const k of [0, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9 * 160 / 512), mat); m.position.set(sx + Math.cos(ry) * 0.03 * (k ? 1 : -1), 2.65, sz - Math.sin(ry) * 0.03 * (k ? 1 : -1)); m.rotation.y = ry + (k ? Math.PI / 2 : -Math.PI / 2); scene.add(m); }   // de los dos lados
+  const mesh = B.mesh(); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+}
 
 // ───────────────────────── montañas: árboles, rocas, cimas ─────────────────────────
 { const R = mulberry(9101), r2 = (a, b) => a + (b - a) * R();
@@ -383,7 +407,7 @@ terrainRibbon([[0, Z_TOWN_N + 1], [0, Z_TOWN_N - 8], [forestTrailX(Z_FOREST2 + 6
   addNPC({ rng: R, name: 'Miel', shape: 'huevo', color: '#ffd23f', mood: 'enamorado', loop: tl(0, 2), lines: ['El bosque del norte no tiene fin… y está lleno de fruta.', 'Hay naranjas, manzanas, granadas, uvas, arándanos, fresas y sandías.', 'Dicen que nadie ha llegado al final del bosque.'] });
   addNPC({ rng: R, name: 'Chabacano', shape: 'gatito', color: '#ffb347', mood: 'contento', loop: tl(2, 0), lines: ['Las granadas son mis favoritas. Búscalas en los árboles del bosque.', 'Las uvas cuelgan de unos techitos de madera.', '¡Miau! ¿Ya probaste la sandía?'] });
   addNPC({ rng: R, name: 'Nopal', shape: 'cubito', color: '#58b368', mood: 'enojado', loop: tl(0, 0), lines: ['¡Hmpf! Alguien se comió todas las fresas.', '¡Grr! Subir la montaña me cansa.', 'Las fresas crecen a ras del suelo, por si no lo sabías.'] });
-  addNPC({ rng: R, name: 'Brote', shape: 'hongo', color: '#ff8a5c', mood: 'contento', loop: tl(2, 2), lines: ['¡El kiosco de la plaza es mi lugar favorito!', 'Aquí no pasan autos: puedes caminar por donde quieras.'] });
+  addNPC({ rng: R, name: 'Brote', shape: 'hongo', color: '#ff8a5c', mood: 'contento', loop: tl(2, 2), lines: ['¡El kiosco de la plaza es mi lugar favorito!', 'Aquí no pasan autos: el autobús de la ciudad da la vuelta afuera, junto al portón.'] });
   addNPC({ rng: R, name: 'Copo', shape: 'fantasma', color: '#dff3ff', mood: 'dormido', home: { x: TOWN.hammock.x - 3.6, z: TOWN.hammock.z + 2.8, ry: 0.6 }, lines: ['Zzz… la hamaca es la más cómoda del valle…', 'Zzz… cinco minutitos…'] });
   addNPC({ rng: R, name: 'Lila', shape: 'estrella', color: '#c58bff', mood: 'contento', home: { x: TOWN.stalls[1] + 1.2, z: TOWN.market.z - 2.3, ry: 0 }, lines: ['¡Fruta fresca del bosque sin fin! Toma la que quieras.', 'Todo lo del mercado viene del bosque, al norte del pueblo.'] });
 }
