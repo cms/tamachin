@@ -104,7 +104,7 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
   - **El cielo** (`sky()`): sin sol, `hemi` tibio, niebla oscura y corta, y los `nightMat` encendidos (`applyDay` no corre ahí). `day.light` es la de afuera (`lightAt`, 01-core.js), así el reloj sigue al día de la Tierra. El farolito se prende con `lantern: 1` (06-main.js, `updateLantern`).
   - **El sonido:** la pieza `tunel` (eco alto), un rumor de viento y los pasos `tunel` (la piedra con eco).
   - **Lo que no hay:** autos adentro; los de la carretera se pierden en la boca.
-  - **Un conejo que lo sigue** cruza con él y dice `hopLines`. Si deja de seguirlo lejos de su casa (más de 60 m, junto a Valle Alegre), se queda a vivir ahí (`homeNear`, fuera de la carretera) en vez de regresar por la montaña.
+  - **Un conejo que lo sigue** cruza con él y dice `hopLines`. Si anduvo lejos con él (`away`: por un túnel, en el autobús o en el auto) y deja de seguirlo a más de 60 m de su casa, se queda a vivir ahí (`homeNear`, fuera de la carretera) en vez de regresar por la montaña.
   - **La prueba** `carretera` lo cruza de ida y vuelta, revisa la cámara en el tubo y que al recargar siga ahí.
 
 ## Luz de más: sombra de rincón, de contacto, viento, nubes y borde (`01-core.js`, `06-main.js`)
@@ -248,7 +248,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - «Manejar» junto a la puerta (`getInCar`).
   - Estado `drive`: el botón de acción es «Bajar del auto» (`getOutCar`) y el de saltar, «Bocina» (`honkCar`).
   - Se baja a su izquierda, o donde quepa.
-  - En el túnel no se baja: «Aquí no me estaciono: ¡es un túnel!».
+  - En el túnel no se baja: «Aquí no me estaciono: ¡es un túnel!». A medio telón tampoco (`P.tele`); si es a la fuerza (`getOutCar(true)`: «Volver al inicio», al recargar) el telón se abre.
   - Un conejo que lo sigue se sube atrás (`C.pal`, `riding`) y se baja con él.
   - Si Lulú lo acompaña, ella le dice que lo espera.
 - **Manejar** (`updateDrive`, `CAR`):
@@ -261,7 +261,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - **Amable:** frena solo ante vecinos, animales y autos que tenga enfrente, como el `vMax` de los autos.
   - **Semáforos:** «¡Uy, estaba en rojo!» al cruzar un alto en rojo; no pasa nada más.
   - **Se inclina** con la cuesta (`rotation.order` YXZ).
-- **Los demás:** para los autos y el autobús, `myCar` es un obstáculo más, manejando o estacionado (`obst` en `updateCars`). Lo esperan sin asustar a nadie y, si lleva 6 s estorbándoles parado, pitan (`blockT`). Estacionado, empuja a Tamachin como un auto.
+- **Los demás:** para los autos y el autobús, `myCar` es un obstáculo más, manejando o estacionado (`obst` en `updateCars`). Lo esperan sin asustar a nadie y, si lleva 6 s estorbándoles parado, pitan (`blockT`). El autobús no puede dar la vuelta: si el auto sigue ahí sin nadie a los 12 s, pasa de largo un rato (`passT`); si no, Tamachin se quedaría atorado arriba. Estacionado, empuja a Tamachin como un auto.
 - **Las bocas.**
   - Las de la montaña llevan al túnel manejando (`carToWorld`, con el telón compartido `P.tele` / `stepTele`, el mismo del autobús); el auto aparece del otro lado ya andando, en su carril.
   - En la de la luna dice que no cabe.
@@ -269,7 +269,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - La cámara va ×1.25 más lejos, detrás del auto cuando avanza (como en el autobús) y se adelanta con la velocidad.
   - La ventana en los árboles es de su tamaño (`vk`).
   - La percusión de correr suena arriba de 8 m/s, y la diversión sube poco a poco.
-  - El motor (`engineSet`) es un diente de sierra con filtro, directo a la salida, cuyo tono sube con la velocidad.
+  - El motor (`engineSet`, con la voz `engineVoice`, que la prueba también renderiza) es un diente de sierra con filtro, directo a la salida, cuyo tono sube con la velocidad. Queda muy por debajo de la música (RMS ≈ 0.003 a toda velocidad).
 - **Guardar:**
   - Se guarda `car` (mundo, x, z, rumbo y si va manejando); al recargar sigue manejando donde iba.
   - «Volver al inicio» lo baja y el auto vuelve a su cochera (`carHome`).

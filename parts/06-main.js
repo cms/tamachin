@@ -974,7 +974,7 @@ const RIDE_TUBE_V = 10;
 function boardBus(stop) {
   const P = player; if (P.state !== 'normal' || bus.halt !== stop) return;
   const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && !c.world && Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 16);
-  for (const c of pals) { c.riding = true; c.mesh.visible = false; }
+  for (const c of pals) { c.riding = true; c.away = true; c.mesh.visible = false; }
   P.ride = { to: BUS_STOPS.find((q) => q !== stop), pals, tun: null };
   P.state = 'ride'; P.vx = P.vz = P.vy = 0; P.T.group.visible = false; bus.pause = Math.max(bus.pause, 1.5);
   say(bus, choose(['¡Súbete!', '¡Bienvenido a bordo!', '¡Vámonos!']), 1.8); SFX.nice();
@@ -1051,21 +1051,23 @@ function carPush(p, r) {                                            // lo que em
 }
 function carPaint() { const C = myCar, col = player.T.color; if (C.color !== col) { C.color = col; C.mesh.geometry.dispose(); C.mesh.geometry = myCarGeo(col); } }
 // el motor: un zumbido grave que sube con la velocidad (directo a la salida, como los efectos)
-const engine = { o: null, g: null, f: null };
+// (`engineVoice` sirve igual en vivo y en un OfflineAudioContext: la prueba `auto` lo mide; queda muy por debajo de la música)
+function engineVoice(c, dest) {
+  const o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain(); o.type = 'sawtooth'; f.type = 'lowpass'; g.gain.value = 0; o.connect(f); f.connect(g); g.connect(dest); o.start();
+  return { o, f, g, set(v, thr, t, on) { const s = Math.abs(v); o.frequency.setTargetAtTime(36 + s * 5 + Math.abs(thr) * 6, t, 0.12); f.frequency.setTargetAtTime(200 + s * 32, t, 0.12);
+    g.gain.setTargetAtTime(on ? 0.0025 + 0.003 * Math.min(1, s / CAR.road) + 0.0012 * Math.abs(thr) : 0, t, 0.12); } };
+}
+let engine = null;
 function engineSet(v, thr) {
   const c = snd.ctx; if (!c || c.state !== 'running') return;
-  try {
-    if (!engine.o) { const o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain(); o.type = 'sawtooth'; f.type = 'lowpass'; g.gain.value = 0; o.connect(f); f.connect(g); g.connect(c.destination); o.start(); Object.assign(engine, { o, f, g }); }
-    const t = c.currentTime, s = Math.abs(v); engine.o.frequency.setTargetAtTime(36 + s * 5 + Math.abs(thr) * 6, t, 0.12); engine.f.frequency.setTargetAtTime(200 + s * 32, t, 0.12);
-    engine.g.gain.setTargetAtTime(snd.on ? 0.006 + 0.006 * Math.min(1, s / CAR.road) + 0.003 * Math.abs(thr) : 0, t, 0.12);
-  } catch (e) { /* sin sonido */ }
+  try { if (!engine) engine = engineVoice(c, c.destination); engine.set(v, thr, c.currentTime, snd.on); } catch (e) { /* sin sonido */ }
 }
-function engineOff() { const c = snd.ctx; if (!engine.o || !c) return; try { engine.g.gain.setTargetAtTime(0, c.currentTime, 0.06); engine.o.stop(c.currentTime + 0.4); } catch (e) { /* ya */ } engine.o = null; }
+function engineOff() { const c = snd.ctx; if (!engine || !c) return; try { engine.g.gain.setTargetAtTime(0, c.currentTime, 0.06); engine.o.stop(c.currentTime + 0.4); } catch (e) { /* ya */ } engine = null; }
 function getInCar(quiet) {
   const P = player, C = myCar; if (P.state !== 'normal' || C.world !== (world === EARTH ? null : world.name)) return;
   P.state = 'drive'; P.vx = P.vz = P.vy = 0; P.perch = null; C.v = 0; carPaint();
   const pal = creatures.find((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && !c.riding && (c.world || null) === C.world && Math.hypot(c.pos.x - C.x, c.pos.z - C.z) < 7);
-  if (pal) { pal.riding = true; C.pal = pal; }
+  if (pal) { pal.riding = true; pal.away = true; C.pal = pal; }
   if (quiet) return;
   for (const n of npcs) if (n.follow && Math.hypot(n.pos.x - C.x, n.pos.z - C.z) < 14) say(n, '¡Te espero aquí!', 2.2);
   say(P, choose(['¡A manejar!', '¡Brum, brum!', '¡Vámonos!']), 1.6); SFX.nice();
@@ -1073,6 +1075,7 @@ function getInCar(quiet) {
 }
 function getOutCar(quiet) {
   const P = player, C = myCar; if (P.state !== 'drive') return false;
+  if (P.tele) { if (!quiet) return false; P.tele = null; telonEl.hidden = true; telonEl.style.opacity = '0'; }   // a medio telón no se baja (si es a la fuerza, se abre)
   if (world !== EARTH && !quiet) { say(P, 'Aquí no me estaciono: ¡es un túnel!', 2); return false; }
   const S = world.solids, spot = new THREE.Vector3();
   for (const [x, z] of [[1.9, 0], [-1.9, 0], [0, -3.4], [0, 3.4]]) {     // a su izquierda; si no cabe, a la derecha, atrás o adelante
@@ -1919,7 +1922,7 @@ function setWorld(name, at) {
 // invisible donde estaba); allá lo mueve step (06) con el suelo y los choques de ese mundo (makeRabbit, 04-life.js)
 function travel(c, from, to, spot, i) {
   const it = from.interacts.indexOf(from.interacts.find((q) => q.who === c)); if (it >= 0) to.interacts.push(from.interacts.splice(it, 1)[0]);
-  c.world = to === EARTH ? null : to.name; to.root.add(c.mesh);
+  c.world = to === EARTH ? null : to.name; to.root.add(c.mesh); c.away = true;   // anduvo lejos: si deja de seguirlo lejos de su casa, se queda ahí (04-life.js)
   const x = spot.x + i * 0.9, z = spot.z; c.pos.set(x, to === EARTH ? 0 : to.ground(x, z), z); c.tx = x; c.tz = z; c.hopP = 0; c.rest = 0.4; c.mesh.rotation.x = 0;
   if (to !== EARTH) say(c, choose(to.hopLines || ['¡Hooop!', '¡Hop… hooop!', '(mira las estrellas)']), 2.2);
 }

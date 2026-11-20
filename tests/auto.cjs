@@ -4,7 +4,7 @@
 // «Volver al inicio».
 const { openGame, PHONE } = require('./lib.cjs');
 
-const EXPOSE = 'myCar, keys, joy, doAction, CAR_HOME, HOUSE, cars, npcs, creatures, MOUTHS, TUBE, TUBE_PATH, tubeNear, roadAt, occluders, groundY, traffic, SFX, EARTH, WORLDS, get W() { return world; }';
+const EXPOSE = 'myCar, keys, joy, doAction, CAR_HOME, HOUSE, cars, npcs, creatures, MOUTHS, TUBE, TUBE_PATH, tubeNear, roadAt, occluders, groundY, traffic, SFX, EARTH, WORLDS, engineVoice, bus, BUS_STOPS, BUS_C, ROAD_FACE, get W() { return world; }';
 // pone el auto en (x, z) mirando a `h` y a Tamachin manejándolo, parado
 const DRIVE_AT = ([x, z, h]) => {
   const T = window.__tamachin, D = window.__dbg, C = D.myCar, P = T.player;
@@ -14,6 +14,16 @@ const DRIVE_AT = ([x, z, h]) => {
 // maneja con las teclas `ks` durante `secs` segundos de juego
 const KEYS = ([ks, secs]) => { const D = window.__dbg; for (const k of ks) D.keys[k] = true; window.__tamachin.advance(secs); for (const k of ks) D.keys[k] = false; };
 const CAR = () => { const C = window.__dbg.myCar, P = window.__tamachin.player; return { x: +C.x.toFixed(2), z: +C.z.toFixed(2), h: +C.h.toFixed(2), v: +C.v.toFixed(2), state: P.state, world: window.__tamachin.world(), carWorld: C.world || 'tierra' }; };
+// maneja por el túnel con la palanca hacia una punta (1: Valle Alegre, −1: la ciudad), por su carril, hasta salir
+const TUBE_DRIVE = (dir) => {
+  const T = window.__tamachin, D = window.__dbg, C = D.myCar, q = {}, o = {}; let it = 0, worst = 0;
+  for (; it < 800 && T.world() === 'tunel'; it++) {
+    const k = D.tubeNear(C.x, C.z, q); worst = Math.max(worst, Math.abs(k.u)); D.roadAt(D.TUBE_PATH, k.d + 9 * dir, o);
+    const dx = o.x + o.nx * 2 * dir - C.x, dz = o.z + o.nz * 2 * dir - C.z, l = Math.hypot(dx, dz) || 1, c = T.view.c, s = T.view.s;   // a la palanca, en la pantalla
+    D.joy.x = (dx * c - dz * s) / l; D.joy.y = (dx * s + dz * c) / l; T.advance(0.2);
+  }
+  D.joy.x = D.joy.y = 0; T.advance(1.5); return { it, worst: +worst.toFixed(2) };
+};
 const BUBBLES = () => [...document.querySelectorAll('.bubble.on')].map((e) => e.textContent).join(' | ');
 
 module.exports = {
@@ -33,7 +43,7 @@ module.exports = {
 
     // maneja: adelante avanza, y con un lado da vuelta
     await keys(['KeyW'], 2); const a = await car(); await keys(['KeyW', 'KeyA'], 1.5); const b = await car(); await keys([], 3);
-    T.check('con las teclas: adelante avanza y a un lado da vuelta', a.z - park.at[1] > 6 && Math.abs(b.h - a.h) > 0.8, JSON.stringify({ a, b }));
+    T.check('con las teclas: adelante avanza, y con A (izquierda) da vuelta a su izquierda', a.z - park.at[1] > 6 && b.h - a.h > 0.8, JSON.stringify({ a, b }));
     await page.screenshot({ path: T.out('manejando.jpg'), type: 'jpeg', quality: 70 });
 
     // no atraviesa la casa (por su puerta no cabe), un edificio ni el agua
@@ -77,23 +87,55 @@ module.exports = {
     await driveAt(-22, -262, Math.PI); await keys(['KeyW'], 3); await E(() => window.__tamachin.advance(1.2)); const tin = await car();
     const inTube = await E(() => window.__dbg.myCar.mesh.parent === window.__dbg.WORLDS.tunel.root);
     T.check('entra manejando al túnel de la montaña: el auto va con él', tin.world === 'tunel' && tin.carWorld === 'tunel' && tin.state === 'drive' && inTube, JSON.stringify(tin));
-    const thru = await E(() => {
-      const T = window.__tamachin, D = window.__dbg, C = D.myCar, q = {}, o = {}; let it = 0, worst = 0;
-      for (; it < 800 && T.world() === 'tunel'; it++) {
-        const k = D.tubeNear(C.x, C.z, q); worst = Math.max(worst, Math.abs(k.u)); D.roadAt(D.TUBE_PATH, k.d + 9, o);
-        const dx = o.x + o.nx * 2 - C.x, dz = o.z + o.nz * 2 - C.z, l = Math.hypot(dx, dz) || 1, c = T.view.c, s = T.view.s;   // a la palanca, en la pantalla
-        D.joy.x = (dx * c - dz * s) / l; D.joy.y = (dx * s + dz * c) / l; T.advance(0.2);
-      }
-      D.joy.x = D.joy.y = 0; T.advance(1.5); return { it, worst: +worst.toFixed(2) };
-    });
+    const thru = await E(TUBE_DRIVE, 1);
     const tout = await car();
     T.check('cruza el túnel manejando con la palanca y sale por la boca norte, junto a Valle Alegre', tout.world === 'tierra' && tout.carWorld === 'tierra' && tout.state === 'drive' && tout.z < -1262 && tout.z > -1290 && Math.abs(tout.x - 35) < 6, JSON.stringify({ tout, thru }));
+
+    // de regreso por el túnel: por la boca norte, al sur, y a medio túnel se guarda y se recarga (sigue manejando en el túnel)
+    await driveAt(36, -1270, 0); await keys(['KeyW'], 2.5); await E(() => window.__tamachin.advance(1.2)); const tin2 = await car();
+    await E(() => window.dispatchEvent(new Event('pagehide')));
+    await page.reload(); await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 }); await E(() => { document.querySelector('#help').hidden = true; window.__tamachin.advance(0.5); });
+    const reT = await car(), reIn = await E(() => window.__dbg.myCar.mesh.parent === window.__dbg.WORLDS.tunel.root);
+    T.check('por la boca norte entra al túnel; si se recarga ahí, sigue manejando en el túnel', tin2.world === 'tunel' && reT.world === 'tunel' && reT.state === 'drive' && reIn && Math.abs(reT.z - tin2.z) < 1.5, JSON.stringify({ tin2, reT, reIn }));
+    const thru2 = await E(TUBE_DRIVE, -1), tout2 = await car();
+    T.check('lo cruza hacia el sur y sale por la boca sur, hacia la ciudad', tout2.world === 'tierra' && tout2.carWorld === 'tierra' && tout2.state === 'drive' && tout2.z > -282 && tout2.z < -235 && Math.abs(tout2.x + 25) < 5, JSON.stringify({ tout2, thru2 }));
+
+    // a medio telón no se baja (y el telón se abre); con «Volver al inicio» a medio telón, se abre y queda a pie en casa
+    await driveAt(-22, -262, Math.PI); await keys(['KeyW'], 2.6);
+    const mid = await E(() => { const T = window.__tamachin, D = window.__dbg, P = T.player; for (let i = 0; i < 40 && !P.tele; i++) T.advance(0.05); const had = !!P.tele; T.advance(0.2); D.doAction(); T.advance(0.05); const st = P.state; T.advance(1.5);
+      return { had, st, after: P.state, world: T.world(), tele: !!P.tele, telon: document.querySelector('#telon').hidden }; });
+    T.check('a medio telón no se baja; el telón se abre y sigue manejando, ya en el túnel', mid.had && mid.st === 'drive' && mid.after === 'drive' && mid.world === 'tunel' && !mid.tele && mid.telon, JSON.stringify(mid));
+    const midHome = await E(() => { const T = window.__tamachin, D = window.__dbg, P = T.player, C = D.myCar; const q = D.tubeNear(C.x, C.z, {}); C.h = Math.atan2(-q.tx, -q.tz); C.place(); D.keys.KeyW = true;
+      for (let i = 0; i < 200 && !P.tele; i++) T.advance(0.05); D.keys.KeyW = false; const had = !!P.tele; T.advance(0.2);
+      const b = document.querySelector('#dHome'); b.click(); b.click(); T.advance(1.5);
+      return { had, state: P.state, world: T.world(), tele: !!P.tele, telon: document.querySelector('#telon').hidden, x: P.pos.x, z: P.pos.z, car: [C.x, C.z], carWorld: C.world }; });
+    T.check('«Volver al inicio» a medio telón: el telón se abre y queda a pie en su casa, con el auto en la cochera', midHome.had && midHome.state === 'normal' && midHome.world === 'tierra' && !midHome.tele && midHome.telon && midHome.z === 3.5 && !midHome.carWorld, JSON.stringify(midHome));
+
+    // su auto estacionado en el camino del autobús no lo deja atorado (ni con Tamachin arriba): espera, pita, y luego pasa
+    const blocked = await E(() => {
+      const T = window.__tamachin, D = window.__dbg, C = D.myCar, P = T.player, st = D.BUS_STOPS[0], o = {}, i = st.s + 12 - D.BUS_C.s0;
+      D.roadAt(D.BUS_C, Math.min(D.BUS_C.len, st.s + 12), o); C.x = o.x; C.z = o.z; C.h = Math.atan2(o.tx, o.tz); C.world = null; D.EARTH.root.add(C.mesh); C.place();
+      const b = D.bus; b.s = st.s - 20; b.v = 0; b.pause = 0; b.done = null; b.halt = null; T.go(st.at.x, st.at.z); T.advance(0.2);
+      let t = 0; for (; t < 40 && b.halt !== st; t += 0.5) T.advance(0.5); D.doAction(); T.advance(0.3); const rode = P.state === 'ride';
+      for (t = 0; t < 200 && P.state === 'ride'; t += 0.5) T.advance(0.5); T.advance(0.5);
+      return { rode, t, state: P.state, d: +Math.hypot(P.pos.x - D.BUS_STOPS[1].at.x, P.pos.z - D.BUS_STOPS[1].at.z).toFixed(1) };
+    });
+    T.check('con su auto estacionado en el camino del autobús, va arriba y aun así llega a Valle Alegre', blocked.rode && blocked.state === 'normal' && blocked.d < 1.5, JSON.stringify(blocked));
+    await E(() => { const T = window.__tamachin, D = window.__dbg, b = document.querySelector('#dHome'); b.click(); b.click(); T.advance(0.5); });
+
+    // el motor: renderizado, muy por debajo de la música (RMS ≈ 0.008)
+    const eng = await E(async () => { const D = window.__dbg, oc = new OfflineAudioContext(1, 22050 * 3, 22050), v = D.engineVoice(oc, oc.destination); v.set(13, 1, 0, true);
+      const buf = await oc.startRendering(), L = buf.getChannelData(0); let pk = 0, sum = 0; for (let i = 22050; i < L.length; i++) { pk = Math.max(pk, Math.abs(L[i])); sum += L[i] * L[i]; } return { rms: +Math.sqrt(sum / (L.length - 22050)).toFixed(4), peak: +pk.toFixed(4) }; });
+    T.check('el motor, a toda velocidad: suena, muy por debajo de la música (RMS ' + eng.rms + ')', eng.rms > 0.0008 && eng.rms < 0.004 && eng.peak < 0.02, JSON.stringify(eng));
+
+    // de vuelta en la cochera, para lo que sigue
+    await E(() => { const T = window.__tamachin, D = window.__dbg, C = D.myCar; T.go(C.door.x, C.door.z); T.advance(0.3); D.doAction(); T.advance(0.2); C.x = 36; C.z = -1280; C.h = Math.PI; C.place(); T.advance(0.3); });
 
     // guardar manejando: al recargar, sigue manejando donde iba
     await E(() => window.dispatchEvent(new Event('pagehide')));
     await page.reload(); await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 }); await E(() => { document.querySelector('#help').hidden = true; window.__tamachin.advance(0.5); });
     const re = await car();
-    T.check('al recargar, sigue manejando donde iba', re.state === 'drive' && Math.abs(re.x - tout.x) < 1.5 && Math.abs(re.z - tout.z) < 1.5, JSON.stringify({ re, tout }));
+    T.check('al recargar, sigue manejando donde iba', re.state === 'drive' && Math.abs(re.x - 36) < 1 && Math.abs(re.z + 1280) < 1, JSON.stringify(re));
 
     // el conejo copiloto: se sube atrás y se baja con él
     const bun = await E(() => {

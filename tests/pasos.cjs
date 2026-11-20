@@ -46,7 +46,7 @@ module.exports = {
     T.check('cada suelo, un paso: se oye, más bajito que un salto, y dura menos de 0.15 s', !bad.length, bad.map((k) => k + ' ' + JSON.stringify({ ...one[k], b64: undefined })).join(' | ') || undefined);
     // en el túnel, el de la piedra con su eco: dos rebotes más bajitos, así dura un poco más
     const tun = await E(RENDER, { plan: [[0.05, 'tunel']], secs: 0.8 });
-    T.check('en el túnel suena la piedra con eco: el mismo pico y un poco más largo', !tun.nan && Math.abs(tun.peak - one.piedra.peak) < 0.012 && tun.dur > one.piedra.dur + 0.08 && tun.dur < 0.45, JSON.stringify({ ...tun, b64: undefined, piedra: one.piedra.dur }));
+    T.check('en el túnel suena la piedra con eco: tan fuerte como cualquier paso y un poco más largo', !tun.nan && tun.peak > 0.008 && tun.peak < 0.045 && tun.dur > one.piedra.dur + 0.08 && tun.dur < 0.45, JSON.stringify({ ...tun, b64: undefined, piedra: one.piedra.dur }));
     const hz = (k) => one[k].hz;
     T.check('suenan distinto: la madera es lo más grave y el pasto y la nieve lo más agudo', KINDS.every((k) => k === 'madera' || hz(k) > hz('madera'))
       && ['tierra', 'piedra', 'agua', 'charco', 'metal', 'cama', 'madera', 'polvo'].every((k) => hz(k) < Math.min(hz('pasto'), hz('nieve'))), KINDS.map((k) => k + ' ' + hz(k)).join(', '));

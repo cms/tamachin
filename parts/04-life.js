@@ -176,6 +176,7 @@ function updateCars(dt, t) {
     let byCar = false;
     for (const o of obst) {
       if (o === c || o.hidden || c.hidden) continue;                 // en el túnel (el autobús) no estorba ni lo estorban
+      if (o === myCar && c.passT > t) continue;                       // (el autobús) ya esperó mucho al auto estacionado: pasa
       const dx = o.x - c.x, dz = o.z - c.z, fwd = dx * fx + dz * fz; if (fwd <= 0 || fwd > 30) continue;
       const lat = Math.abs(dx * fz - dz * fx), same = Math.abs(fx * o.fx + fz * o.fz) > 0.7;   // en la misma dirección o en la contraria
       if (lat < c.hw + (same ? o.hw : o.half) + 0.25) {
@@ -218,6 +219,7 @@ function updateCars(dt, t) {
     c.mesh.position.set(c.x, c.y + Math.sin(t * 9 + c.vmax * 7) * 0.012 * Math.min(1, c.v / 4), c.z); c.mesh.rotation.y = Math.atan2(c.fx, c.fz);
     c.mesh.visible = !c.hidden; if (c.signs) { const n = !!L.legs[c.leg].north; c.signs[0].visible = n; c.signs[1].visible = !n; }
     c.blockT = byCar && c.v < 0.5 ? (c.blockT || 0) + dt : 0;        // el auto de Tamachin le estorba: espera, y a los 6 s pita
+    if (L.bus && c.blockT > 12 && player.state !== 'drive') { c.passT = t + 8; c.blockT = 0; }   // el autobús no da la vuelta: si el auto sigue ahí sin nadie, pasa de largo
     c.honkT -= dt;
     if (c.blockT > 6 && c.honkT <= 0) { c.honkT = rand(3, 4.5); say(c, choose(['¡Piii! ¿Me dejas pasar?', '¡Bip, bip, Tamachin!', '¡Tu auto está en medio!']), 1.8); SFX.honk(); }
     if (honk && c.v < 3.5 && c.honkT <= 0) { c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Muévete, porfa!']), 1.4); SFX.honk(); }
@@ -458,7 +460,7 @@ function makeRabbit(x, z, col) {
   o.update = (dt) => {
     const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp), M = o.world ? WORLDS[o.world] : null;
     const low = !!M && M.rules.grav < RULES.grav * 0.6, HOP = low ? 0.8 : 0.36, HIGH = low ? 1.3 : 0.4;   // cuánto dura un brinco y qué tan alto (con poca gravedad, más)
-    if (!M && o.follow > 0) { o.follow = Math.max(0, o.follow - dt); if (!o.follow && Math.hypot(o.home.x - o.pos.x, o.home.z - o.pos.z) > 60) o.home = homeNear(o.pos.x, o.pos.z); }   // lejos de su casa (lo llevó por el túnel): se queda a vivir ahí
+    if (!M && o.follow > 0) { o.follow = Math.max(0, o.follow - dt); if (!o.follow && o.away) { o.away = false; if (Math.hypot(o.home.x - o.pos.x, o.home.z - o.pos.z) > 60) o.home = homeNear(o.pos.x, o.pos.z); } }   // lo llevó lejos (el túnel, el autobús, el auto) y se cansó lejos de su casa: se queda a vivir ahí
     o.scare = Math.max(0, o.scare - dt);
     if (!M && o.follow > 0 && dp > 32) { o.follow = 0; if (o.onLost) o.onLost(o); }          // se quedó muy atrás
     if (o.buddy) { const B = o.buddy; o.tx = B.pos.x - Math.sin(B.heading) * 1.3 + o.side * 0.5; o.tz = B.pos.z - Math.cos(B.heading) * 1.3; }
