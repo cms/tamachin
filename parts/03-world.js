@@ -482,6 +482,8 @@ const house = (() => {
 
 // jardín
 const gardenB = new Batch();
+// el auto de Tamachin (06-main.js) vive en el jardín, al oeste de la vereda, mirando a la calle del sur; sale por su propia puerta de la cerca
+const CAR_HOME = { x: -7.5, z: 10.5, h: 0 }, DRIVEWAY = { x0: -9.1, x1: -5.9, z0: 7.9, z1: 17.2 };
 function fence(b, x0, z0, x1, z1, col) {
   const len = Math.hypot(x1 - x0, z1 - z0), n = Math.max(1, Math.round(len / 1.4)), horiz = Math.abs(x1 - x0) > Math.abs(z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
   for (let i = 0; i <= n; i++) { const t = i / n; b.box(col, lerp(x0, x1, t), 0.48, lerp(z0, z1, t), 0.14, 0.96, 0.14).cone(col, lerp(x0, x1, t), 1.03, lerp(z0, z1, t), 0.11, 0.16, 4, Math.PI / 4); }
@@ -489,7 +491,9 @@ function fence(b, x0, z0, x1, z1, col) {
   solidBox(Math.min(x0, x1) - 0.08, Math.max(x0, x1) + 0.08, Math.min(z0, z1) - 0.08, Math.max(z0, z1) + 0.08, 1.0, false);   // se brinca, no se para encima
 }
 { const F = 16.6, W = '#fffdf6';
-  fence(gardenB, -F, F, -1.7, F, W); fence(gardenB, 1.7, F, F, F, W); fence(gardenB, -F, -F, -1.7, -F, W); fence(gardenB, 1.7, -F, F, -F, W);
+  fence(gardenB, -F, F, CAR_HOME.x - 2.3, F, W); fence(gardenB, CAR_HOME.x + 2.3, F, -1.7, F, W); fence(gardenB, 1.7, F, F, F, W);   // al oeste de la puerta, la del auto
+  gardenB.box('#cfc9bd', CAR_HOME.x, 0.035, (DRIVEWAY.z0 + DRIVEWAY.z1) / 2, DRIVEWAY.x1 - DRIVEWAY.x0, 0.05, DRIVEWAY.z1 - DRIVEWAY.z0);   // la cochera y la entrada, hasta la banqueta
+  fence(gardenB, -F, -F, -1.7, -F, W); fence(gardenB, 1.7, -F, F, -F, W);
   fence(gardenB, -F, -F, -F, F, W); fence(gardenB, F, -F, F, -4.3, W); fence(gardenB, F, -0.9, F, F, W);
   addTree(1, -11.5, 9, 1.0); addTree(1, 12, 10.5, 0.92); addTree(0, -13, -9.5, 1.0); addTree(1, 13.2, -12.5, 0.85); addTree(0, -12.5, -1, 0.8);
   for (let x = -5.6; x <= 5.6; x += 0.55) { if (Math.abs(x) < 1.7) continue; addFlower(x + rr(-0.1, 0.1), -3.0 + rr(-0.25, 0.25)); }
@@ -707,13 +711,14 @@ function setBerry(b, q) { const s = 0.118 * b.s * Math.max(0.001, q.k); berryMes
 for (const b of berryBushes) for (const q of b.berries) setBerry(b, q);
 
 // ───────────────────────── la carretera: despejar y el puente ─────────────────────────
-// Lo que cayó sobre la carretera se quita después de generarlo todo, también las bayas (que se acomodan según los árboles, arbustos y
+// Lo que cayó sobre la carretera (o en la cochera del auto) se quita después de generarlo todo, también las bayas (que se acomodan según los árboles, arbustos y
 // rocas): si se saltara al generarlo, cada `rnd` de menos movería todo lo que viene después. Los árboles se encogen hasta no verse,
 // como en el hueco del sendero (05-norte.js); sus troncos, rocas y arbustos dejan de chocar.
 { const off = (x, z, d) => nearRoad(x, z, d), gone = new Set();
   const drop = (x, z) => { for (let i = circles.length; i--;) { const c = circles[i]; if (c.x === x && c.z === z) { gone.add(c); circles.splice(i, 1); } } };   // su colisionador, con él
   for (const t of trees) if (off(t.x, t.z, ROAD_HALF + 2.2)) { t.s = 0.001; drop(t.x, t.z); }
-  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9)) { drop(L[i].x, L[i].z); L.splice(i, 1); }
+  const drive = (x, z) => x > DRIVEWAY.x0 - 0.4 && x < DRIVEWAY.x1 + 0.4 && z > DRIVEWAY.z0 - 0.4 && z < DRIVEWAY.z1;   // la cochera del auto
+  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9) || drive(L[i].x, L[i].z)) { drop(L[i].x, L[i].z); L.splice(i, 1); }
   for (let i = circles.length; i--;) { const c = circles[i]; if (off(c.x, c.z, ROAD_HALF + c.r)) { gone.add(c); circles.splice(i, 1); } }   // otra cosa que pise el asfalto
   for (let i = perches.length; i--;) if (gone.has(perches[i])) perches.splice(i, 1);
 }

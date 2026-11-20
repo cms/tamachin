@@ -114,6 +114,9 @@ Hay quince grupos: `arranque`, `mundo`, `guardado`, `cuidados`, `vista`, `contro
 | Girar la cámara | Arrastrar con el mouse de lado, o Z y X | Arrastrar con un dedo (o con dos) de lado |
 | Subir o bajar la cámara (entre 15° y 60°) | Arrastrar con el mouse hacia arriba o abajo | Arrastrar con un dedo (o con dos) hacia arriba o abajo |
 | Zoom | Rueda del mouse o botón Acercar | Pellizcar (en pantallas táctiles no aparece el botón) |
+| Subirse a su auto / bajarse | E junto a la puerta del auto / E | «Manejar» / «Bajar del auto» |
+| Manejar | W y S (o ↑ ↓) aceleran y frenan (luego reversa); A y D (o ← →) dan vuelta | La palanca apunta a dónde ir; hacia atrás frena y va en reversa |
+| Bocina | Espacio | «Bocina» (el botón de saltar) |
 
 El botón Sonido pasa por tres pasos: «Sonido: sí» (música y efectos), «Solo efectos» y «Sonido: no». En el teléfono, Diario, Sonido y Personalizar son íconos redondos junto al reloj: el libro abre el diario (también se abre tocando los medidores), la bocina con una nota es música y efectos, con ondas solo efectos y con un tache sin sonido (al tocarla, un aviso dice en qué quedó), y la paleta abre Personalizar.
 
@@ -124,6 +127,8 @@ Clic o toque sobre Tamachin: hace un truco; cinco seguidos, rápido, lo marean. 
 En la ciudad, cada paso de cebra tiene su semáforo de peatones: un monito verde caminando o uno rojo parado, en un poste junto a una de sus puntas (uno en cada esquina; desde la otra punta se mira el del otro lado de la calle). El monito se pone verde un rato después de que los autos de esa calle tienen rojo y parpadea antes de que vuelvan a pasar. Cruzar por el paso de cebra con el monito verde da diversión. Las cajas del monito tienen dos caras, una hacia cada punta de su paso: de lado se ve la caja. De noche (y con lluvia) los autos prenden los faros y las calaveras, y los faros alumbran la calle enfrente. Los autos nunca atropellan a Tamachin: si se les pone enfrente, frenan (en seco si hace falta), pitan y él se lleva un susto; con el monito verde solo esperan.
 
 Saltando, Tamachin se sube a los botes de basura y los hidrantes de la ciudad, a las rocas grandes del bosque y a su cama (que rebota; saltar justo al caer lo impulsa otra vez), y brinca la cerca del jardín. Subirse a algo le da un poco de diversión.
+
+Manejando, Tamachin va sentado en su descapotable y la cámara se pone detrás del auto. Puede ir por las calles, la carretera, el pasto y hasta el túnel de la montaña (por el de la luna no cabe); la casa, los edificios, el agua y las cuestas muy empinadas no lo dejan pasar. Nunca le pega a nadie: frena solo antes de vecinos, animales y autos, y los autos lo esperan (si se estaciona en un carril, al rato le pitan). Si se pasa un alto, solo dice «¡Uy, estaba en rojo!».
 
 ## Cuidados y encargos
 
@@ -188,6 +193,7 @@ Todo es de colores lisos, como juguetes. Para que no parezca pegado encima del s
 - Casa: manzana central. Parque: manzana norte del centro, con el portón hacia el camino.
 - Camino: de Z = −62 a Z = −160. Bosque: de Z = −160 a Z = −268, con el río cerca de Z = −205.
 - Carretera a Valle Alegre: sale de la ciudad por el norte de la calle X = −24 (donde antes había un túnel), rodea el molino, cruza el bosque y el río por un puente y llega a la boca de un túnel al pie de la montaña, en Z = −280. Empujando contra la boca se entra al túnel, de unos 400 m con curvas, lámparas y banquetas (un mundo aparte, como la luna), y del otro lado se sale por la otra boca, al sur de Valle Alegre, en (34, −1262).
+- Casa: en el jardín, al oeste de la vereda, está el auto de Tamachin, con su propia puerta en la cerca hacia la calle del sur.
 - Autobús a Valle Alegre: sale de la terminal que está junto a la salida de la ciudad (una glorieta con su parada, en el prado), va por la carretera y el túnel hasta la parada que está afuera del portón de Valle Alegre, y regresa; da la vuelta en unos 3 minutos. En la parada, «Subir al autobús» (con el autobús ahí); Tamachin se baja solo en la otra.
 - Montañas: de Z = −268 a Z = −1288, X entre −340 y 340. Tres picos de 400 m: Malvavisco (X −300), Gelatina (X 0, Z −770) y Turrón (X 300). Un sendero sale del claro de la fogata, sube al Pico Gelatina y baja al pueblo.
 - Valle Alegre: el pueblo, de Z = −1288 a Z = −1416 (centro en Z = −1352), con mercado al sur, kiosco en la plaza y posada con hamaca al norte.

@@ -108,6 +108,7 @@ function save() {
   try {
     localStorage.setItem(SAVE_KEY, JSON.stringify({ shape: P.T.shape, color: P.T.color, mood: P.baseMood,
       needs: { panza: +needs.panza.toFixed(3), energia: +needs.energia.toFixed(3), diversion: +needs.diversion.toFixed(3) }, quests, summits, fruits: fruitsTasted,
+      car: { m: myCar.world || EARTH.name, x: +myCar.x.toFixed(2), z: +myCar.z.toFixed(2), h: +myCar.h.toFixed(3), d: P.state === 'drive' },
       mundo: R ? EARTH.name : world.name, x: +at.x.toFixed(2), z: +at.z.toFixed(2), heading: +P.heading.toFixed(2), yaw: +camView.yawT.toFixed(3), pitch: +(world.homePitch != null ? world.homePitch : camView.pitchT).toFixed(3), sound: snd.mode, helpSeen: helpEl.hidden, hora: +day.h.toFixed(3), dia: day.n, flies: fliesCaught, charcos: puddleJumps }));
   } catch (e) { /* sin almacenamiento */ }
 }
@@ -131,6 +132,7 @@ function makeDizzy(dur) {
 }
 function jump() {
   const P = player;
+  if (P.state === 'drive') { honkCar(); return; }                   // manejando, el botón de saltar es la bocina
   if (P.state === 'sleep') { wake(); return; }
   if (P.state !== 'normal' || ui.closeup) { if (ui.closeup) playerTrick(); return; }
   const R = world.rules;
@@ -146,6 +148,7 @@ function perched(s) {
 function doAction() {
   const P = player;
   if (P.state === 'sleep') { wake(); return; }
+  if (P.state === 'drive') { getOutCar(); return; }
   if (P.state === 'ride') { if (!P.bubbleT || clock - P.bubbleT > 1.2) { P.bubbleT = clock; say(P, choose(['¡Hola, hola!', '¡Qué divertido!', '¡Vamos en autobús!', '¡Adiós, adiós!']), 1.6); } return; }   // desde el autobús
   if (P.state !== 'normal') return;
   if (!ui.closeup && curInteract) curInteract.act(); else playerTrick();
@@ -827,6 +830,8 @@ function goHome() {
   if ((world !== EARTH || Math.hypot(P.pos.x - START.x, P.pos.z - START.z) > 40) && !homeArmed) { homeArmed = clock + 4; bHome.textContent = 'Toca otra vez para volver'; return; }
   homeArmed = 0; bHome.textContent = 'Volver al inicio';
   if (P.state === 'ride') leaveBus(START);                          // del autobús, también a casa
+  if (P.state === 'drive') getOutCar(true);                        // manejando: se baja, y el auto vuelve a su cochera
+  carHome();
   if (P.state === 'sleep') { P.T.lie = 0; P.sleepSpot = null; clearTemp(); }
   setWorld(EARTH.name, START);                                      // desde otro mundo (la luna), también de vuelta a la Tierra (y el conejo que lo sigue)
   P.T.flat = false; P.state = 'normal'; P.vx = P.vz = P.vy = 0; P.flySpin = 0; P.heading = 0; P.onGround = true;
@@ -882,7 +887,7 @@ function updateMusic(dt) {
   mus.ambient(amb, now); mus.pumpAmb(now, now + 0.45);   // lo de fondo, del lugar y la hora
   if (!snd.music) { snd.tune = 1; return; }   // con «Solo efectos», setSound ya apagó la música
   mus.param.alt = alt; mus.param.near = clamp(1 - (Math.hypot(P.pos.x, P.pos.z - TOWN_Z) - 14) / 50, 0, 1);   // la banda del kiosco
-  mus.param.run = !!P.running && P.state === 'normal'; mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * rain), now); mus.param.band = band;
+  mus.param.run = (!!P.running && P.state === 'normal') || (P.state === 'drive' && Math.abs(myCar.v) > 8); mus.setLow(!!P.needLow, now); mus.setNight(Math.max(night * (1 - band), 0.35 * rain), now); mus.param.band = band;
   if (!mus.cur || (key !== mus.key && musT > 0.8)) mus.zone(key, now + 0.05);
   mus.pump(now, now + 0.45); snd.tune = mus.tune();
 }
@@ -908,6 +913,7 @@ function earthCollide(pos, r) {
     else for (let k = -1; k <= 1; k++) { const o = k * (c.half - c.hw); pushOutCircle(pos, r * 0.8, c.x + c.fx * o, c.z + c.fz * o, c.hw); }   // en una curva de la carretera
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
+  if (!myCar.world && player.state !== 'drive') for (let k = -1; k <= 1; k++) pushOutCircle(pos, r, myCar.x + myCar.fx * k * 0.98, myCar.z + myCar.fz * k * 0.98, myCar.hw);   // su auto, estacionado
   northCollide(pos, r); keepInWorld(pos);                           // árboles del norte y límites por franja (05-norte.js)
 }
 // Lo más alto que tiene justo debajo y que ya libró (y0: la altura antes de este cuadro). Con la misma regla que resolvePlayer,
@@ -969,14 +975,14 @@ function boardBus(stop) {
   const P = player; if (P.state !== 'normal' || bus.halt !== stop) return;
   const pals = creatures.filter((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && !c.world && Math.hypot(c.pos.x - P.pos.x, c.pos.z - P.pos.z) < 16);
   for (const c of pals) { c.riding = true; c.mesh.visible = false; }
-  P.ride = { to: BUS_STOPS.find((q) => q !== stop), pals, tele: null, tun: null };
+  P.ride = { to: BUS_STOPS.find((q) => q !== stop), pals, tun: null };
   P.state = 'ride'; P.vx = P.vz = P.vy = 0; P.T.group.visible = false; bus.pause = Math.max(bus.pause, 1.5);
   say(bus, choose(['¡Súbete!', '¡Bienvenido a bordo!', '¡Vámonos!']), 1.8); SFX.nice();
   if (!bus.hinted) { bus.hinted = true; toast('Vas en el autobús: en la otra parada te bajas solo.', 4); }
 }
 function leaveBus(at) {
   const P = player, R = P.ride; if (!R) return;
-  if (R.tele) { telonEl.hidden = true; telonEl.style.opacity = '0'; }
+  if (P.tele) { P.tele = null; telonEl.hidden = true; telonEl.style.opacity = '0'; }
   if (R.tun) { EARTH.root.add(bus.mesh); placeCar(bus); }               // (con «Volver al inicio» a medio túnel) el autobús sigue en la Tierra
   const to = at || R.to.at; P.ride = null; P.state = 'normal'; P.T.group.visible = true;
   P.pos.set(to.x, world.ground(to.x, to.z), to.z); P.heading = R.to.heading; P.vx = P.vz = P.vy = 0; P.onGround = true; P.perch = null;
@@ -994,16 +1000,12 @@ function updateBusStops() { for (const st of BUS_STOPS) st.roof.visible = Math.h
 // arriba del autobús, cada cuadro (updatePlayer): Tamachin va donde va él; en las bocas, el telón y el tubo
 function updateRide(dt) {
   const P = player, R = P.ride;
-  if (R.tele) {
-    const T = R.tele; T.t += dt; telonEl.hidden = false; telonEl.style.opacity = (T.t < 0.45 ? T.t / 0.45 : Math.max(0, 1 - (T.t - 0.6) / 0.5)).toFixed(3);
-    if (T.t >= 0.5 && !T.done) { T.done = true; T.swap(); }
-    if (T.t >= 1.15) { R.tele = null; telonEl.hidden = true; telonEl.style.opacity = '0'; }
-  }
+  if (P.tele) stepTele(dt);
   if (world === EARTH && !R.tun) {
     const L = BUS_LINE, g = L.leg(bus.s), next = L.legs[(L.legs.indexOf(g) + 1) % L.legs.length], hid = g.hidden ? g : next.hidden ? next : null;
-    if (hid && !R.tele && (g.hidden || next.s0 - bus.s < 4)) {     // llega a una boca: al túnel
+    if (hid && !P.tele && (g.hidden || next.s0 - bus.s < 4)) {     // llega a una boca: al túnel
       const north = !!hid.north;
-      R.tele = { t: 0, swap: () => {
+      P.tele = { t: 0, swap: () => {
         const d = north ? TUBE.door + 0.5 : TUBE.len - TUBE.door - 0.5, o = roadAt(TUBE_PATH, d, {}), h = Math.atan2(o.tx * (north ? 1 : -1), o.tz * (north ? 1 : -1));
         R.tun = { d, north, hid }; setWorld('tunel', { x: o.x, z: o.z, yaw: h + Math.PI }); WORLDS.tunel.root.add(bus.mesh); bus.mesh.visible = true; bus.v = RIDE_TUBE_V;
       } };
@@ -1012,12 +1014,167 @@ function updateRide(dt) {
     const T = R.tun, k = T.north ? 1 : -1; T.d += k * RIDE_TUBE_V * dt;
     const o = roadAt(TUBE_PATH, T.d, {}); bus.x = o.x + o.nx * 2 * k; bus.z = o.z + o.nz * 2 * k; bus.fx = o.tx * k; bus.fz = o.tz * k; bus.y = 0;
     bus.mesh.position.set(bus.x, 0, bus.z); bus.mesh.rotation.y = Math.atan2(bus.fx, bus.fz);
-    if (!R.tele && (T.north ? T.d > TUBE.len - TUBE.door - 1 : T.d < TUBE.door + 1)) R.tele = { t: 0, swap: () => {   // la otra punta: a la otra boca
+    if (!P.tele && (T.north ? T.d > TUBE.len - TUBE.door - 1 : T.d < TUBE.door + 1)) P.tele = { t: 0, swap: () => {   // la otra punta: a la otra boca
       bus.s = T.hid.s0 + T.hid.len + 0.5; bus.v = 4; placeCar(bus); R.tun = null; EARTH.root.add(bus.mesh); bus.mesh.visible = true;
       setWorld('tierra', { x: bus.x, z: bus.z, yaw: Math.atan2(bus.fx, bus.fz) + Math.PI });
     } };
   }
   P.pos.set(bus.x, bus.y + 0.3, bus.z); P.heading = Math.atan2(bus.fx, bus.fz); P.vx = bus.fx * bus.v; P.vz = bus.fz * bus.v; P.vy = 0; P.onGround = true;
+}
+// el telón de arriba de un vehículo (el autobús o el auto, por las bocas del túnel): se cierra, cambia de mundo (`swap`) y se abre, sin
+// detener nada (enterWorld, para quien camina, va en una secuencia)
+function stepTele(dt) {
+  const P = player, T = P.tele; T.t += dt; telonEl.hidden = false; telonEl.style.opacity = (T.t < 0.45 ? T.t / 0.45 : Math.max(0, 1 - (T.t - 0.6) / 0.5)).toFixed(3);
+  if (T.t >= 0.5 && !T.done) { T.done = true; T.swap(); }
+  if (T.t >= 1.15) { P.tele = null; telonEl.hidden = true; telonEl.style.opacity = '0'; }
+}
+
+// ───────────────────────── el auto de Tamachin ─────────────────────────
+// (myCar, 04-life.js) Se sube con «Manejar» junto a su puerta (a la izquierda) y se baja con el botón de acción. Manejando (estado `drive`)
+// Tamachin va sentado y se ve. Con el teclado, adelante y atrás aceleran y frenan (o van en reversa) y los lados giran; con la palanca,
+// apuntas a dónde ir y el auto da la vuelta hacia allá (hacia atrás, frena y luego reversa). La bocina es el botón de saltar. Va por donde
+// quepa: lo sólido es pared aunque se pueda brincar, también la casa entera y el agua; en pasto y tierra va más despacio y una cuesta muy
+// empinada no la sube. Es amable: frena solo antes de vecinos, animales y autos. Por las bocas de la montaña entra al túnel manejando
+// (con el telón); por la de la luna no cabe. Un conejo que lo sigue se sube atrás.
+const CAR = { road: 13, soft: 7, back: 4, accel: 6, brake: 14, coast: 3, turn: 1.7, steep: 0.45 };
+myCar.mesh.rotation.order = 'YXZ';                                  // primero hacia dónde va, luego la cuesta
+function carPush(p, r) {                                            // lo que empuja a una de sus tres ruedas de choque (círculos)
+  const S = world.solids;
+  for (const b of S.boxes) pushOutBox(p, r, b); for (const c of S.circles) pushOutCircle(p, r, c.x, c.z, c.r);
+  if (world !== EARTH) { world.collide(p, r); return; }
+  pushOutBox(p, r, HOUSE);                                          // por la puerta de la casa no cabe
+  for (const c of cars) if (!c.hidden && Math.abs(c.x - p.x) < 7 && Math.abs(c.z - p.z) < 7) {
+    if (Math.abs(c.fx) > 0.999 || Math.abs(c.fz) > 0.999) pushOutBox(p, r, carRect(c, 0));
+    else for (let k = -1; k <= 1; k++) { const o = k * (c.half - c.hw); pushOutCircle(p, r, c.x + c.fx * o, c.z + c.fz * o, c.hw); }
+  }
+  northCollide(p, r); keepInWorld(p);
+}
+function carPaint() { const C = myCar, col = player.T.color; if (C.color !== col) { C.color = col; C.mesh.geometry.dispose(); C.mesh.geometry = myCarGeo(col); } }
+// el motor: un zumbido grave que sube con la velocidad (directo a la salida, como los efectos)
+const engine = { o: null, g: null, f: null };
+function engineSet(v, thr) {
+  const c = snd.ctx; if (!c || c.state !== 'running') return;
+  try {
+    if (!engine.o) { const o = c.createOscillator(), f = c.createBiquadFilter(), g = c.createGain(); o.type = 'sawtooth'; f.type = 'lowpass'; g.gain.value = 0; o.connect(f); f.connect(g); g.connect(c.destination); o.start(); Object.assign(engine, { o, f, g }); }
+    const t = c.currentTime, s = Math.abs(v); engine.o.frequency.setTargetAtTime(36 + s * 5 + Math.abs(thr) * 6, t, 0.12); engine.f.frequency.setTargetAtTime(200 + s * 32, t, 0.12);
+    engine.g.gain.setTargetAtTime(snd.on ? 0.006 + 0.006 * Math.min(1, s / CAR.road) + 0.003 * Math.abs(thr) : 0, t, 0.12);
+  } catch (e) { /* sin sonido */ }
+}
+function engineOff() { const c = snd.ctx; if (!engine.o || !c) return; try { engine.g.gain.setTargetAtTime(0, c.currentTime, 0.06); engine.o.stop(c.currentTime + 0.4); } catch (e) { /* ya */ } engine.o = null; }
+function getInCar(quiet) {
+  const P = player, C = myCar; if (P.state !== 'normal' || C.world !== (world === EARTH ? null : world.name)) return;
+  P.state = 'drive'; P.vx = P.vz = P.vy = 0; P.perch = null; C.v = 0; carPaint();
+  const pal = creatures.find((c) => c.kind === 'conejo' && c.follow > 0 && !c.buddy && !c.riding && (c.world || null) === C.world && Math.hypot(c.pos.x - C.x, c.pos.z - C.z) < 7);
+  if (pal) { pal.riding = true; C.pal = pal; }
+  if (quiet) return;
+  for (const n of npcs) if (n.follow && Math.hypot(n.pos.x - C.x, n.pos.z - C.z) < 14) say(n, '¡Te espero aquí!', 2.2);
+  say(P, choose(['¡A manejar!', '¡Brum, brum!', '¡Vámonos!']), 1.6); SFX.nice();
+  if (!C.hinted) { C.hinted = true; toast('¡A manejar! Adelante acelera, atrás frena y los lados dan vuelta. Para bajarte, «Bajar del auto».', 5); }
+}
+function getOutCar(quiet) {
+  const P = player, C = myCar; if (P.state !== 'drive') return false;
+  if (world !== EARTH && !quiet) { say(P, 'Aquí no me estaciono: ¡es un túnel!', 2); return false; }
+  const S = world.solids, spot = new THREE.Vector3();
+  for (const [x, z] of [[1.9, 0], [-1.9, 0], [0, -3.4], [0, 3.4]]) {     // a su izquierda; si no cabe, a la derecha, atrás o adelante
+    C.at({ x, y: 0, z }, spot); const q = { x: spot.x, z: spot.z };
+    for (const b of S.boxes) if (b.top === Infinity) pushOutBox(q, P.r, b); for (const c of S.circles) if (c.top === Infinity) pushOutCircle(q, P.r, c.x, c.z, c.r); world.collide(q, P.r);
+    if (Math.hypot(q.x - spot.x, q.z - spot.z) < 0.05) break;
+  }
+  P.state = 'normal'; P.pos.set(spot.x, world.ground(spot.x, spot.z), spot.z); P.heading = C.h; P.vx = P.vz = P.vy = 0; P.onGround = true; C.v = 0; engineOff();
+  if (C.pal) { const c = C.pal, x = P.pos.x - C.fx * 1.2, z = P.pos.z - C.fz * 1.2; c.riding = false; c.pos.set(x, Math.max(0, world.ground(x, z)), z); c.tx = x; c.tz = z; c.hopP = 0; c.rest = 0.5; C.pal = null; }
+  if (!quiet) say(P, '¡Llegamos!', 1.4);
+  return true;
+}
+function carHome() {                                                // estacionado otra vez en el jardín
+  const C = myCar; C.x = CAR_HOME.x; C.z = CAR_HOME.z; C.h = CAR_HOME.h; C.v = 0; C.y = 0; C.world = null; EARTH.root.add(C.mesh); C.mesh.rotation.x = 0; C.place();
+}
+// a otro mundo por una boca, manejando: el telón, y el auto aparece del otro lado ya andando
+function carToWorld(name, key) {
+  const P = player, C = myCar, keep = Math.max(4, Math.abs(C.v));
+  P.tele = { t: 0, swap: () => {
+    const from = world, N = worldNamed(name); let x, z, h;
+    if (N === EARTH) { const m = MOUTHS.find((q) => q.key === key); h = m.inw < 0 ? 0 : Math.PI; x = m.x + (m.inw < 0 ? -2 : 2); z = m.face - m.inw * (C.half + 2); }   // afuera de la boca, en su carril
+    else { const north = key === 'norte', d = north ? TUBE.len - TUBE.door - C.half - 2 : TUBE.door + C.half + 2, o = roadAt(TUBE_PATH, d, {}), k = north ? -1 : 1;
+      h = Math.atan2(o.tx * k, o.tz * k); x = o.x + o.nx * 2 * k; z = o.z + o.nz * 2 * k; }
+    setWorld(name, { x, z, yaw: h + Math.PI }); (N === EARTH ? EARTH.root : N.root).add(C.mesh); C.world = N === EARTH ? null : N.name;
+    C.x = x; C.z = z; C.h = h; C.v = keep; C.y = Math.max(0, world.ground(x, z)); C.place();
+    if (C.pal) { travel(C.pal, from, N, { x, z }, 0); C.pal.riding = true; }
+  } };
+}
+interacts.push({ pos: myCar.door, range: 2.4, label: 'Manejar', ok: () => !myCar.world, act: () => getInCar() });
+function honkCar() { const C = myCar; if (clock - (C.honkT || -9) < 0.6) return; C.honkT = clock; SFX.honk(); say(player, '¡Bip, bip!', 1); }
+// manejando, cada cuadro (updatePlayer)
+function updateDrive(dt) {
+  const P = player, C = myCar, T = P.T;
+  if (P.tele) stepTele(dt);
+  carPaint();
+  let thr = 0, st = 0;                                              // lo que pide: adelante (+) o atrás, y a la izquierda (+) o a la derecha
+  if (!ui.closeup) {
+    thr = ((keys.KeyW || keys.ArrowUp) ? 1 : 0) - ((keys.KeyS || keys.ArrowDown) ? 1 : 0);
+    st = ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) - ((keys.KeyD || keys.ArrowRight) ? 1 : 0);
+    const jm = Math.min(1, Math.hypot(joy.x, joy.y));
+    if (jm > 0.15) {                                                // la palanca: a dónde ir (como al caminar, según la cámara)
+      const c = camView.c, s = camView.s, wx = joy.x * c + joy.y * s, wz = -joy.x * s + joy.y * c, a = angDiff(C.h, Math.atan2(wx, wz));
+      if (Math.abs(a) < 2.0) { thr = jm; st = clamp(a * 1.6, -1, 1); } else { thr = -jm; st = 0; }
+    }
+  }
+  // qué tan rápido: según el suelo y la cuesta
+  const surf = world.surface(C.x, C.z, null), soft = surf === 'pasto' || surf === 'tierra' || surf === 'nieve', dir0 = C.v >= -0.1 ? 1 : -1;
+  let vmax = soft ? CAR.soft : CAR.road, grade = 0;
+  if (world === EARTH && C.z < NORTH_Z + 3) { const a = world.ground(C.x + C.fx * 1.5 * dir0, C.z + C.fz * 1.5 * dir0), b = world.ground(C.x - C.fx * 1.5 * dir0, C.z - C.fz * 1.5 * dir0); grade = (a - b) / 3; vmax *= clamp(1 - Math.max(0, grade) * 1.3, 0.35, 1); }
+  const target = thr > 0 ? thr * vmax : thr < 0 ? (C.v > 0.4 ? 0 : thr * CAR.back) : 0;
+  const rate = (thr < 0 && C.v > 0.05) || (thr > 0 && C.v < -0.05) ? CAR.brake : Math.abs(target) > Math.abs(C.v) ? CAR.accel : CAR.coast;
+  C.v = C.v < target ? Math.min(target, C.v + rate * dt) : Math.max(target, C.v - rate * dt);
+  // amable: frena solo antes de quien tenga enfrente (vecinos, animales, autos)
+  const dir = C.v >= 0 ? 1 : -1, fx = C.fx * dir, fz = C.fz * dir; let cap = Infinity;
+  const ahead = (x, z, r) => { const dx = x - C.x, dz = z - C.z; if (Math.abs(dx) > 25 || Math.abs(dz) > 25) return; const al = dx * fx + dz * fz;
+    if (al > 0 && Math.abs(dx * fz - dz * fx) < C.hw + r + 0.3) cap = Math.min(cap, Math.sqrt(2 * 14 * Math.max(0, al - C.half - r - 0.4))); };
+  if (world === EARTH) {
+    for (const n of npcs) if (n.T.group.visible) ahead(n.pos.x, n.pos.z, 0.5 * n.T.scale);
+    for (const c of cars) if (!c.hidden) for (let k = -1; k <= 1; k++) { const o = k * (c.half - c.hw); ahead(c.x + c.fx * o, c.z + c.fz * o, c.hw); }
+  }
+  for (const c of creatures) if (c.pos && !c.riding && (c.world || null) === C.world) ahead(c.pos.x, c.pos.z, c.kind === 'venado' ? 0.8 : 0.4);
+  if (Math.abs(C.v) > cap) C.v = dir * cap;
+  // moverse y chocar: tres círculos a lo largo; el más empujado mueve al auto
+  C.h += st * CAR.turn * clamp(Math.abs(C.v) / 5, 0, 1) * Math.sign(C.v) * dt; C.fx = Math.sin(C.h); C.fz = Math.cos(C.h);
+  const ox = C.x, oz = C.z; C.x += C.fx * C.v * dt; C.z += C.fz * C.v * dt;
+  let hit = 0;
+  for (let it = 0; it < 3; it++) {
+    let bx = 0, bz = 0, bl = 0;
+    for (let k = -1; k <= 1; k++) { const px = C.x + C.fx * k * 0.98, pz = C.z + C.fz * k * 0.98, q = { x: px, z: pz }; carPush(q, C.hw); const dx = q.x - px, dz = q.z - pz, l = dx * dx + dz * dz; if (l > bl) { bl = l; bx = dx; bz = dz; } }
+    if (bl < 1e-8) break; C.x += bx; C.z += bz; hit = Math.max(hit, Math.sqrt(bl));
+  }
+  const fr = { x: C.x + C.fx * C.half * dir, z: C.z + C.fz * C.half * dir };   // el agua y lo muy empinado: no pasa
+  if (world.wet(world.ground(fr.x, fr.z)) || world.wet(world.ground(C.x, C.z)) || grade > CAR.steep) {
+    C.x = ox; C.z = oz; if (Math.abs(C.v) > 1.5 && clock - (C.saidT || -9) > 3) { C.saidT = clock; say(P, grade > CAR.steep ? '¡Muy empinado para el auto!' : '¡Al agua no!', 1.6); } C.v = 0;
+  }
+  if (hit > 0.02) { if (Math.abs(C.v) > 5) { tone(150, 60, 0.2, 'triangle', 0.05); T.poke(-1.5); } C.v *= Math.abs(C.v) > 3 ? 0.35 : 0.9; }
+  // a la altura del suelo, inclinado con la cuesta
+  const gf = Math.max(0, world.ground(C.x + C.fx * 1.4, C.z + C.fz * 1.4)), gb = Math.max(0, world.ground(C.x - C.fx * 1.4, C.z - C.fz * 1.4));
+  C.y = (gf + gb) / 2; C.place(); C.mesh.rotation.x = -Math.atan2(gf - gb, 2.8);
+  // Tamachin (y su conejo) en su lugar
+  C.at(C.seat, P.pos); P.heading = C.h; T.group.rotation.y = C.h; P.vx = C.fx * C.v; P.vz = C.fz * C.v; P.vy = 0; P.onGround = true; P.perch = null;
+  P.speedN = 0; P.running = false; P.inHouse = false; P.inWater = false;
+  if (C.pal) { C.at(C.back, C.pal.pos); C.pal.mesh.rotation.set(0, C.h, 0); }
+  T.update(dt, { speed: 0, air: false, wobble: 0, spinY: 0, near: true });
+  engineSet(C.v, thr);
+  if (Math.abs(C.v) > 4) gain('diversion', 0.03, 'manejar', 6);
+  // ¿se pasó un alto? (sin castigo)
+  if (world === EARTH && C.z > -64 && C.z < 64) {
+    const I = Math.abs(C.v) > 3 ? INTERS.find((q) => Math.abs(q.x - C.x) < 4 && Math.abs(q.z - C.z) < 4) : null;
+    if (I && I !== C.redI) { C.redI = I; if (lightState(I, Math.abs(C.fx) > Math.abs(C.fz) ? 'EW' : 'NS', clock) === 'r') say(P, '¡Uy, estaba en rojo!', 1.8); }
+    else if (!I && Math.abs(C.v) > 0.5) C.redI = null;
+  }
+  // las bocas: la de la montaña lleva al túnel (y en el túnel, cada punta a su boca); la de la luna no
+  if (!P.tele && Math.abs(C.v) > 0.5) {
+    if (world === EARTH) {
+      for (const m of MOUTHS) { const out = mouthOut(m, fr.z); if (Math.abs(fr.x - m.x) < 3.4 && out < 1.2 && out > -1.5 && C.fz * dir * m.inw > 0.5) { carToWorld('tunel', m.key); break; } }
+      const D = EARTH_DOOR; if (Math.abs(fr.x - D.x) < 3.4 && fr.z < D.face + 1.2 && fr.z > D.face - 2 && C.fz * dir < -0.5 && clock - (C.moonT || -9) > 4) { C.moonT = clock; say(P, 'El auto no cabe en ese túnel: ¡vamos a pie!', 2.4); }
+    } else if (world.name === 'tunel') {
+      const q = tubeNear(fr.x, fr.z, {}), along = C.v * (C.fx * q.tx + C.fz * q.tz);
+      if (q.d > TUBE.len - TUBE.door - 0.6 && along > 0.5) carToWorld(EARTH.name, 'norte'); else if (q.d < TUBE.door + 0.6 && along < -0.5) carToWorld(EARTH.name, 'sur');
+    }
+  }
 }
 function stepSurface(x, z, perch) {   // qué pisa: con las mismas medidas con que se pinta cada suelo
   const P = player;
@@ -1055,6 +1212,7 @@ function updatePlayer(dt) {
   if (P.tempT > 0) { P.tempT -= dt; if (P.tempT <= 0) { const f = P.onTempEnd; P.tempMood = null; P.onTempEnd = null; applyMood(); if (f) f(); } }
   P.inv = Math.max(0, P.inv - dt);
   if (P.state === 'ride') { updateRide(dt); P.speedN = 0; P.running = false; P.inHouse = false; return; }   // arriba del autobús
+  if (P.state === 'drive') { updateDrive(dt); return; }              // manejando su auto
   let ix = 0, iz = 0, run = false;
   if (P.state === 'normal' && !ui.closeup) {
     ix = ((keys.KeyD || keys.ArrowRight) ? 1 : 0) - ((keys.KeyA || keys.ArrowLeft) ? 1 : 0) + joy.x;
@@ -1134,7 +1292,7 @@ const LEAD = { south: 4.4, north: 1.4, side: 0.35, grow: 1.6, maxRate: 5, house:
 const camLead = { x: 0, z: 0, k: 1 }, CAM_D0 = Math.hypot(7.6, 11.2), CAM_DH = Math.hypot(8.4, 7.2), CAM_SLOPE0 = 7.6 / 11.2;   // distancias a zoom 1
 function updateLead(dt) {
   const P = player;
-  if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly') {
+  if ((P.state === 'normal' && P.idleT === 0 && !ui.closeup) || P.state === 'fly' || (P.state === 'drive' && Math.abs(myCar.v) > 0.5)) {
     const halfW = Math.tan(camera.fov * Math.PI / 360) * camera.aspect * CAM_D0;           // medio ancho visible a la distancia de Tamachin
     const vr = P.vx * camView.c - P.vz * camView.s, vb = P.vx * camView.s + P.vz * camView.c;   // a la derecha y hacia la cámara
     const R = world.rules, gx = clamp(vr / R.run, -1, 1) * LEAD.side * halfW;
@@ -1151,7 +1309,7 @@ function updateCamera(dt) {
   // girar: el arrastre y las teclas Z y X mueven yawT; yaw lo sigue suave
   const V = camView, kz = (keys.KeyZ ? 1 : 0) - (keys.KeyX ? 1 : 0);
   if (kz && P.state !== 'busy') { V.yawT += kz * 1.9 * dt; V.userT = clock; }
-  else if (P.state === 'ride' && clock - (V.userT || -9) > 2.5) V.yawT += angDiff(V.yawT, P.heading + Math.PI) * Math.min(1, dt * 1.6);   // en el autobús, detrás de él
+  else if ((P.state === 'ride' || (P.state === 'drive' && myCar.v > 2)) && clock - (V.userT || -9) > 2.5) V.yawT += angDiff(V.yawT, P.heading + Math.PI) * Math.min(1, dt * 1.6);   // en el autobús o manejando hacia delante, detrás
   const yaw0 = V.yaw; V.yaw = camInit ? damp(V.yaw, V.yawT, 14, dt) : V.yawT; V.pitch = camInit ? damp(V.pitch, V.pitchT, 14, dt) : V.pitchT;
   if (V.yaw > Math.PI) { V.yaw -= TAU; V.yawT -= TAU; } else if (V.yaw < -Math.PI) { V.yaw += TAU; V.yawT += TAU; }
   const c = V.c = Math.cos(V.yaw), s = V.s = Math.sin(V.yaw), fixed = P.state === 'busy' && P.busy.cam;
@@ -1163,7 +1321,7 @@ function updateCamera(dt) {
   updateLead(dt);
   if (ui.closeup) { oy = 0.5; oz = 5.8; ty = P.pos.y + 0.78 * sc; if (wide) { tx += 1.3 * c; tz -= 1.3 * s; } else { oy = 0.75; oz = 6.2; } }   // en teléfono también a la altura de sus ojos (desde arriba se veía con sueño)
   else {
-    const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z * (P.state === 'ride' ? 1.45 : 1), p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
+    const z = ui.zoom, d = P.inHouse ? CAM_DH * Math.min(z, 1.1) : CAM_D0 * z * (P.state === 'ride' ? 1.45 : P.state === 'drive' ? 1.25 : 1), p = P.inHouse ? clamp(V.pitch + PITCH.house, 0.6, 1.2) : V.pitch;   // en casa, más alta
     oy = d * Math.sin(p); oz = d * Math.cos(p); ty = base + (Math.max(P.pos.y, -0.3) - base) * 0.6 + 1.25;
     const f = z * camLead.k, lx = camLead.x * f, lz = camLead.z * f, xl = world.camX(P.pos.z);
     tx = clamp(tx + lx * c + lz * s, -xl, xl); tz = Math.min(tz - lx * s + lz * c, world.camZ);   // sin mirar más allá del borde
@@ -1201,8 +1359,9 @@ function updateCamera(dt) {
   const seeZ = _sv.z * 0.5 + 0.5;                                    // su profundidad (antes de pxRadius, que vuelve a usar _sv)
   pScreen.x = (_sv.x * 0.5 + 0.5) * VW; pScreen.y = (-_sv.y * 0.5 + 0.5) * VH; pScreen.r = pxRadius(P.pos.x, P.pos.y + 0.75 * sc, P.pos.z, 0.75 * sc);
   // la ventana en árboles y arbustos (01-core.js): en píxeles del lienzo (con el origen abajo), un poco más grande que él, y su profundidad
-  const dpr = renderer.getPixelRatio(); FX.see.value.set(pScreen.x * dpr, (VH - pScreen.y) * dpr, pScreen.r * 2.3 * dpr, seeZ);
-  seeCheck(P, sc);                                                  // y si algo lo tapa, se prende
+  const dpr = renderer.getPixelRatio(), vk = P.state === 'drive' ? 2.3 : P.state === 'ride' ? 3.4 : 1;   // en un vehículo, la ventana es de su tamaño
+  FX.see.value.set(pScreen.x * dpr, (VH - pScreen.y) * dpr, pScreen.r * 2.3 * vk * dpr, seeZ);
+  seeCheck(P, sc * vk);                                             // y si algo lo tapa, se prende
 }
 
 // Las pruebas de visibilidad van en el marco de la cámara: u a la derecha de la pantalla y d hacia la cámara, en metros desde Tamachin.
@@ -1376,7 +1535,7 @@ function zoneName() {
   if (Math.abs(x) < 20 && z < -28) return 'Parque';
   return 'Ciudad';
 }
-const zoneEl = $('#zone'), promptEl = $('#prompt'), promptText = $('#promptText'), tAct = $('#tAct');
+const zoneEl = $('#zone'), promptEl = $('#prompt'), promptText = $('#promptText'), tAct = $('#tAct'), tJump = $('#tJump');
 let hudT = 0, lastZone = '', lastPrompt = null;
 function updateHud(dt) {
   const P = player; let best = null, bd = Infinity;
@@ -1385,8 +1544,9 @@ function updateHud(dt) {
     const fp = world === EARTH && forestPlantNear(P.pos.x, P.pos.z); if (fp && Math.hypot(fp.x - P.pos.x, fp.z - P.pos.z) < bd) best = fp.act || (fp.act = { pos: fp, range: fp.range, label: 'Comer ' + FRUITS[fp.kind].name, act: () => eatPlant(fp) });
   }
   curInteract = best; updateClock();
-  const label = P.state === 'sleep' ? 'Despertar' : P.state === 'ride' ? 'Saludar' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
+  const label = P.state === 'sleep' ? 'Despertar' : P.state === 'ride' ? 'Saludar' : P.state === 'drive' ? 'Bajar del auto' : best ? (typeof best.label === 'function' ? best.label() : best.label) : null;
   if (label !== lastPrompt) { lastPrompt = label; promptEl.hidden = !label; promptText.textContent = label || ''; tAct.textContent = label || 'Truco'; }
+  const jl = P.state === 'drive' ? 'Bocina' : 'Saltar'; if (tJump.textContent !== jl) tJump.textContent = jl;   // manejando, la bocina
   hudT -= dt; if (hudT <= 0) { hudT = 0.2; const zn = world.zone(); if (zn !== lastZone) { lastZone = zn; zoneEl.textContent = zn; document.documentElement.style.setProperty('--hud-h', topEl.offsetHeight + 'px'); } syncNeedsHud(); }
   if (toastT > 0) { toastT -= dt; if (toastT <= 0) toastEl.classList.remove('on'); }
   if (helpAuto && !helpEl.hidden && P.moved > 14) hideHelp();       // solo la primera vez
@@ -1626,7 +1786,8 @@ function updateBlobs() {
   const P = player, m = blobLive; let n = 0;
   const put = (x, y, z, w, d, ry) => { if (n < BLOB_MAX) { _im.compose(_ip.set(x, y + BLOB_UP, z), _iq.setFromAxisAngle(_yAxis, ry || 0), _is.set(w, 1, d)); m.setMatrixAt(n++, _im); } };
   const near = (x, z) => Math.abs(x - P.pos.x) < 70 && Math.abs(z - P.pos.z) < 70;
-  if (P.state !== 'sleep' && P.state !== 'ride') {                  // sobre el suelo o sobre lo que tiene debajo; más alto, más chica
+  const CC = myCar; if (CC.world === (world === EARTH ? null : world.name) && near(CC.x, CC.z)) put(CC.x, CC.y, CC.z, CC.hw * 2.3, CC.half * 2.15, CC.h);   // su auto
+  if (P.state !== 'sleep' && P.state !== 'ride' && P.state !== 'drive') {   // sobre el suelo o sobre lo que tiene debajo; más alto, más chica
     const g = world.ground(P.pos.x, P.pos.z), pr = perchUnder(P.pos.x, P.pos.z, P.pos.y), base = pr ? Math.max(g, pr.top) : g, k = clamp(1 - (P.pos.y - base) / 4, 0.35, 1), s = 1.55 * P.T.scale * k;
     put(P.pos.x, base, P.pos.z, s, s);
   }
@@ -1818,6 +1979,11 @@ function boot(data) {
   if ((!away || there) && typeof s.x === 'number' && typeof s.z === 'number' && isFinite(s.x) && isFinite(s.z)) { const pr = perchUnder(s.x, s.z, Infinity), top = pr ? pr.top : -Infinity;   // donde se quedó; si estaba parado sobre algo, ahí mismo
     player.pos.set(s.x, Math.max(0, top), s.z); resolvePlayer(); player.pos.y = Math.max(world.ground(player.pos.x, player.pos.z), top); }   // (de un mundo que ya no existe: al inicio)
   if (typeof s.heading === 'number' && isFinite(s.heading)) player.heading = s.heading;
+  const sc = s.car;                                                  // su auto, donde lo dejó (y si iba manejando, manejando)
+  if (sc && typeof sc.x === 'number' && isFinite(sc.x) && isFinite(sc.z) && isFinite(sc.h) && (sc.m === EARTH.name || sc.m === world.name)) {
+    const C = myCar; C.x = sc.x; C.z = sc.z; C.h = sc.h; C.world = sc.m === EARTH.name ? null : sc.m; (C.world ? world.root : EARTH.root).add(C.mesh);
+    C.y = Math.max(0, (C.world ? world : EARTH).ground(C.x, C.z)); C.place(); if (sc.d) getInCar(true);
+  }
   if (s.sound === false) setSound('no'); else if (typeof s.sound === 'string') setSound(s.sound);   // antes se guardaba sí o no
   if (s.helpSeen === true) helpEl.hidden = true;
   const qh = hourParam(); setHour(qh != null ? qh : typeof s.hora === 'number' && isFinite(s.hora) ? s.hora : DAY.start);   // las partidas viejas empiezan a las 8

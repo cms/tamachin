@@ -132,11 +132,39 @@ function carRect(c, pad) {                                           // la caja 
   const a = Math.abs(c.fx) > Math.abs(c.fz);
   carBox.x0 = c.x - (a ? c.half : c.hw) - pad; carBox.x1 = c.x + (a ? c.half : c.hw) + pad; carBox.z0 = c.z - (a ? c.hw : c.half) - pad; carBox.z1 = c.z + (a ? c.hw : c.half) + pad; return carBox;
 }
+// ───────────────────────── el auto de Tamachin ─────────────────────────
+// Un descapotable del color de Tamachin (se vuelve a pintar si cambia en Personalizar), con él sentado adelante y lugar atrás para un conejo.
+// Lo maneja 06-main.js (`updateDrive`); aquí están su forma y su estado. Para los autos es un obstáculo más, manejando o estacionado (en
+// updateCars), y estacionado empuja a Tamachin como un auto. `world`: null en la Tierra, o el nombre del mundo (el túnel).
+function myCarGeo(paint) {
+  const b = new Batch(), GL = '#2d3b55', TY = '#22222b', SEAT = '#3a3046', TRIM = '#f4f1e8';
+  b.rbox(paint, 0, 0.6, 0, 1.86, 0.62, 3.9, 0.26).rbox(paint, 0, 0.93, 1.25, 1.7, 0.18, 1.2, 0.08);                  // la carrocería y el cofre
+  b.box(SEAT, 0, 0.915, -0.55, 1.5, 0.02, 2.2).rbox(SEAT, 0, 1.12, -0.08, 1.3, 0.55, 0.18, 0.06).rbox(SEAT, 0, 1.08, -1.2, 1.3, 0.5, 0.18, 0.06);   // adentro, sin techo
+  b.box(GL, 0, 1.2, 0.66, 1.55, 0.42, 0.05, 0, -0.35).box(TRIM, 0, 1.41, 0.59, 1.6, 0.05, 0.08, 0, -0.35).cyl('#2b2b33', 0, 1.16, 0.3, 0.2, 0.2, 0.05, 14, 1.1, 0);
+  for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.cyl(TY, sx * 0.95, 0.36, sz * 1.3, 0.36, 0.36, 0.3, 14, 0, Math.PI / 2).cyl('#c9ced6', sx * 0.95, 0.36, sz * 1.3, 0.17, 0.17, 0.32, 10, 0, Math.PI / 2);
+  for (const sx of [-1, 1]) b.sph('#fff6c4', sx * 0.6, 0.72, 1.96, 0.17, 0.13, 0.07).sph('#ff4d4d', sx * 0.62, 0.72, -1.96, 0.16, 0.11, 0.07);
+  b.box('#d7dbe0', 0, 0.38, 1.98, 1.7, 0.16, 0.16).box('#d7dbe0', 0, 0.38, -1.98, 1.7, 0.16, 0.16);
+  return b.geometry();
+}
+const myCar = (() => {
+  const mesh = new THREE.Mesh(myCarGeo('#ffc93c'), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
+  const lb = new Batch(); lb.ao = false; for (const sx of [-1, 1]) lb.sph('#fff4c8', sx * 0.6, 0.72, 1.98, 0.21, 0.16, 0.08).sph('#ff2a1f', sx * 0.62, 0.72, -1.98, 0.19, 0.14, 0.08);
+  const lights = new THREE.Mesh(lb.geometry(), nightMat(0xffffff, 1, { vertexColors: true })); lights.raycast = () => {}; mesh.add(lights);   // de noche, faros y calaveras
+  const c = { mesh, color: '#ffc93c', x: CAR_HOME.x, z: CAR_HOME.z, y: 0, h: CAR_HOME.h, fx: 0, fz: 1, v: 0, half: 1.95, hw: 0.95, height: 1.2, world: null, hidden: false,
+    seat: { x: 0, y: 0.55, z: -0.5 }, back: { x: 0, y: 0.85, z: -1.55 }, door: { x: 0, z: 0 }, blockT: 0 };
+  c.place = () => {                                                 // la malla y la puerta (de donde se sube: a su izquierda) donde está
+    c.fx = Math.sin(c.h); c.fz = Math.cos(c.h); mesh.position.set(c.x, c.y, c.z); mesh.rotation.y = c.h;
+    c.door.x = c.x + c.fz * 1.7 - c.fx * 0.4; c.door.z = c.z - c.fx * 1.7 - c.fz * 0.4;
+  };
+  c.at = (p, o) => o.set(c.x + p.x * c.fz + p.z * c.fx, c.y + p.y, c.z - p.x * c.fx + p.z * c.fz);   // un punto del auto (x a su izquierda, z adelante) en el mundo
+  c.place(); return c;
+})();
 // Donde los autos esperan a Tamachin sin pitar ni asustarlo, como con el monito verde: la boca del túnel de la luna (mundos/luna.js).
 const CALM = [];
 const calmAt = (x, z) => CALM.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 function updateCars(dt, t) {
   for (const c of cars) placeCar(c);
+  const obst = myCar.world ? cars : cars.concat(myCar);             // el auto de Tamachin también estorba (manejando o estacionado)
   const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = (!!pz && pz.state !== 'stop') || calmAt(P.pos.x, P.pos.z);   // cruza con el monito verde
   for (const c of cars) {
     const L = c.L, dir = L.dir, fx = c.fx, fz = c.fz; let gap = 999, cross = false, honk = false;   // al frente: (fx, fz); al lado: (fz, −fx)
@@ -145,17 +173,18 @@ function updateCars(dt, t) {
       const d = (st.pos - front) * dir; if (d < -0.6 || d > 40) continue;
       const s = lightState(st.I, L.lightAxis, t); if (s === 'r' || (s === 'y' && d > 2.5)) gap = Math.min(gap, d);
     }
-    for (const o of cars) {
+    let byCar = false;
+    for (const o of obst) {
       if (o === c || o.hidden || c.hidden) continue;                 // en el túnel (el autobús) no estorba ni lo estorban
       const dx = o.x - c.x, dz = o.z - c.z, fwd = dx * fx + dz * fz; if (fwd <= 0 || fwd > 30) continue;
       const lat = Math.abs(dx * fz - dz * fx), same = Math.abs(fx * o.fx + fz * o.fz) > 0.7;   // en la misma dirección o en la contraria
       if (lat < c.hw + (same ? o.hw : o.half) + 0.25) {
         if (!same && c.stuck > 5) continue;
-        const g = fwd - c.half - (same ? o.half : o.hw) - 1.6; if (g < gap) gap = g; if (!same && g < 1.5) cross = true;
+        const g = fwd - c.half - (same ? o.half : o.hw) - 1.6; if (g < gap) { gap = g; byCar = o === myCar; } if (!same && g < 1.5) cross = true;
       }
     }
     let pg = 999;                                                    // qué tan lejos va Tamachin delante, en su carril
-    if (!c.hidden && P.state !== 'fly' && P.state !== 'ride' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera (arriba del autobús, no)
+    if (!c.hidden && P.state !== 'fly' && P.state !== 'ride' && P.state !== 'drive' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera (arriba del autobús, no)
       const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = dx * fx + dz * fz, lat = Math.abs(dx * fz - dz * fx);
       if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < c.y + 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
     }
@@ -188,7 +217,9 @@ function updateCars(dt, t) {
     placeCar(c);
     c.mesh.position.set(c.x, c.y + Math.sin(t * 9 + c.vmax * 7) * 0.012 * Math.min(1, c.v / 4), c.z); c.mesh.rotation.y = Math.atan2(c.fx, c.fz);
     c.mesh.visible = !c.hidden; if (c.signs) { const n = !!L.legs[c.leg].north; c.signs[0].visible = n; c.signs[1].visible = !n; }
+    c.blockT = byCar && c.v < 0.5 ? (c.blockT || 0) + dt : 0;        // el auto de Tamachin le estorba: espera, y a los 6 s pita
     c.honkT -= dt;
+    if (c.blockT > 6 && c.honkT <= 0) { c.honkT = rand(3, 4.5); say(c, choose(['¡Piii! ¿Me dejas pasar?', '¡Bip, bip, Tamachin!', '¡Tu auto está en medio!']), 1.8); SFX.honk(); }
     if (honk && c.v < 3.5 && c.honkT <= 0) { c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Muévete, porfa!']), 1.4); SFX.honk(); }
   }
   updateCarLights();

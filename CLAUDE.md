@@ -169,6 +169,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
 - **Tráfico amable**: los autos nunca atropellan a Tamachin. En `updateCars`, si va delante en su carril, el auto frena (y en seco, hasta 40 m/s², si se le puso enfrente de golpe) y para antes de tocarlo; un choque de lado solo lo empuja (`resolvePlayer`). Si uno tenía que frenar por él y venía rápido, pita, rechinan las llantas si fue en seco (`SFX.screech`) y Tamachin se asusta (`startle`: brinco, asombrado), una vez por acercamiento; la primera vez sale un aviso. `knock` (atropellarlo, aventarlo y marearlo) ya no se usa: es lo de antes, por si se quiere volver.
 - **Pasos de cebra** (`ZEBRAS`, cuatro por cruce, las rayas que pinta `cityTex`): cada uno cruza la calle de un eje (`ax`: los autos que pasan por él), `along` es hacia dónde camina el que cruza, `c` el centro de la calle y `w0..w1` el ancho de las rayas; `zebraAt`, `zebraU`, `zebraW`. Un poste por paso (`PED_SIGNS`, sólidos, en su propia malla sin raycast), del lado de afuera de las rayas y en una sola punta, como un rehilete (el del norte en la punta noreste, el del este en la sureste, el del sur en la suroeste, el del oeste en la noroeste): cada esquina tiene uno, junto a su paso, y desde la otra punta se mira el del otro lado de la calle. Antes había dos por paso y una franja de color en la orilla para decir cuál era de cuál: la ciudad se veía llena de postes.
 - **El monito** (`pedState`) sale de `lightState`, el mismo reloj de los autos: verde 3.5 s después de que sus autos tienen rojo (medido: el último que pasó en amarillo deja las rayas hasta 2.6 s después, un autobús 3.1), 4 s fijo, 1.5 s parpadeando y rojo 0.5 s antes de que les toque verde. Si cambias los tiempos del semáforo de los autos, `trafico` simula 10 minutos de tráfico y revisa que con el monito verde no haya autos sobre las rayas. Arriba de cada poste, una caja (`pedHeads.box`) con el monito en sus dos caras (`pedHeads.walk` y `pedHeads.stop`, 2·i al frente y 2·i + 1 atrás), que miran a lo largo de su paso, una hacia cada punta, como los semáforos de dos caras: de lado se ve la caja oscura, y así también se sabe de qué paso es. Antes eran Points que siempre miraban a la cámara y no tenían lado. Las caras tienen luz propia; `updatePedSigns` prende en cada una la que toca y, parpadeando, la apaga a ratos (`instanceColor`). Van con `renderOrder` 2.5 (la caja 2.4): después del halo del farolito (aditivo; si no, de noche pintaba encima) y antes que la lluvia. Si la caja queda entre la cámara y Tamachin, caja y caras se desvanecen (`signFade`), con un valor por instancia (`aFade`, `pedFadeMat`), como los árboles que se agachan; `vista` no lo vería (no tienen raycast).
+- **El auto de Tamachin** también es un obstáculo para los autos (sección «El auto de Tamachin»).
 - Con el monito verde (o parpadeando) y Tamachin sobre ese paso, los autos lo esperan sin pitar ni asustarlo. **Cruzar** (`updateCrossing`): se juzga al bajar de la banqueta (con el monito fijo, no parpadeando) y cuenta al llegar a la otra orilla sin salirse de las rayas: diversión (`gain(…, 'cruce', 20)`).
 
 ## Carretera a Valle Alegre (`03-world.js`, `05-norte.js`; los autos en `04-life.js`)
@@ -235,6 +236,44 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - **Guardar arriba** cuenta como si ya hubiera llegado a la otra parada.
   - **«Volver al inicio»** lo baja (`leaveBus(START)`), también a medio túnel.
 - **La prueba** `autobus` revisa la vuelta, subirse, el túnel, bajarse con el conejo, que frene por Tamachin, guardar arriba y «Volver al inicio».
+
+## El auto de Tamachin (`myCar` en `04-life.js`; manejar en `06-main.js`)
+
+- **El auto** es un descapotable del color de Tamachin: `myCarGeo`, que se vuelve a armar si cambia el color (`carPaint`).
+  - Vive en el jardín (`CAR_HOME`), sobre su cochera (`DRIVEWAY`), y sale por su propia puerta en la cerca sur.
+  - Lo que cae en la cochera se quita como lo de la carretera.
+  - `myCar.world` es `null` en la Tierra o `'tunel'`. `place()` pone la malla y la puerta (`door`, a su izquierda). `at(p, o)` lleva un punto del auto (x a su izquierda, z adelante) al mundo: el asiento (`seat`) y el de atrás (`back`).
+  - De noche prende faros y calaveras (`nightMat`, hijos de la malla).
+- **Subir y bajar.**
+  - «Manejar» junto a la puerta (`getInCar`).
+  - Estado `drive`: el botón de acción es «Bajar del auto» (`getOutCar`) y el de saltar, «Bocina» (`honkCar`).
+  - Se baja a su izquierda, o donde quepa.
+  - En el túnel no se baja: «Aquí no me estaciono: ¡es un túnel!».
+  - Un conejo que lo sigue se sube atrás (`C.pal`, `riding`) y se baja con él.
+  - Si Lulú lo acompaña, ella le dice que lo espera.
+- **Manejar** (`updateDrive`, `CAR`):
+  - **Controles:**
+    - Teclas: adelante y atrás aceleran y frenan (y luego reversa); los lados giran, según la velocidad.
+    - Palanca: a dónde ir, según la cámara. Hacia atrás (más de ~115°), frena y luego reversa.
+  - **Velocidad:** 13 m/s en pavimento y 7 en pasto, tierra o nieve (con `world.surface`). Una cuesta lo frena, y arriba de 45 % no la sube.
+  - **El agua** no la pisa.
+  - **Choques:** tres círculos a lo largo (`carPush`). Todo lo sólido es pared aunque tenga `top`, también la casa entera (`HOUSE`: por su puerta cabría), los autos y los límites. El círculo más empujado mueve al auto.
+  - **Amable:** frena solo ante vecinos, animales y autos que tenga enfrente, como el `vMax` de los autos.
+  - **Semáforos:** «¡Uy, estaba en rojo!» al cruzar un alto en rojo; no pasa nada más.
+  - **Se inclina** con la cuesta (`rotation.order` YXZ).
+- **Los demás:** para los autos y el autobús, `myCar` es un obstáculo más, manejando o estacionado (`obst` en `updateCars`). Lo esperan sin asustar a nadie y, si lleva 6 s estorbándoles parado, pitan (`blockT`). Estacionado, empuja a Tamachin como un auto.
+- **Las bocas.**
+  - Las de la montaña llevan al túnel manejando (`carToWorld`, con el telón compartido `P.tele` / `stepTele`, el mismo del autobús); el auto aparece del otro lado ya andando, en su carril.
+  - En la de la luna dice que no cabe.
+- **La cámara y lo demás:**
+  - La cámara va ×1.25 más lejos, detrás del auto cuando avanza (como en el autobús) y se adelanta con la velocidad.
+  - La ventana en los árboles es de su tamaño (`vk`).
+  - La percusión de correr suena arriba de 8 m/s, y la diversión sube poco a poco.
+  - El motor (`engineSet`) es un diente de sierra con filtro, directo a la salida, cuyo tono sube con la velocidad.
+- **Guardar:**
+  - Se guarda `car` (mundo, x, z, rumbo y si va manejando); al recargar sigue manejando donde iba.
+  - «Volver al inicio» lo baja y el auto vuelve a su cochera (`carHome`).
+- **La prueba** `auto` revisa todo eso, de la cochera al túnel de punta a punta.
 
 ## La ayuda de los controles
 
@@ -308,6 +347,7 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
   - **Las fuentes en `performance`.** Que con `crossorigin` aparezcan ahí los archivos de fuente. Si Safari no los anota, las fuentes se guardan desde la segunda visita, no desde la primera.
 - La ventana en los árboles en un teléfono: mientras está prendida (una planta lo tapa), el `discard` le quita a la GPU del iPhone una optimización en todo lo que dibujan árboles y arbustos; cuánto cuesta ahí, sobre todo en el bosque, donde casi siempre hay uno delante.
 - La luz de más en un teléfono: cuánto cuestan el viento y las nubes en el shader (una lectura de textura por pixel en todo lo que recibe luz) y las sombras de contacto (hasta 90 que se mueven, más las fijas); cómo se ven las sombras de las nubes al aire libre.
+- Manejar en un teléfono: cómo se siente la palanca (apuntar a dónde ir) y si 13 m/s se ven bien entre los edificios. Cómo suena el motor (se sintetiza; no se ha escuchado con calma) y si su volumen queda bien junto a la música.
 - El autobús en un teléfono: si la cámara que lo sigue (más lejos, detrás de él) se ve bien en las curvas de las terminales y en el túnel.
 - La carretera y el túnel en un teléfono: cuánto cuesta el tubo (no echa sombra, pero sí la recibe) y si la luz tibia y la cámara baja, debajo de la bóveda, se ven bien.
 - La luna en un teléfono: cuánto cuesta (la malla del suelo, de unos 33 000 triángulos, también echa sombra), cómo se ven el cielo negro y la Tierra, y si con la cámara baja (16°) se juega bien. Que en iPhone empujar contra la boca del túnel con la palanca se sienta natural.
