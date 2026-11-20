@@ -141,7 +141,7 @@ module.exports = {
     T.check('después de una pausa sigue desde ahora, sin amontonar notas', skip[1] <= 3, skip[0] + ' y luego ' + skip[1] + ' corcheas');
 
     // cada mezcla, renderizada: ni muda, ni saturada, ni con huecos; los efectos del juego llegan a 0.06
-    const ZONES = [['casa', 80], ['ciudad', 72], ['jardin', 24], ['parque', 24], ['camino', 30], ['bosque', 101], ['montes', 64], ['pueblo', 58], ['sinfin', 60], ['luna', 72], ['cuna', 69]];
+    const ZONES = [['casa', 80], ['ciudad', 72], ['jardin', 24], ['parque', 24], ['camino', 30], ['bosque', 101], ['montes', 64], ['pueblo', 58], ['sinfin', 60], ['luna', 72], ['tunel', 64], ['cuna', 69]];
     for (const [k, secs] of ZONES) {
       const r = await E(RENDER, { plan: [[0, k]], secs, sr: 22050 });
       T.info(k + ': pico ' + r.peak.toFixed(3) + ', RMS ' + r.rms.toFixed(4) + ', el segundo más callado ' + r.quiet.toFixed(4));

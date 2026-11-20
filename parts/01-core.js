@@ -177,6 +177,8 @@ function setHour(h) { day.h = ((h % 24) + 24) % 24; skyNow(true); }
 function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; skyNow(false); }
 // en otro mundo la hora sigue corriendo, pero el cielo y la luz son los suyos (`world.sky`, mundos/)
 function skyNow(force) { if (world && world.sky) world.sky(force); else applyDay(force); }
+// la luz de afuera a la hora `h` (como day.light, sin nubes): la usa un mundo sin cielo propio para que el reloj siga a la Tierra
+function lightAt(h) { let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++; const A = SKY_KEYS[i], B = SKY_KEYS[i + 1]; return lerp(A.light, B.light, ease(clamp((h - A.h) / (B.h - A.h), 0, 1))); }
 function applyDay(force) {
   const h = day.h; let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++;
   const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));

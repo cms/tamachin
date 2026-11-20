@@ -243,7 +243,7 @@ function roadRibbon(R, d0, d1) {                                   // tres filas
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, roadMat); m.receiveShadow = true; scene.add(m); return m;
 }
-roadRibbon(ROAD, 1.9, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);
+roadRibbon(ROAD, 0, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);   // desde la orilla de la ciudad: tapa la franja del seto
 
 // ───────────────────────── montañas: árboles, rocas, cimas ─────────────────────────
 { const R = mulberry(9101), r2 = (a, b) => a + (b - a) * R();

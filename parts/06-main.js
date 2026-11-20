@@ -1119,6 +1119,7 @@ function updateCamera(dt) {
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
   if (hills) camPos.y = Math.max(camPos.y, world.ground(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
+  if (world.camFit) world.camFit(camPos);                           // dentro de algo (el túnel): la cámara no sale de ahí
   V.vc = c; V.vs = s;
   if (fixed) { const hx = camPos.x - P.pos.x, hz = camPos.z - P.pos.z, h = Math.hypot(hx, hz); if (h > 0.5) { V.vs = hx / h; V.vc = hz / h; } }   // toma fija: el marco sigue a la cámara real
   camSlope = (camPos.y - ty) / Math.max(1, (camPos.x - P.pos.x) * V.vs + (camPos.z - P.pos.z) * V.vc);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
@@ -1447,7 +1448,7 @@ function tapShootingStar(px, py) {
 }
 // el farolito flota a la derecha de Tamachin (en la pantalla), un poco hacia la cámara, para no taparle la cara
 function updateLantern(dt) {
-  const P = player, L = lantern, k = smooth(0.55, 0.2, day.light), sc = P.T.scale;
+  const P = player, L = lantern, k = Math.max(smooth(0.55, 0.2, day.light), world.lantern || 0), sc = P.T.scale;   // en un lugar oscuro (el túnel), también de día
   lanternLight.intensity = 0.95 * k; L.g.visible = k > 0.02;
   if (!L.g.visible) { L.init = false; return; }
   const c = camView.c, s = camView.s; L.t += dt;
@@ -1646,7 +1647,7 @@ world = EARTH;
 const WORLD_BASE = {
   rules: RULES, weather: false, wet: () => false, puddle: () => false, inHouse: () => false, collide() {}, slope: null,
   camBase(p) { return this.ground(p.x, p.z); }, hills: () => true, edge(x, z) { return this.ground(x, z); }, camX: () => Infinity, camZ: Infinity,
-  surface: () => 'piedra', pre() {}, mid() {}, post() {},
+  surface: () => 'piedra', pre() {}, mid() {}, post() {}, camFit: null,
 };
 // Lo de la Tierra va en EARTH.root: escondido, no se dibuja nada de adentro (ni su sombra) aunque sus sistemas prendan o apaguen
 // cosas. Afuera se quedan Tamachin, las tres luces, el cielo, el farolito y las partículas: no se esconden nunca (quitar una luz
@@ -1694,7 +1695,7 @@ function travel(c, from, to, spot, i) {
   const it = from.interacts.indexOf(from.interacts.find((q) => q.who === c)); if (it >= 0) to.interacts.push(from.interacts.splice(it, 1)[0]);
   c.world = to === EARTH ? null : to.name; to.root.add(c.mesh);
   const x = spot.x + i * 0.9, z = spot.z; c.pos.set(x, to === EARTH ? 0 : to.ground(x, z), z); c.tx = x; c.tz = z; c.hopP = 0; c.rest = 0.4; c.mesh.rotation.x = 0;
-  if (to !== EARTH) say(c, choose(['¡Hooop!', '¡Hop… hooop!', '(mira las estrellas)']), 2.2);
+  if (to !== EARTH) say(c, choose(to.hopLines || ['¡Hooop!', '¡Hop… hooop!', '(mira las estrellas)']), 2.2);
 }
 // Con el telón: se cierra (0.45 s), cambia de mundo, y se abre. Va en una secuencia (startBusy), así `advance` también lo mueve.
 // o: { at, line, walkIn, walkOut }. walkIn y walkOut ({ x, z }, m/s) lo hacen caminar mientras se cierra y mientras se abre (por la

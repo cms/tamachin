@@ -29,6 +29,7 @@ parts/
   06-main.js      Jugador, necesidades, encargos, entrada (teclado/puntero/táctil), panel, cámara, mundos, bucle principal
 mundos/
   luna.js         La luna: un mundo aparte, al que se llega por un túnel de la ciudad
+  tunel.js        El túnel de las montañas: la carretera a Valle Alegre por debajo de los picos
 build.sh          Concatena parts/ y mundos/ en game.js
 publicar.cjs      Arma dist/ (lo que se publica) y le pone la versión; lo llama `wrangler deploy`
 manifest.webmanifest  La app instalable: nombre, colores, íconos
@@ -186,7 +187,7 @@ Todo es de colores lisos, como juguetes. Para que no parezca pegado encima del s
 - Ciudad: X y Z entre −62 y 62. Calles en X = ±24 y Z = ±24.
 - Casa: manzana central. Parque: manzana norte del centro, con el portón hacia el camino.
 - Camino: de Z = −62 a Z = −160. Bosque: de Z = −160 a Z = −268, con el río cerca de Z = −205.
-- Carretera a Valle Alegre: sale de la ciudad por el norte de la calle X = −24 (donde antes había un túnel), rodea el molino, cruza el bosque y el río por un puente y llega a la boca de un túnel al pie de la montaña, en Z = −280. Del otro lado, la otra boca está al sur de Valle Alegre, en (34, −1262).
+- Carretera a Valle Alegre: sale de la ciudad por el norte de la calle X = −24 (donde antes había un túnel), rodea el molino, cruza el bosque y el río por un puente y llega a la boca de un túnel al pie de la montaña, en Z = −280. Empujando contra la boca se entra al túnel, de unos 400 m con curvas, lámparas y banquetas (un mundo aparte, como la luna), y del otro lado se sale por la otra boca, al sur de Valle Alegre, en (34, −1262).
 - Montañas: de Z = −268 a Z = −1288, X entre −340 y 340. Tres picos de 400 m: Malvavisco (X −300), Gelatina (X 0, Z −770) y Turrón (X 300). Un sendero sale del claro de la fogata, sube al Pico Gelatina y baja al pueblo.
 - Valle Alegre: el pueblo, de Z = −1288 a Z = −1416 (centro en Z = −1352), con mercado al sur, kiosco en la plaza y posada con hamaca al norte.
 - La luna: un mundo aparte, con sus propias coordenadas: el Cráter Grande, de 52 m de radio, con el túnel de vuelta en (0, −50), mirando al centro. Se entra por el túnel de los autos de la calle X = 24, en Z = −60.

@@ -55,7 +55,7 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
 
 ## Mundos (`mundos/`; `WORLDS`, `world` y `RULES` en `01-core.js`; `EARTH`, `setWorld` y `enterWorld` en `06-main.js`)
 
-- **Qué es un mundo.** La Tierra (`EARTH`) es todo lo de siempre. Los otros viven en `mundos/*.js` (por ahora `luna.js`), que `build.sh` mete en la IIFE entre `05-norte.js` y `06-main.js`, en orden alfabético.
+- **Qué es un mundo.** La Tierra (`EARTH`) es todo lo de siempre. Los otros viven en `mundos/*.js` (`luna.js` y `tunel.js`), que `build.sh` mete en la IIFE entre `05-norte.js` y `06-main.js`, en orden alfabético.
   - **Al cargar, un mundo solo se registra** en `WORLDS`. También puede agregar su pieza a `MUSIC` y `MUSIC_ZONES` (antes de que `makeMusic` las recorra), sus pasos a `STEPS`, sus encargos en `quests` (06 los junta con `QUESTS`) y su entrada en la Tierra.
   - **Lo suyo se arma la primera vez que Tamachin llega**: `build(M)` lo pone en `M.root` y `M.solids`, y se compila bajo el telón.
   - **No es un archivo que se baje aparte.** Así `sw.js`, `publicar.cjs` y la versión no cambian, y una página nunca junta un mundo de otra publicación.
@@ -63,7 +63,7 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
   - `rules`: gravedad, salto, velocidades, aceleración y frenado. `RULES` son las de la Tierra; el salto llega a jump²/(2·grav).
   - el suelo y lo que pisa: `ground`, `wet` (el río), `puddle`, `inHouse`, `slope`, `surface` (los pasos);
   - `collide`: lo que va después de los colisionadores. En la Tierra, los autos, los vecinos, `northCollide` y `keepInWorld`;
-  - la cámara: `camBase`, `hills`, `edge`, `camX`, `camZ`;
+  - la cámara: `camBase`, `hills`, `edge`, `camX`, `camZ`, y `camFit(camPos)`, que al final de `updateCamera` deja la cámara dentro de algo (el túnel);
   - `zone` (el nombre en el HUD), `music`, `interacts`, `weather` (si hay tiempo), `night` (para la música), `skyWord` y `skyText` (el reloj y el diario sin tiempo; la carátula del reloj tampoco pinta nubes ni lluvia).
 - **`step()`** corre lo que comparten todos los mundos: la hora, Tamachin, las necesidades, la cámara, el farolito, las partículas, el HUD y la música. Lo de cada uno va en `world.pre` (antes de Tamachin), `world.mid` (después) y `world.post` (después de la cámara).
   - Mientras está en otro mundo, en la Tierra no se mueve nada: los autos y los vecinos (también Lulú, si lo acompaña) lo esperan donde estaban.
@@ -87,8 +87,25 @@ El bosque sin fin carga más casillas hacia donde mira la cámara (`updateForest
   - **Las reglas:** un tercio de la gravedad (salta 4.1 m y pasa 2.1 s en el aire) y se resbala un poco (`accel`, `stop`).
   - **El suelo** es una rejilla como la de `terrainY` (`lunaY`: la malla y los pies usan los mismos triángulos). Empieza en 3 m, así que los cráteres no bajan de 0: la cámara corta lo que queda abajo de −0.3, por el río.
   - **La cámara** baja a 16° al entrar y al salir regresa a como estaba (`homePitch`). `save()` guarda esa altura de la Tierra, no la de la luna, y `boot()` pone la cámara antes de entrar al mundo guardado. Mira hacia abajo, y solo así se ven las estrellas y la Tierra, un `skySprite` grande a 3° sobre el horizonte, detrás de la orilla.
-  - **El conejo, allá** (`makeRabbit`, 04-life.js, con `M` = su mundo): pisa `lunaY` y choca con lo de la luna (`resolveAgent` con `M.solids`), no busca agua, y cada brinco dura 0.8 s y sube 1.3 m (en la Tierra, 0.36 s y 0.4 m), con polvito al caer. Como el brinco es largo, apunta derecho al empezarlo y a donde va a llegar Tamachin (su velocidad por lo que dura el brinco): si no, iba en espiral y se quedaba atrás.
+  - **El conejo, allá** (`makeRabbit`, 04-life.js, con `M` = su mundo): pisa `lunaY` y choca con lo de la luna (`resolveAgent` con `M.solids`), no busca agua, y con poca gravedad (`low`: la de su mundo) cada brinco dura 0.8 s y sube 1.3 m (en la Tierra y en el túnel, 0.36 s y 0.4 m), con polvito al caer. Como el brinco es largo, apunta derecho al empezarlo y a donde va a llegar Tamachin (su velocidad por lo que dura el brinco): si no, iba en espiral y se quedaba atrás.
   - **El encargo** `luna` es plantar la bandera (del color de Tamachin) en la loma del centro. Tiene su pieza (`luna`) y sus pasos (`polvo`). La prueba `luna` lo revisa todo.
+- **El túnel** (`mundos/tunel.js`) es la carretera por debajo de las montañas. Es un mundo como la luna, pero con las reglas de la Tierra.
+  - **El tubo** (`TUBE`, `TUBE_PATH`) es de unos 410 m con curvas suaves.
+    - La línea central va del lado de la ciudad (d = 0, al sur) al de Valle Alegre (al norte): ir a Valle Alegre es ir al norte, como afuera.
+    - `tubeNear(x, z, o)` da `d` (a lo largo) y `u` (de lado), buscando por z: el tubo siempre baja en z.
+    - Tiene banquetas de 0.2 m (`tubeY`), paredes de azulejo con una franja y bóveda (`tubeRoof`), todo de un solo lado y hacia adentro.
+    - Las lámparas de sodio son `MeshBasic`, y al fondo de cada punta hay una luz sin niebla.
+  - **Entrar y salir:**
+    - Se entra empujando contra el frente de una boca de la Tierra (`onEarth`, con `MOUTHS` de 05-norte.js), y se sale empujando contra una punta del tubo (`mid`).
+    - Las puntas (`TUBE.door`) quedan a 14 m de cada extremo: detrás hay lugar para la cámara, y la luz, vista de espaldas, no se dibuja.
+    - `tubeEnd` y `mouthExit` dicen dónde aparece, hacia dónde camina y hacia dónde mira la cámara (`at.yaw`).
+    - Cada boca y el túnel se rearman (`armed`) cuando Tamachin se aleja.
+  - **La cámara:** `camFit` la deja entre las paredes, debajo de la bóveda y entre las dos puntas.
+  - **El cielo** (`sky()`): sin sol, `hemi` tibio, niebla oscura y corta, y los `nightMat` encendidos (`applyDay` no corre ahí). `day.light` es la de afuera (`lightAt`, 01-core.js), así el reloj sigue al día de la Tierra. El farolito se prende con `lantern: 1` (06-main.js, `updateLantern`).
+  - **El sonido:** la pieza `tunel` (eco alto), un rumor de viento y los pasos `tunel` (la piedra con eco).
+  - **Lo que no hay:** autos adentro; los de la carretera se pierden en la boca.
+  - **Un conejo que lo sigue** cruza con él y dice `hopLines`. Si deja de seguirlo lejos de su casa (más de 60 m, junto a Valle Alegre), se queda a vivir ahí (`homeNear`, fuera de la carretera) en vez de regresar por la montaña.
+  - **La prueba** `carretera` lo cruza de ida y vuelta, revisa la cámara en el tubo y que al recargar siga ahí.
 
 ## Luz de más: sombra de rincón, de contacto, viento, nubes y borde (`01-core.js`, `06-main.js`)
 
@@ -162,7 +179,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - 8 m de ancho (`ROAD_HALF` incluye las orillas blancas), carriles a ±2 m.
 - **Despejar sin mover `rnd`.** Lo que cayó sobre la carretera se quita después de generarlo, y después de las bayas, que se acomodan según los árboles, arbustos y rocas. Saltarlo al generarlo movería todo lo que viene después.
   - Los árboles se encogen a `s = 0.001`.
-  - Los círculos de árboles y rocas salen de `circles` y `perches`.
+  - Cada cosa que se quita se lleva su colisionador (`drop`, por posición; si no, quedaban troncos invisibles). Después sale cualquier otro círculo que pise el asfalto, y lo que se salta deja `perches`.
   - Arbustos, rocas, hierba y flores salen de sus listas.
   - Lo que se dibuja directo en un Batch (hongos, piedras y plantas del río, carrizos) sortea sus números y luego se salta.
   - En los cerros, `05-norte.js` no pone vegetación cerca (`nearRoad`, `flatK`, `MOUTHS`).
@@ -172,6 +189,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - La explanada está en `FLATS`: `flatK` en `mountainH` deja el suelo a nivel y la ladera vuelve a subir en `m` metros, como un corte.
   - El frente es sólido, como en los túneles de la ciudad, y la placa dice a dónde lleva.
   - Van en `PORTALS`, así la cámara sube por encima.
+  - Empujar contra el frente lleva al túnel (abajo).
 - **El asfalto** (`roadRibbon`): tres filas que siguen `groundY` a 0.035 m, con la textura de las calles. Los pasos dicen `'piedra'` y arriba dice «Carretera a Valle Alegre» (`zoneName`).
 - **Los autos** (`04-life.js`).
   - **Rutas:** cada carril es una ruta: `L.at(s)` da x, z, rumbo (`fx`, `fz`) y altura. En la ciudad, `c.s` es la coordenada del eje. Al frente y al lado se mide con el rumbo de cada auto; en una curva, el empujón va con tres círculos (`earthCollide`).
@@ -253,6 +271,7 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
   - **Las fuentes en `performance`.** Que con `crossorigin` aparezcan ahí los archivos de fuente. Si Safari no los anota, las fuentes se guardan desde la segunda visita, no desde la primera.
 - La ventana en los árboles en un teléfono: mientras está prendida (una planta lo tapa), el `discard` le quita a la GPU del iPhone una optimización en todo lo que dibujan árboles y arbustos; cuánto cuesta ahí, sobre todo en el bosque, donde casi siempre hay uno delante.
 - La luz de más en un teléfono: cuánto cuestan el viento y las nubes en el shader (una lectura de textura por pixel en todo lo que recibe luz) y las sombras de contacto (hasta 90 que se mueven, más las fijas); cómo se ven las sombras de las nubes al aire libre.
+- La carretera y el túnel en un teléfono: cuánto cuesta el tubo (no echa sombra, pero sí la recibe) y si la luz tibia y la cámara baja, debajo de la bóveda, se ven bien.
 - La luna en un teléfono: cuánto cuesta (la malla del suelo, de unos 33 000 triángulos, también echa sombra), cómo se ven el cielo negro y la Tierra, y si con la cámara baja (16°) se juega bien. Que en iPhone empujar contra la boca del túnel con la palanca se sienta natural.
 - La versión nueva en un iPhone de verdad:
   - que la app instalada avise `visibilitychange` al salir del fondo, y que desde ahí `reg.update()` de verdad revise `sw.js`;

@@ -4,10 +4,29 @@
 // de la calle del oeste salgan a la carretera y vuelvan, y que frenen ante Tamachin también allá.
 const { openGame, PHONE } = require('./lib.cjs');
 
-const EXPOSE = 'ROAD, ROAD_N, ROAD_HALF, ROAD_FACE, roadAt, roadDist, circles, boxes, northCollide, trees, SKIND, groundY, terrainY, EARTH, cars, joy, RB, MOUTHS, player, traffic';
+const EXPOSE = 'ROAD, ROAD_N, ROAD_HALF, ROAD_FACE, roadAt, roadDist, circles, boxes, northCollide, trees, SKIND, groundY, terrainY, EARTH, cars, joy, RB, MOUTHS, player, traffic, ' +
+  'WORLDS, TUBE, TUBE_PATH, tubeNear, tubeRoof, scene, camera, keys, berryBushes, creatures, get W() { return world; }';
+const STATE = () => {
+  const T = window.__tamachin, D = window.__dbg, P = T.player; let lights = 0; D.scene.traverseVisible((o) => { if (o.isLight) lights++; });
+  return { world: T.world(), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2), st: P.state, zone: document.querySelector('#zone').textContent, music: D.W.music(), lights, earth: D.EARTH.root.visible };
+};
+// dentro del túnel, sigue la línea central con la palanca (cámara en 0°) hacia una punta (`dir` 1: la de Valle Alegre, −1: la de la
+// ciudad) y empuja contra ella hasta cambiar de mundo; devuelve cuánto se alejó del centro
+const FOLLOW = (dir) => {
+  const T = window.__tamachin, D = window.__dbg, P = T.player, o = {}, q = {}; T.view.yaw = T.view.yawT = 0;
+  let it = 0, worst = 0;
+  for (; it < 1500 && T.world() === 'tunel'; it++) {
+    if (P.state === 'busy') { T.advance(0.2); continue; }
+    const k = D.tubeNear(P.pos.x, P.pos.z, q); worst = Math.max(worst, Math.abs(k.u));
+    D.roadAt(D.TUBE_PATH, k.d + 4 * dir, o); const dx = o.x - P.pos.x, dz = o.z - P.pos.z, l = Math.hypot(dx, dz) || 1;
+    D.joy.x = dx / l; D.joy.y = dz / l; T.advance(0.2);
+  }
+  D.joy.x = D.joy.y = 0; T.advance(1.5);
+  return { it, worst: +worst.toFixed(2) };
+};
 
 module.exports = {
-  titulo: 'la carretera a Valle Alegre: despejada, se camina entera, el puente, las bocas, y los autos salen y vuelven',
+  titulo: 'la carretera a Valle Alegre: despejada, se camina entera, el puente, las bocas, los autos salen y vuelven, y el túnel de punta a punta',
   async run(T) {
     const { page, errors, E } = await openGame(T, { device: PHONE, expose: EXPOSE, hora: 11 });
 
@@ -26,10 +45,14 @@ module.exports = {
       const plants = [];
       for (const t of D.trees) if (t.s > 0.01 && D.roadDist(t.x, t.z, D.ROAD_HALF + 1) < Infinity) plants.push(['árbol', +t.x.toFixed(1), +t.z.toFixed(1)]);
       for (const k of ['pine', 'oak', 'rock', 'bush']) for (const it of D.SKIND[k].list) if (D.roadDist(it.x, it.z, D.ROAD_HALF + 1) < Infinity) plants.push([k, +it.x.toFixed(1), +it.z.toFixed(1)]);
-      return { bad: bad.slice(0, 8), n: bad.length, plants: plants.slice(0, 8), np: plants.length };
+      // lo que se quitó se quitó entero: ningún tronco invisible (árbol encogido que sigue chocando) ni arbusto de bayas en la carretera
+      const ghosts = D.trees.filter((t) => t.s < 0.01 && D.circles.some((c) => Math.hypot(c.x - t.x, c.z - t.z) < 0.01)).map((t) => [+t.x.toFixed(1), +t.z.toFixed(1)]);
+      const berries = D.berryBushes.filter((b) => D.roadDist(b.x, b.z, D.ROAD_HALF + 2) < Infinity).map((b) => [+b.x.toFixed(1), +b.z.toFixed(1)]);
+      return { bad: bad.slice(0, 8), n: bad.length, plants: plants.slice(0, 8), np: plants.length, ghosts, berries };
     });
     T.check('nada choca sobre el asfalto, de la ciudad a la boca y de la otra boca al pueblo', clear.n === 0, clear.n ? JSON.stringify(clear.bad) : undefined);
     T.check('ni árboles, rocas ni arbustos encima de la carretera', clear.np === 0, clear.np ? JSON.stringify(clear.plants) : undefined);
+    T.check('lo que se quitó de la carretera se quitó entero: ningún tronco invisible ni arbusto de bayas', !clear.ghosts.length && !clear.berries.length, JSON.stringify({ ghosts: clear.ghosts, berries: clear.berries }));
 
     // se camina entera, siguiendo la carretera con la palanca, sin que nada lo desvíe
     const walk = await E(() => {
@@ -87,6 +110,64 @@ module.exports = {
       return { gap: +gap.toFixed(2), v: +c.v.toFixed(2), moved: +Math.hypot(P.pos.x - px, P.pos.z - pz).toFixed(2), state: P.state };
     });
     T.check('en la carretera, un auto a toda velocidad frena antes de tocar a Tamachin', brake.gap > 0.5 && brake.v < 0.3 && brake.moved < 0.3, JSON.stringify(brake));
+
+    // el túnel (mundos/tunel.js): empujando contra la boca sur se entra; adentro, su luz y su música
+    const st = () => E(STATE), keyWalk = (k, secs) => E(([k, secs]) => { const D = window.__dbg; D.keys[k] = true; window.__tamachin.advance(secs); D.keys[k] = false; }, [k, secs]);
+    await E(() => { const T = window.__tamachin, D = window.__dbg; T.go(-24, D.ROAD_FACE + 4); T.view.yaw = T.view.yawT = 0; T.advance(0.3); });
+    await keyWalk('KeyW', 1.4); await E(() => window.__tamachin.advance(1.5));
+    const inT = await st();
+    T.check('empujando contra la boca sur entra al túnel: «Túnel de las Montañas», su música, las mismas tres luces, y la Tierra escondida', inT.world === 'tunel' && inT.st === 'normal' && inT.zone === 'Túnel de las Montañas' && inT.music === 'tunel' && inT.lights === 3 && !inT.earth, JSON.stringify(inT));
+    await page.screenshot({ path: T.out('tunel.jpg'), type: 'jpeg', quality: 70 });
+
+    // la cámara no sale del tubo: entre las paredes y debajo de la bóveda, a cualquier altura y desde cualquier lado
+    const cam = await E(() => {
+      const T = window.__tamachin, D = window.__dbg, o = {}, q = {}, bad = []; let n = 0;
+      for (const d of [40, 120, 200, 290]) for (const pitch of [15, 34, 60]) for (const yaw of [0, 90, 180, 270]) {
+        D.roadAt(D.TUBE_PATH, d, o); T.go(o.x + o.nx * 2, o.z + o.nz * 2); T.view.yaw = T.view.yawT = yaw * Math.PI / 180; T.view.pitch = T.view.pitchT = pitch * Math.PI / 180; T.advance(0.8); n++;
+        const c = D.camera.position, k = D.tubeNear(c.x, c.z, q), P = T.player.pos;
+        let out = Math.abs(k.u) > D.TUBE.W - 0.4 || c.y > D.tubeRoof(k.u) - 0.35 || c.y < 0.5;
+        for (let i = 1; i < 10 && !out; i++) { const x = P.x + (c.x - P.x) * i / 10, z = P.z + (c.z - P.z) * i / 10, y = 0.8 + (c.y - 0.8) * i / 10, m = D.tubeNear(x, z, q); if (Math.abs(m.u) > D.TUBE.W || y > D.tubeRoof(m.u)) out = true; }   // de la cámara a Tamachin, por dentro
+        if (out) bad.push(d + 'm ' + pitch + '° ' + yaw + '°: u ' + k.u.toFixed(2) + ' y ' + c.y.toFixed(2));
+      }
+      T.view.pitch = T.view.pitchT = 34 * Math.PI / 180; return { n, bad };
+    });
+    T.check('la cámara se queda dentro del tubo y ve a Tamachin por dentro (4 lugares × 3 alturas × 4 lados)', !cam.bad.length, cam.bad.slice(0, 5).join(' | ') || cam.n + ' tomas');
+
+    // de punta a punta: sale por la boca norte, junto a Valle Alegre
+    const thru = await E(FOLLOW, 1);
+    const north = await st();
+    T.check('cruza el túnel caminando y sale por la boca norte, junto a Valle Alegre', north.world === 'tierra' && north.st === 'normal' && Math.abs(north.x - 34) < 1.5 && north.z < -1263 && north.z > -1272 && north.zone === 'Carretera a Valle Alegre', JSON.stringify({ ...north, ...thru }));
+    T.check('dentro del túnel nada lo saca de su lugar: va siempre entre las paredes', thru.worst < 5.2, JSON.stringify(thru));
+    await page.screenshot({ path: T.out('boca-norte-salida.jpg'), type: 'jpeg', quality: 70 });
+
+    // y de regreso: empujando contra la boca norte, el túnel, y sale por la boca sur hacia la ciudad
+    await keyWalk('KeyS', 2); await E(() => window.__tamachin.advance(1.5));
+    const back = await st();
+    T.check('empujando contra la boca norte vuelve a entrar, por la otra punta', back.world === 'tunel' && back.st === 'normal' && back.z < -380, JSON.stringify(back));
+    const thru2 = await E(FOLLOW, -1);
+    const south = await st();
+    T.check('cruza de regreso y sale por la boca sur, hacia la ciudad', south.world === 'tierra' && Math.abs(south.x + 24) < 1.5 && south.z > -279 && south.z < -270, JSON.stringify({ ...south, ...thru2 }));
+
+    // un conejo que lo sigue cruza con él; al llegar lejos de su casa (junto a Valle Alegre) se queda a vivir ahí
+    const bun = await E(() => {
+      const T = window.__tamachin, D = window.__dbg, P = T.player, r = D.creatures.find((c) => c.kind === 'conejo' && !c.buddy);
+      T.go(-24, D.ROAD_FACE + 4); T.view.yaw = T.view.yawT = 0; T.advance(0.3);
+      r.pos.set(-23, 0, D.ROAD_FACE + 6); r.tx = r.pos.x; r.tz = r.pos.z; r.follow = 30; r.home0 = { ...r.home }; window.__bun = r;
+      D.keys.KeyW = true; T.advance(1.4); D.keys.KeyW = false; T.advance(1.5);
+      return { world: T.world(), rabbit: r.world || 'tierra' };
+    });
+    const thru3 = await E(FOLLOW, 1);
+    const bun2 = await E(() => { const T = window.__tamachin, P = T.player, r = window.__bun; T.advance(40); return { world: T.world(), rabbit: r.world || 'tierra', d: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(1), follow: r.follow, home: [+r.home.x.toFixed(0), +r.home.z.toFixed(0)], offRoad: window.__dbg.roadDist(r.home.x, r.home.z, 6.2) === Infinity, z: +r.pos.z.toFixed(0) }; });
+    T.check('un conejo que lo sigue entra al túnel con él y sale con él junto a Valle Alegre', bun.world === 'tunel' && bun.rabbit === 'tunel' && bun2.world === 'tierra' && bun2.rabbit === 'tierra' && bun2.z < -1240, JSON.stringify({ bun, bun2, it: thru3.it }));
+    T.check('ya sin seguirlo, se queda a vivir allá (no se regresa por la montaña), fuera de la carretera', bun2.follow === 0 && bun2.home[1] < -1240 && bun2.offRoad, JSON.stringify(bun2));
+
+    // al recargar dentro del túnel, sigue en el túnel
+    await E(() => { const T = window.__tamachin, D = window.__dbg, o = {}; D.roadAt(D.TUBE_PATH, 150, o); T.setWorld('tunel', o.x, o.z); T.advance(0.3); });
+    await E(() => window.dispatchEvent(new Event('pagehide')));
+    await page.reload(); await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 }); await E(() => { document.querySelector('#help').hidden = true; window.__tamachin.advance(0.5); });
+    const re = await st();
+    T.check('al recargar dentro del túnel, sigue ahí', re.world === 'tunel' && !re.earth && re.zone === 'Túnel de las Montañas', JSON.stringify(re));
+    await E(() => { window.__tamachin.setWorld('tierra', 0, 3.5); window.__tamachin.advance(0.3); });
 
     // capturas
     for (const [name, x, z, yaw] of [['salida', -24, -52, 0], ['puente', -21, -196, 0], ['boca-sur', -24, -268, 0], ['boca-norte', 26, -1278, 200]]) {

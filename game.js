@@ -177,6 +177,8 @@ function setHour(h) { day.h = ((h % 24) + 24) % 24; skyNow(true); }
 function updateDay(dt) { day.h = (day.h + dt * DAY.rate) % 24; skyNow(false); }
 // en otro mundo la hora sigue corriendo, pero el cielo y la luz son los suyos (`world.sky`, mundos/)
 function skyNow(force) { if (world && world.sky) world.sky(force); else applyDay(force); }
+// la luz de afuera a la hora `h` (como day.light, sin nubes): la usa un mundo sin cielo propio para que el reloj siga a la Tierra
+function lightAt(h) { let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++; const A = SKY_KEYS[i], B = SKY_KEYS[i + 1]; return lerp(A.light, B.light, ease(clamp((h - A.h) / (B.h - A.h), 0, 1))); }
 function applyDay(force) {
   const h = day.h; let i = 0; while (i < SKY_KEYS.length - 2 && SKY_KEYS[i + 1].h <= h) i++;
   const A = SKY_KEYS[i], B = SKY_KEYS[i + 1], t = ease(clamp((h - A.h) / (B.h - A.h), 0, 1));
@@ -1992,12 +1994,12 @@ for (const b of berryBushes) for (const q of b.berries) setBerry(b, q);
 // Lo que cayó sobre la carretera se quita después de generarlo todo, también las bayas (que se acomodan según los árboles, arbustos y
 // rocas): si se saltara al generarlo, cada `rnd` de menos movería todo lo que viene después. Los árboles se encogen hasta no verse,
 // como en el hueco del sendero (05-norte.js); sus troncos, rocas y arbustos dejan de chocar.
-{ const off = (x, z, d) => nearRoad(x, z, d);
-  for (const t of trees) if (off(t.x, t.z, ROAD_HALF + 2.2)) t.s = 0.001;
-  const gone = new Set();
-  for (let i = circles.length; i--;) { const c = circles[i]; if (off(c.x, c.z, ROAD_HALF + 0.5 + c.r)) { gone.add(c); circles.splice(i, 1); } }
+{ const off = (x, z, d) => nearRoad(x, z, d), gone = new Set();
+  const drop = (x, z) => { for (let i = circles.length; i--;) { const c = circles[i]; if (c.x === x && c.z === z) { gone.add(c); circles.splice(i, 1); } } };   // su colisionador, con él
+  for (const t of trees) if (off(t.x, t.z, ROAD_HALF + 2.2)) { t.s = 0.001; drop(t.x, t.z); }
+  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9)) { drop(L[i].x, L[i].z); L.splice(i, 1); }
+  for (let i = circles.length; i--;) { const c = circles[i]; if (off(c.x, c.z, ROAD_HALF + c.r)) { gone.add(c); circles.splice(i, 1); } }   // otra cosa que pise el asfalto
   for (let i = perches.length; i--;) if (gone.has(perches[i])) perches.splice(i, 1);
-  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9)) L.splice(i, 1);
 }
 // El puente: la losa (groundY, arriba) sobre dos muros que bajan al agua, con barandal de los dos lados. El asfalto que lo cubre es el de
 // la carretera (05-norte.js), que sigue la altura del suelo.
@@ -2424,6 +2426,8 @@ const creatures = [], interacts = [];
 function nearPlayer(o) { return Math.hypot(player.pos.x - o.pos.x, player.pos.z - o.pos.z); }
 function wetAt(x, z) { return riverDepth(x, z) < -0.1 && !onBridge(x, z); }
 
+// una casa nueva para un conejo cerca de (x, z), fuera de la carretera
+function homeNear(x, z) { for (const [dx, dz] of [[0, 0], [9, 0], [-9, 0], [0, 9], [0, -9], [14, 6], [-14, 6]]) if (!nearRoad(x + dx, z + dz, ROAD_HALF + 2)) return { x: x + dx, z: z + dz }; return { x, z }; }
 function makeRabbit(x, z, col) {
   const b = new Batch();
   b.sph(col, 0, 0.3, 0, 0.26, 0.24, 0.34).sph(col, 0, 0.5, 0.26, 0.19).sph(col, -0.08, 0.8, 0.2, 0.05, 0.2, 0.04).sph(col, 0.08, 0.8, 0.2, 0.05, 0.2, 0.04)
@@ -2438,11 +2442,12 @@ function makeRabbit(x, z, col) {
   // y con poca gravedad cada brinco es más alto y más lento. Allá no se cansa de seguirlo ni se pierde: así vuelve con él.
   o.update = (dt) => {
     const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp), M = o.world ? WORLDS[o.world] : null;
-    const HOP = M ? 0.8 : 0.36, HIGH = M ? 1.3 : 0.4;              // cuánto dura un brinco y qué tan alto
-    if (!M) o.follow = Math.max(0, o.follow - dt); o.scare = Math.max(0, o.scare - dt);
+    const low = !!M && M.rules.grav < RULES.grav * 0.6, HOP = low ? 0.8 : 0.36, HIGH = low ? 1.3 : 0.4;   // cuánto dura un brinco y qué tan alto (con poca gravedad, más)
+    if (!M && o.follow > 0) { o.follow = Math.max(0, o.follow - dt); if (!o.follow && Math.hypot(o.home.x - o.pos.x, o.home.z - o.pos.z) > 60) o.home = homeNear(o.pos.x, o.pos.z); }   // lejos de su casa (lo llevó por el túnel): se queda a vivir ahí
+    o.scare = Math.max(0, o.scare - dt);
     if (!M && o.follow > 0 && dp > 32) { o.follow = 0; if (o.onLost) o.onLost(o); }          // se quedó muy atrás
     if (o.buddy) { const B = o.buddy; o.tx = B.pos.x - Math.sin(B.heading) * 1.3 + o.side * 0.5; o.tz = B.pos.z - Math.cos(B.heading) * 1.3; }
-    else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side + (M ? player.vx * HOP : 0); o.tz = P.z - Math.cos(player.heading) * 1.7 + (M ? player.vz * HOP : 0); }   // allá, a donde va a llegar (el brinco es largo)
+    else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side + (low ? player.vx * HOP : 0); o.tz = P.z - Math.cos(player.heading) * 1.7 + (low ? player.vz * HOP : 0); }   // allá, a donde va a llegar (el brinco es largo)
     else if (dp < 3.2 && player.speedN > 1.3 && o.scare <= 0) { o.tx = o.pos.x - dxp / dp * 5; o.tz = o.pos.z - dzp / dp * 5; o.scare = 2; o.rest = 0; emit('excl', o.pos.x, 1.1, o.pos.z); }
     else if (o.scare <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(2, 6); const a = rand(0, TAU), r = rand(0, o.range); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; if (nearRoad(o.tx, o.tz, ROAD_HALF + 1)) { o.tx = o.home.x; o.tz = o.home.z; } } }   // a la carretera no
     const dx = o.tx - o.pos.x, dz = o.tz - o.pos.z, d = Math.hypot(dx, dz);
@@ -2451,16 +2456,16 @@ function makeRabbit(x, z, col) {
       o.pos.x += Math.sin(o.heading) * o.hopSpeed * dt; o.pos.z += Math.cos(o.heading) * o.hopSpeed * dt; o.pos.x = clamp(o.pos.x, -60, 60);
       if (o.follow > 0 || o.buddy) resolveAgent(o.pos, 0.3, M && M.solids);
       if (M) M.collide(o.pos);                                       // la orilla del cráter
-      const g = M ? M.ground(o.pos.x, o.pos.z) : 0;
+      const g = M ? M.ground(o.pos.x, o.pos.z) : Math.max(0, groundY(o.pos.x, o.pos.z));   // en la Tierra también sube a los puentes y a los cerros
       o.pos.y = g + Math.sin(k * Math.PI) * HIGH; mesh.rotation.x = -Math.cos(k * Math.PI) * 0.28;
-      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = g; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0 || o.buddy) ? 0.03 : rand(0.1, 0.35); if (M) burst('puff', o.pos.x, g + 0.05, o.pos.z, 2); }   // en la luna, polvito
+      if (o.hopP >= 1) { o.hopP = 0; o.pos.y = g; mesh.rotation.x = 0; o.rest = (o.follow > 0 || o.scare > 0 || o.buddy) ? 0.03 : rand(0.1, 0.35); if (low) burst('puff', o.pos.x, g + 0.05, o.pos.z, 2); }   // en la luna, polvito
     } else {
       o.rest -= dt;
       if (d > 0.8) {
         o.heading += angDiff(o.heading, Math.atan2(dx, dz)) * Math.min(1, dt * 10);
         if (o.rest <= 0) {
-          const sp = (o.follow > 0 || o.scare > 0 || o.buddy) ? clamp(d / HOP, M ? 1.2 : 3, M ? 11 : 8) : 2.6;
-          if (M) o.heading = Math.atan2(dx, dz);                       // un brinco largo, derecho a donde va (si no, va en espiral)
+          const sp = (o.follow > 0 || o.scare > 0 || o.buddy) ? clamp(d / HOP, low ? 1.2 : 3, low ? 11 : 8) : 2.6;
+          if (low) o.heading = Math.atan2(dx, dz);                       // un brinco largo, derecho a donde va (si no, va en espiral)
           if (!M && wetAt(o.pos.x + Math.sin(o.heading) * sp * 0.4, o.pos.z + Math.cos(o.heading) * sp * 0.4)) {
             o.rest = 0.6; o.tx = o.pos.x; o.tz = o.pos.z;
             if (o.follow > 0 && (o.stuckT += 0.6) > 2.4 && o.onStuck) { o.onStuck(o); o.stuckT = -20; }   // no nada: hay que cruzar por el puente
@@ -2866,7 +2871,7 @@ function roadRibbon(R, d0, d1) {                                   // tres filas
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, roadMat); m.receiveShadow = true; scene.add(m); return m;
 }
-roadRibbon(ROAD, 1.9, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);
+roadRibbon(ROAD, 0, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);   // desde la orilla de la ciudad: tapa la franja del seto
 
 // ───────────────────────── montañas: árboles, rocas, cimas ─────────────────────────
 { const R = mulberry(9101), r2 = (a, b) => a + (b - a) * R();
@@ -3381,6 +3386,160 @@ WORLDS.luna = {
     // la cámara mira hacia abajo: lo más alto que se ve son unos grados sobre el horizonte. Por eso es grande y sale detrás de la orilla
     const ea = 8 * DEG, ee = 3 * DEG;                               // un poco a la derecha, para que no quede detrás del nombre del lugar
     M.earth = skySprite(earthTex, 150); M.earth.position.set(Math.cos(ee) * Math.sin(ea), Math.sin(ee), -Math.cos(ee) * Math.cos(ea)).multiplyScalar(470); M.earth.visible = false;
+  },
+};
+
+// ───────────────────────── el túnel de las montañas (mundos/tunel.js) ─────────────────────────
+// La carretera a Valle Alegre (03-world.js, 05-norte.js) pasa por debajo de las montañas: un túnel de unos 400 m con curvas suaves,
+// lámparas de sodio en el techo y banquetas. Es un mundo aparte (como la luna): se entra empujando contra una de las dos bocas de la
+// Tierra (MOUTHS: la sur, al salir del bosque, y la norte, junto a Valle Alegre) y se sale por la otra punta. Dentro no hay cielo ni
+// tiempo; la luz es tibia y la cámara se queda dentro del tubo (`camFit`). Al cargar solo se registra; el tubo se arma la primera vez.
+// Usa sus propios números (nada de `rnd`) y sus propios colisionadores: la Tierra no cambia.
+// La línea central va de la boca de la ciudad (d = 0, al sur) a la de Valle Alegre (d = len, al norte): ir a Valle Alegre es ir al norte,
+// como afuera. `TUBE.W`: del centro a la pared; las banquetas empiezan en `TUBE.walk` y suben 0.2 m.
+const TUBE = { W: 5.6, wall: 3.8, top: 6.4, walk: 4.3, door: 14, lamp: 12 };   // door: las puntas, a 14 m de cada extremo (detrás queda lugar para la cámara)
+const TUBE_PATH = roadPath([[0, 6], [0, -30], [7, -110], [-6, -200], [6, -290], [0, -370], [0, -404]]);
+TUBE.len = TUBE_PATH.len;
+// lo más cerca de la línea central: el tubo siempre avanza hacia el norte (z baja), así que se busca por z y se afina alrededor
+const _tn = { x: 0, z: 0, tx: 0, tz: -1, nx: 1, nz: 0 };
+function tubeNear(x, z, o) {
+  const R = TUBE_PATH; let lo = 0, hi = R.n - 1;
+  while (hi - lo > 1) { const m = (lo + hi) >> 1; if (R.z[m] > z) lo = m; else hi = m; }
+  let best = Infinity, bd = 0;
+  for (let i = Math.max(0, lo - 4); i <= Math.min(R.n - 2, lo + 4); i++) {
+    const ax = R.x[i], az = R.z[i], ex = R.x[i + 1] - ax, ez = R.z[i + 1] - az, L2 = ex * ex + ez * ez, t = L2 ? clamp(((x - ax) * ex + (z - az) * ez) / L2, 0, 1) : 0;
+    const q = Math.hypot(x - ax - ex * t, z - az - ez * t); if (q < best) { best = q; bd = i + t; }
+  }
+  roadAt(R, bd, _tn); o.d = bd; o.u = (x - _tn.x) * _tn.nx + (z - _tn.z) * _tn.nz; o.cx = _tn.x; o.cz = _tn.z; o.tx = _tn.tx; o.tz = _tn.tz; o.nx = _tn.nx; o.nz = _tn.nz;
+  return o;
+}
+// la altura del techo a `u` metros del centro: pared derecha hasta 3.8 m y luego una bóveda hasta 6.4 m
+const tubeRoof = (u) => TUBE.wall + (TUBE.top - TUBE.wall) * Math.sqrt(Math.max(0, 1 - (u / TUBE.W) * (u / TUBE.W)));
+const _tq = {};
+function tubeY(x, z) { tubeNear(x, z, _tq); return Math.abs(_tq.u) > TUBE.walk ? 0.2 : 0; }   // las banquetas, un escalón arriba
+// a dónde se llega en cada punta: d, hacia dónde camina (heading: 0 es +z) y hacia dónde mira la cámara
+function tubeEnd(north) {
+  const o = {}, d = north ? TUBE.len - TUBE.door - 1.3 : TUBE.door + 1.3; roadAt(TUBE_PATH, d, o);
+  const h = Math.atan2(north ? -o.tx : o.tx, north ? -o.tz : o.tz);   // hacia dentro del tubo
+  return { x: o.x, z: o.z, heading: h, yaw: h + Math.PI, pet: { x: o.x - Math.sin(h) * 2.2, z: o.z - Math.cos(h) * 2.2 } };
+}
+// en la Tierra: la boca `m` (MOUTHS, 05-norte.js), su lado de afuera y hacia dónde se camina para entrar
+const mouthOut = (m, z) => (z - m.face) * -m.inw;                   // cuánto hacia afuera del frente
+function mouthExit(m) {                                               // dónde aparece al salir por esa boca, mirando hacia afuera
+  const z = m.face - m.inw * 1.3, h = m.inw < 0 ? 0 : Math.PI;
+  return { x: m.x, z, heading: h, yaw: h + Math.PI, pet: { x: m.x, z: m.face - m.inw * 2.6 } };
+}
+// sus pasos: los de la piedra con eco
+STEPS.tunel = (c, d, t, v, r) => { STEPS.piedra(c, d, t, v, r); STEPS.piedra(c, d, t + 0.11, v * 0.32, r * 0.97); STEPS.piedra(c, d, t + 0.23, v * 0.12, r * 0.95); };
+// su música: el tema despacito en campanitas lejanas, con mucho eco, sobre un colchón grave
+MUSIC.tunel = { bpm: 60, swing: 0, wet: 0.92, vol: 0.2, key: -3, meter: 8, low: { bell: 0.4 },
+  layers: { pad: { vol: 0.012 }, low: { vol: 0.02 }, bell: { vol: 0.3, pan: -0.15 } },
+  step(E, L, i, t, sd) {
+    const K = -3, s = i % 8, bar = (i >> 3) % 8, ch = PROG_B[bar][0];   // la segunda parte del tema, la de menor
+    if (s === 0) { const len = 8 * sd + 1.4; for (const m of voicing(ch, 52)) INST.pad(E, L.pad, t, m + K, len, 1, 1.6); INST.pad(E, L.low, t, rootIn(ch, 38) + K, len, 1, 1.6); }
+    const n = MEL_B[i % 64]; if (n && s % 2 === 0) INST.bell(E, L.bell, t, n[0] + K, 0, 0.6);
+  } };
+MUSIC_ZONES.tunel = { piece: 'tunel', mix: {}, amb: { wind: 0.12 } };   // un rumor de aire
+
+const TUBE_LIGHT = { sky: new THREE.Color(0xffc98a), gnd: new THREE.Color(0x6e5136), fog: new THREE.Color(0x140f0b) };
+WORLDS.tunel = {
+  name: 'tunel', skyWord: 'en el túnel', skyText: 'En el túnel no se ve el cielo: del otro lado de la montaña sigue el día.',
+  rules: RULES, night: 0, lantern: 1,                              // el farolito, siempre prendido
+  hopLines: ['¡Hop, hop!', '(mira las lámparas)', '(sus orejas hacen eco)'],   // lo que dice un conejo que llega con él (travel, 06-main.js)
+  ground: tubeY, surface: () => 'tunel',
+  zone() { return 'Túnel de las Montañas'; },
+  music: () => 'tunel',
+  collide(pos, r) {                                                 // dentro del tubo, entre las dos puntas
+    tubeNear(pos.x, pos.z, _tq); const lim = TUBE.W - (r || 0.3), u = clamp(_tq.u, -lim, lim), d = clamp(_tq.d, TUBE.door, TUBE.len - TUBE.door);
+    if (u === _tq.u && d === _tq.d) return;
+    const o = roadAt(TUBE_PATH, d, {}); pos.x = o.x + o.nx * u; pos.z = o.z + o.nz * u;
+  },
+  // la cámara no sale del tubo: entre las paredes y debajo de la bóveda (06-main.js, al final de updateCamera)
+  camFit(p) {
+    tubeNear(p.x, p.z, _tq); const u = clamp(_tq.u, -(TUBE.W - 0.5), TUBE.W - 0.5), d = clamp(_tq.d, 0.5, TUBE.len - 0.5);
+    if (u !== _tq.u || d !== _tq.d) { const o = roadAt(TUBE_PATH, d, {}); p.x = o.x + o.nx * u; p.z = o.z + o.nz * u; }
+    p.y = Math.min(p.y, tubeRoof(u) - 0.45);
+  },
+  // la luz, en vez de applyDay (la hora de afuera sigue corriendo): tibia, de las lámparas; sin sol ni estrellas; niebla oscura
+  sky(force) {
+    day.light = lightAt(day.h); day.warm = 0.6; day.stars = 0; day.lamps = 1;   // la luz de afuera (para el reloj); los faros prendidos (nightMat)
+    for (const n of NIGHT_LIT) { n.mat.opacity = n.max; n.mat.visible = true; }
+    sun.intensity = 0; hemi.color.copy(TUBE_LIGHT.sky); hemi.groundColor.copy(TUBE_LIGHT.gnd); hemi.intensity = 0.95;
+    scene.fog.color.copy(TUBE_LIGHT.fog); scene.background.copy(TUBE_LIGHT.fog); scene.fog.near = 30; scene.fog.far = 120;
+    for (const s of skyStars) s.material.opacity = 0;
+    skyMoon.visible = false; skyBow.visible = false; skySun.visible = false;
+    if (force) paintSky(TUBE_LIGHT.fog, TUBE_LIGHT.fog, TUBE_LIGHT.fog, 0);
+  },
+  enter() {}, leave() {},
+  // en la Tierra: empujar contra el frente de una boca (es sólido, como los túneles de la ciudad) lleva al túnel
+  onEarth() {
+    const P = player;
+    for (const m of MOUTHS) {
+      const out = mouthOut(m, P.pos.z);
+      if (m.armed === false) { if (out > 2.5 || Math.abs(P.pos.x - m.x) > 6) m.armed = true; continue; }   // al salir, primero se aleja
+      if (P.state === 'normal' && !ui.closeup && Math.abs(P.pos.x - m.x) < 3.4 && out < 0.8 && out > -1 && P.vz * m.inw > 0.6) {
+        m.armed = false; this.armed = false; const at = tubeEnd(m.key === 'norte'), inw = { x: Math.sin(at.heading) * 5, z: Math.cos(at.heading) * 5 };
+        enterWorld('tunel', { at, walkIn: { x: 0, z: m.inw * 5 }, walkOut: inw, line: m.key === 'norte' ? '¡Al túnel, de vuelta a la ciudad!' : '¡Un túnel! Del otro lado está Valle Alegre.' });
+        return;
+      }
+    }
+  },
+  // dentro: empujar contra una punta (donde se ve la luz de afuera) lleva a la boca de ese lado
+  mid() {
+    const M = this, P = player; tubeNear(P.pos.x, P.pos.z, _tq);
+    if (M.armed === false) { if (_tq.d > TUBE.door + 2.5 && _tq.d < TUBE.len - TUBE.door - 2.5) M.armed = true; return; }
+    if (P.state !== 'normal' || ui.closeup) return;
+    const along = P.vx * _tq.tx + P.vz * _tq.tz, north = _tq.d > TUBE.len - TUBE.door - 0.5 && along > 0.6, south = _tq.d < TUBE.door + 0.5 && along < -0.6;
+    if (!north && !south) return;
+    M.armed = false; const m = MOUTHS.find((q) => q.key === (north ? 'norte' : 'sur')), at = mouthExit(m); m.armed = false;
+    enterWorld('tierra', { at, walkIn: { x: _tq.tx * (north ? 5 : -5), z: _tq.tz * (north ? 5 : -5) }, walkOut: { x: Math.sin(at.heading) * 5, z: Math.cos(at.heading) * 5 },
+      line: north ? '¡Valle Alegre!' : '¡Ya se ve la ciudad!' });
+  },
+  build(M) {
+    const R = TUBE_PATH, n = Math.ceil(TUBE.len / 2);
+    // el tubo: banquetas, paredes de azulejo con una franja y la bóveda, de un solo lado y hacia adentro (de afuera no se dibuja)
+    const prof = [[TUBE.walk, 0, 'walk'], [TUBE.walk, 0.2, 'walk'], [TUBE.W, 0.2, 'walk'], [TUBE.W, 0.2, 'wall'], [TUBE.W, 1.0, 'wall'], [TUBE.W, 1.0, 'band'], [TUBE.W, 1.35, 'band'], [TUBE.W, 1.35, 'wall'], [TUBE.W, TUBE.wall, 'wall']];
+    for (let k = 1; k < 12; k++) { const a = k / 12 * Math.PI; prof.push([TUBE.W * Math.cos(a), TUBE.wall + (TUBE.top - TUBE.wall) * Math.sin(a), 'roof']); }
+    for (const p of prof.slice(0, 9).reverse()) prof.push([-p[0], p[1], p[2]]);   // la mitad izquierda, de arriba abajo
+    const COL = { walk: new THREE.Color('#9d978c'), wall: new THREE.Color('#f1e6cf'), band: new THREE.Color('#2fa58c'), roof: new THREE.Color('#8c877f') };
+    const K = prof.length, pos = [], col = [], uv = [], idx = [], o = {};
+    let acc = 0; const along = [0]; for (let k = 1; k < K; k++) { acc += Math.hypot(prof[k][0] - prof[k - 1][0], prof[k][1] - prof[k - 1][1]); along.push(acc); }
+    for (let i = 0; i <= n; i++) {
+      const d = Math.min(TUBE.len, i * 2); roadAt(R, d, o);
+      for (let k = 0; k < K; k++) {
+        const [u, y, kind] = prof[k], c = COL[kind]; pos.push(o.x + o.nx * u, y, o.z + o.nz * u); col.push(c.r, c.g, c.b); uv.push(along[k] / 2, d / 2);
+        if (i < n && k < K - 1) { const a = i * K + k, b = a + 1, cc = a + K, dd = cc + 1; idx.push(a, b, cc, b, dd, cc); }
+      }
+    }
+    const tiles = canvasTex(128, 128, (g) => { g.fillStyle = '#ffffff'; g.fillRect(0, 0, 128, 128); g.fillStyle = 'rgba(80,70,60,.28)'; for (let v = 0; v < 128; v += 32) { g.fillRect(0, v, 128, 2); g.fillRect(v, 0, 2, 128); } });
+    tiles.wrapS = tiles.wrapT = THREE.RepeatWrapping;
+    const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('color', new THREE.Float32BufferAttribute(col, 3));
+    g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+    const tube = new THREE.Mesh(g, new THREE.MeshLambertMaterial({ vertexColors: true, map: tiles })); tube.receiveShadow = true; M.root.add(tube);
+    // el asfalto, como el de afuera
+    { const p2 = [], u2 = [], i2 = []; let i = 0;
+      for (let d = 0; ; d = Math.min(TUBE.len, d + 1)) {
+        roadAt(R, d, o); for (const sd of [1, 0, -1]) { p2.push(o.x + o.nx * ROAD_HALF * sd, 0.01, o.z + o.nz * ROAD_HALF * sd); u2.push(0.5 - sd * 0.5, d / 3.2); }
+        if (i) { const q = i * 3; i2.push(q - 3, q, q - 2, q - 2, q, q + 1, q - 2, q + 1, q - 1, q - 1, q + 1, q + 2); }
+        i++; if (d >= TUBE.len) break;
+      }
+      const rg = new THREE.BufferGeometry(); rg.setAttribute('position', new THREE.Float32BufferAttribute(p2, 3)); rg.setAttribute('uv', new THREE.Float32BufferAttribute(u2, 2)); rg.setIndex(i2); rg.computeVertexNormals();
+      const road = new THREE.Mesh(rg, roadMat); road.receiveShadow = true; M.root.add(road); }
+    // lámparas de sodio en el techo (brillan solas) y la luz de afuera en cada punta (sin niebla: se ve desde lejos)
+    const lampN = Math.floor(TUBE.len / TUBE.lamp), lamps = new THREE.InstancedMesh(new THREE.BoxGeometry(0.5, 0.12, 1.8), new THREE.MeshBasicMaterial({ color: 0xffd08a }), lampN), q = new THREE.Quaternion(), mtx = new THREE.Matrix4(), up = new THREE.Vector3(0, 1, 0);
+    for (let k = 0; k < lampN; k++) { roadAt(R, (k + 0.5) * TUBE.lamp, o); q.setFromAxisAngle(up, Math.atan2(o.tx, o.tz)); lamps.setMatrixAt(k, mtx.compose(new THREE.Vector3(o.x, TUBE.top - 0.08, o.z), q, new THREE.Vector3(1, 1, 1))); }
+    lamps.raycast = () => {}; M.root.add(lamps);
+    for (const end of [0, 1]) {                                        // la luz, justo detrás de cada punta: de espaldas no se dibuja (la cámara puede quedar detrás)
+      roadAt(R, end ? TUBE.len - TUBE.door + 1.2 : TUBE.door - 1.2, o);
+      const glow = new THREE.Mesh(new THREE.PlaneGeometry(TUBE.W * 2, TUBE.top), new THREE.MeshBasicMaterial({ color: 0xfff6dc, fog: false }));
+      glow.position.set(o.x, TUBE.top / 2, o.z); glow.rotation.y = Math.atan2(o.tx, o.tz) + (end ? Math.PI : 0); glow.raycast = () => {}; M.root.add(glow);
+    }
+    // letreros colgados del techo: a la entrada de cada lado, a dónde lleva
+    for (const [d, text, back] of [[TUBE.door + 9, 'Valle Alegre ↑', false], [TUBE.len - TUBE.door - 9, 'Ciudad ↑', true]]) {
+      roadAt(R, d, o); const h = 3.6 * 160 / 512, ry = Math.atan2(o.tx, o.tz) + (back ? 0 : Math.PI);   // de un lado el letrero; del otro, su espalda verde
+      const s = new THREE.Mesh(new THREE.PlaneGeometry(3.6, h), new THREE.MeshLambertMaterial({ map: roadSignTex(text) })), b = new THREE.Mesh(new THREE.BoxGeometry(3.7, h + 0.1, 0.06), new THREE.MeshLambertMaterial({ color: 0x14573a }));
+      s.position.set(o.x + Math.sin(ry) * 0.04, TUBE.top - 1.25, o.z + Math.cos(ry) * 0.04); b.position.set(o.x, TUBE.top - 1.25, o.z); s.rotation.y = b.rotation.y = ry; M.root.add(s, b);
+    }
   },
 };
 
@@ -4504,6 +4663,7 @@ function updateCamera(dt) {
   if (!camInit) { camPos.copy(_cp); camTgt.copy(_ct); camInit = true; }
   else { const k = 1 - Math.exp(-(ui.closeup ? 4 : 5.5) * dt); camPos.lerp(_cp, k); camTgt.lerp(_ct, k); }
   if (hills) camPos.y = Math.max(camPos.y, world.ground(camPos.x, camPos.z) + 1.5);   // nunca dentro del cerro
+  if (world.camFit) world.camFit(camPos);                           // dentro de algo (el túnel): la cámara no sale de ahí
   V.vc = c; V.vs = s;
   if (fixed) { const hx = camPos.x - P.pos.x, hz = camPos.z - P.pos.z, h = Math.hypot(hx, hz); if (h > 0.5) { V.vs = hx / h; V.vc = hz / h; } }   // toma fija: el marco sigue a la cámara real
   camSlope = (camPos.y - ty) / Math.max(1, (camPos.x - P.pos.x) * V.vs + (camPos.z - P.pos.z) * V.vc);    // pendiente real del rayo cámara→Tamachin (con adelanto y retraso)
@@ -4832,7 +4992,7 @@ function tapShootingStar(px, py) {
 }
 // el farolito flota a la derecha de Tamachin (en la pantalla), un poco hacia la cámara, para no taparle la cara
 function updateLantern(dt) {
-  const P = player, L = lantern, k = smooth(0.55, 0.2, day.light), sc = P.T.scale;
+  const P = player, L = lantern, k = Math.max(smooth(0.55, 0.2, day.light), world.lantern || 0), sc = P.T.scale;   // en un lugar oscuro (el túnel), también de día
   lanternLight.intensity = 0.95 * k; L.g.visible = k > 0.02;
   if (!L.g.visible) { L.init = false; return; }
   const c = camView.c, s = camView.s; L.t += dt;
@@ -5031,7 +5191,7 @@ world = EARTH;
 const WORLD_BASE = {
   rules: RULES, weather: false, wet: () => false, puddle: () => false, inHouse: () => false, collide() {}, slope: null,
   camBase(p) { return this.ground(p.x, p.z); }, hills: () => true, edge(x, z) { return this.ground(x, z); }, camX: () => Infinity, camZ: Infinity,
-  surface: () => 'piedra', pre() {}, mid() {}, post() {},
+  surface: () => 'piedra', pre() {}, mid() {}, post() {}, camFit: null,
 };
 // Lo de la Tierra va en EARTH.root: escondido, no se dibuja nada de adentro (ni su sombra) aunque sus sistemas prendan o apaguen
 // cosas. Afuera se quedan Tamachin, las tres luces, el cielo, el farolito y las partículas: no se esconden nunca (quitar una luz
@@ -5079,7 +5239,7 @@ function travel(c, from, to, spot, i) {
   const it = from.interacts.indexOf(from.interacts.find((q) => q.who === c)); if (it >= 0) to.interacts.push(from.interacts.splice(it, 1)[0]);
   c.world = to === EARTH ? null : to.name; to.root.add(c.mesh);
   const x = spot.x + i * 0.9, z = spot.z; c.pos.set(x, to === EARTH ? 0 : to.ground(x, z), z); c.tx = x; c.tz = z; c.hopP = 0; c.rest = 0.4; c.mesh.rotation.x = 0;
-  if (to !== EARTH) say(c, choose(['¡Hooop!', '¡Hop… hooop!', '(mira las estrellas)']), 2.2);
+  if (to !== EARTH) say(c, choose(to.hopLines || ['¡Hooop!', '¡Hop… hooop!', '(mira las estrellas)']), 2.2);
 }
 // Con el telón: se cierra (0.45 s), cambia de mundo, y se abre. Va en una secuencia (startBusy), así `advance` también lo mueve.
 // o: { at, line, walkIn, walkOut }. walkIn y walkOut ({ x, z }, m/s) lo hacen caminar mientras se cierra y mientras se abre (por la

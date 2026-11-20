@@ -699,12 +699,12 @@ for (const b of berryBushes) for (const q of b.berries) setBerry(b, q);
 // Lo que cayó sobre la carretera se quita después de generarlo todo, también las bayas (que se acomodan según los árboles, arbustos y
 // rocas): si se saltara al generarlo, cada `rnd` de menos movería todo lo que viene después. Los árboles se encogen hasta no verse,
 // como en el hueco del sendero (05-norte.js); sus troncos, rocas y arbustos dejan de chocar.
-{ const off = (x, z, d) => nearRoad(x, z, d);
-  for (const t of trees) if (off(t.x, t.z, ROAD_HALF + 2.2)) t.s = 0.001;
-  const gone = new Set();
-  for (let i = circles.length; i--;) { const c = circles[i]; if (off(c.x, c.z, ROAD_HALF + 0.5 + c.r)) { gone.add(c); circles.splice(i, 1); } }
+{ const off = (x, z, d) => nearRoad(x, z, d), gone = new Set();
+  const drop = (x, z) => { for (let i = circles.length; i--;) { const c = circles[i]; if (c.x === x && c.z === z) { gone.add(c); circles.splice(i, 1); } } };   // su colisionador, con él
+  for (const t of trees) if (off(t.x, t.z, ROAD_HALF + 2.2)) { t.s = 0.001; drop(t.x, t.z); }
+  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9)) { drop(L[i].x, L[i].z); L.splice(i, 1); }
+  for (let i = circles.length; i--;) { const c = circles[i]; if (off(c.x, c.z, ROAD_HALF + c.r)) { gone.add(c); circles.splice(i, 1); } }   // otra cosa que pise el asfalto
   for (let i = perches.length; i--;) if (gone.has(perches[i])) perches.splice(i, 1);
-  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9)) L.splice(i, 1);
 }
 // El puente: la losa (groundY, arriba) sobre dos muros que bajan al agua, con barandal de los dos lados. El asfalto que lo cubre es el de
 // la carretera (05-norte.js), que sigue la altura del suelo.
