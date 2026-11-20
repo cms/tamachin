@@ -21,13 +21,24 @@ function carGeo(type, paint) {
 // atrás), dentro de un túnel, donde no se ven.
 const lanes = [];
 for (const r of ROADS) lanes.push({ axis: 'z', dir: 1, fixed: r - 2, road: r }, { axis: 'z', dir: -1, fixed: r + 2, road: r }, { axis: 'x', dir: 1, fixed: r + 2, road: r }, { axis: 'x', dir: -1, fixed: r - 2, road: r });
+// Los dos carriles de la calle del oeste (x = −24) siguen por la carretera a Valle Alegre (`L.ext`): más allá de z −62, `c.s` va bajando
+// un metro por cada metro de carretera. Los que van al norte entran a la boca del túnel de las montañas y se pierden adentro (salen otra
+// vez por el túnel sur de su calle); los que van al sur salen de la boca.
+const _ra = { x: 0, z: 0, tx: 0, tz: -1, nx: 1, nz: 0 };
 function laneAt(s, o) {
-  const L = this; if (L.axis === 'x') { o.x = s; o.z = L.fixed; o.fx = L.dir; o.fz = 0; } else { o.x = L.fixed; o.z = s; o.fx = 0; o.fz = L.dir; }
+  const L = this;
+  if (L.ext && s < -62) {
+    const d = -62 - s; roadAt(ROAD, d, _ra); const side = (L.fixed - L.road) / 2;   // +1 a la derecha de quien va al norte
+    o.x = _ra.x + _ra.nx * 2 * side; o.z = _ra.z + _ra.nz * 2 * side; o.fx = -L.dir * _ra.tx; o.fz = -L.dir * _ra.tz;
+    o.y = d > ROAD.len - 10 ? 0 : Math.max(0, groundY(o.x, o.z)); return o;   // dentro de la boca, a nivel (el cerro queda encima)
+  }
+  if (L.axis === 'x') { o.x = s; o.z = L.fixed; o.fx = L.dir; o.fz = 0; } else { o.x = L.fixed; o.z = s; o.fx = 0; o.fz = L.dir; }
   o.y = 0; return o;
 }
 for (const L of lanes) {
   L.lightAxis = L.axis === 'z' ? 'NS' : 'EW'; L.stops = ROADS.map((c) => ({ pos: c - L.dir * 7.7, I: L.axis === 'z' ? interAt(L.road, c) : interAt(c, L.road) }));
   L.lo = -74; L.hi = 74; L.at = laneAt;
+  if (L.axis === 'z' && L.road < 0) { L.ext = true; L.lo = -62 - ROAD.len; }
 }
 const cars = [], _la = { x: 0, z: 0, fx: 0, fz: 1, y: 0 };
 function placeCar(c) { c.L.at(c.s, _la); c.x = _la.x; c.z = _la.z; c.fx = _la.fx; c.fz = _la.fz; c.y = _la.y; }
@@ -81,7 +92,7 @@ const CALM = [];
 const calmAt = (x, z) => CALM.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 function updateCars(dt, t) {
   for (const c of cars) placeCar(c);
-  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = (!!pz && pz.state !== 'stop') || (inCity && calmAt(P.pos.x, P.pos.z));   // cruza con el monito verde
+  const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = (!!pz && pz.state !== 'stop') || calmAt(P.pos.x, P.pos.z);   // cruza con el monito verde
   for (const c of cars) {
     const L = c.L, dir = L.dir, fx = c.fx, fz = c.fz; let gap = 999, cross = false, honk = false;   // al frente: (fx, fz); al lado: (fz, −fx)
     const front = c.s + dir * c.half;
@@ -99,9 +110,9 @@ function updateCars(dt, t) {
       }
     }
     let pg = 999;                                                    // qué tan lejos va Tamachin delante, en su carril
-    if (inCity && P.state !== 'fly') {
+    if (P.state !== 'fly' && Math.abs(P.pos.x - c.x) < 40 && Math.abs(P.pos.z - c.z) < 40) {   // en la ciudad y en la carretera
       const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = dx * fx + dz * fz, lat = Math.abs(dx * fz - dz * fx);
-      if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
+      if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < c.y + 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
     }
     let target = c.vmax; if (c.pause > 0) { c.pause -= dt; target = 0; }
     if (gap < 999) target = Math.min(target, Math.sqrt(Math.max(0, 18 * gap)));
@@ -360,7 +371,7 @@ function makeRabbit(x, z, col) {
     if (o.buddy) { const B = o.buddy; o.tx = B.pos.x - Math.sin(B.heading) * 1.3 + o.side * 0.5; o.tz = B.pos.z - Math.cos(B.heading) * 1.3; }
     else if (o.follow > 0) { o.tx = P.x - Math.sin(player.heading) * 1.7 + o.side + (M ? player.vx * HOP : 0); o.tz = P.z - Math.cos(player.heading) * 1.7 + (M ? player.vz * HOP : 0); }   // allá, a donde va a llegar (el brinco es largo)
     else if (dp < 3.2 && player.speedN > 1.3 && o.scare <= 0) { o.tx = o.pos.x - dxp / dp * 5; o.tz = o.pos.z - dzp / dp * 5; o.scare = 2; o.rest = 0; emit('excl', o.pos.x, 1.1, o.pos.z); }
-    else if (o.scare <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(2, 6); const a = rand(0, TAU), r = rand(0, o.range); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; } }
+    else if (o.scare <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(2, 6); const a = rand(0, TAU), r = rand(0, o.range); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; if (nearRoad(o.tx, o.tz, ROAD_HALF + 1)) { o.tx = o.home.x; o.tz = o.home.z; } } }   // a la carretera no
     const dx = o.tx - o.pos.x, dz = o.tz - o.pos.z, d = Math.hypot(dx, dz);
     if (o.hopP > 0) {
       o.hopP += dt / HOP; const k = Math.min(1, o.hopP);
@@ -438,7 +449,7 @@ function makeDeer(home) {
     const P = player.pos, dxp = P.x - o.pos.x, dzp = P.z - o.pos.z, dp = Math.hypot(dxp, dzp);
     o.scare = Math.max(0, o.scare - dt); o.greet = Math.max(0, o.greet - dt);
     if (o.greet <= 0 && o.scare <= 0 && dp < 4.5 && player.speedN > 1.3) { o.scare = 2.5; const a = Math.atan2(o.home.x - o.pos.x - dxp, o.home.z - o.pos.z - dzp); o.tx = clamp(o.pos.x + Math.sin(a) * 8, -57, 57); o.tz = o.pos.z + Math.cos(a) * 8; emit('excl', o.pos.x, 2.6, o.pos.z); }
-    else if (o.scare <= 0 && o.greet <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(4, 9); const a = rand(0, TAU), r = rand(1, 7); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; o.graze = Math.random() < 0.6 ? 1 : 0; } }
+    else if (o.scare <= 0 && o.greet <= 0) { o.wait -= dt; if (o.wait <= 0) { o.wait = rand(4, 9); const a = rand(0, TAU), r = rand(1, 7); o.tx = o.home.x + Math.cos(a) * r; o.tz = o.home.z + Math.sin(a) * r; if (nearRoad(o.tx, o.tz, ROAD_HALF + 1.5)) { o.tx = o.home.x; o.tz = o.home.z; } o.graze = Math.random() < 0.6 ? 1 : 0; } }
     const dx = o.tx - o.pos.x, dz = o.tz - o.pos.z, d = Math.hypot(dx, dz); let moving = false, headX = 0;
     if (o.greet > 0) { o.heading += angDiff(o.heading, Math.atan2(dxp, dzp)) * Math.min(1, dt * 5); headX = Math.sin(clamp((2.6 - o.greet) / 1.2, 0, 1) * Math.PI) * 0.7; }
     else if (d > 0.5) {
@@ -530,7 +541,7 @@ function updateFish(dt) {
     f.m.rotation.set(-Math.cos(k * Math.PI) * 1.0 * f.dir, f.dir > 0 ? 0 : Math.PI, 0); f.m.rotation.order = 'YXZ';
   }
 }
-[[14, -130, '#ffffff'], [-20, -102, '#d9b38c'], [-14, -172, '#ffffff'], [24, -181, '#b9b3ad'], [-20, -232, '#d9b38c'], [12, -250, '#ffffff']].forEach((q) => makeRabbit(q[0], q[1], q[2]));
+[[14, -130, '#ffffff'], [-20, -102, '#d9b38c'], [-14, -172, '#ffffff'], [24, -181, '#b9b3ad'], [-13, -232, '#d9b38c'], [12, -250, '#ffffff']].forEach((q) => makeRabbit(q[0], q[1], q[2]));
 [[-34, 1], [-13, -1], [15, 1], [36, -1], [50, 1]].forEach((q) => makeFrog(q[0], q[1]));
 makeDeer({ x: CLEAR[1].x, z: CLEAR[1].z }); makeDeer({ x: CLEAR[2].x, z: CLEAR[2].z });
 makeOwl();

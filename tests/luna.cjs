@@ -1,5 +1,5 @@
 // La luna (mundos/luna.js): se llega caminando hacia dentro del túnel de los autos del noreste y se vuelve por el túnel del Cráter
-// Grande. Revisa que entrar y volver funcionen con el tráfico andando (y que en la boca los autos no piten), que los otros siete
+// Grande. Revisa que entrar y volver funcionen con el tráfico andando (y que en la boca los autos no piten), que los otros seis
 // túneles sigan cerrados, que allá se salte más (un tercio de la gravedad), que nada de la Tierra se cuele (la casa, el río, los
 // charcos, la lluvia, los avisos, lo que se dibuja), que la Tierra espere quieta, la bandera, y que todo se guarde.
 const { openGame, PHONE } = require('./lib.cjs');
@@ -156,16 +156,16 @@ module.exports = {
       const r = window.__dbg.rabbit; return { once, world: T.world(), x: +P.pos.x.toFixed(2), z: +P.pos.z.toFixed(2), earth: window.__dbg.EARTH.root.visible, rabbit: r.world || 'tierra', rd: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(2) }; });
     T.check('«Volver al inicio» desde la luna pide dos toques y lo deja frente a su casa, en la Tierra, con el conejo que lo seguía', home2.once === 'luna' && home2.world === 'tierra' && home2.x === 0 && home2.z === 3.5 && home2.earth && home2.rabbit === 'tierra' && home2.rd < 3, JSON.stringify(home2));
 
-    // los otros siete túneles siguen siendo pared
+    // los otros seis túneles siguen siendo pared (en el del noroeste ahora sale la carretera a Valle Alegre)
     const shut = await E(() => {
       const T = window.__tamachin, K = window.__dbg.keys, out = [];
-      for (const [x, z, key, ax, lim] of [[-24, -55, 'KeyW', 'z', -59.2], [24, 55, 'KeyS', 'z', 59.2], [-24, 55, 'KeyS', 'z', 59.2], [-55, 24, 'KeyA', 'x', -59.2], [-55, -24, 'KeyA', 'x', -59.2], [55, 24, 'KeyD', 'x', 59.2], [55, -24, 'KeyD', 'x', 59.2]]) {
+      for (const [x, z, key, ax, lim] of [[24, 55, 'KeyS', 'z', 59.2], [-24, 55, 'KeyS', 'z', 59.2], [-55, 24, 'KeyA', 'x', -59.2], [-55, -24, 'KeyA', 'x', -59.2], [55, 24, 'KeyD', 'x', 59.2], [55, -24, 'KeyD', 'x', 59.2]]) {
         T.go(x, z); T.view.yaw = T.view.yawT = 0; T.advance(0.2); K[key] = true; T.advance(2); K[key] = false; T.advance(1.5);
         const P = T.player, v = P.pos[ax]; if (T.world() !== 'tierra' || P.state !== 'normal' || Math.abs(v) > Math.abs(lim)) out.push(x + ',' + z + ': ' + T.world() + ' ' + P.state + ' ' + ax + '=' + v.toFixed(2));
       }
       return out;
     });
-    T.check('los otros siete túneles siguen siendo pared: empujar contra ellos no lleva a ningún lado', !shut.length, shut.join(' | ') || undefined);
+    T.check('los otros seis túneles siguen siendo pared: empujar contra ellos no lleva a ningún lado', !shut.length, shut.join(' | ') || undefined);
 
     // en la Tierra salta lo de siempre (1.38 m)
     const je = await E(JUMP, [-12, 8]);

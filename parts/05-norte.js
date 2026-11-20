@@ -17,6 +17,14 @@ const RANGE = PEAKS.concat([
 // perfil de cada cerro: más empinado arriba y suave abajo, con la cima redondeada (radio 6 % de la base)
 const CAP = 0.06, CAP_B = 0.75 * Math.sqrt(1 - CAP) / CAP, CAP_A = Math.pow(1 - CAP, 1.5) + CAP_B * CAP * CAP;
 const peakF = (d) => (d >= 1 ? 0 : d < CAP ? CAP_A - CAP_B * d * d : Math.pow(1 - d, 1.5)) / CAP_A;
+// Explanadas: al pie de la montaña, donde están las bocas del túnel de la carretera (mundos/tunel.js), el suelo queda a nivel y vuelve a
+// subir en `m` metros, como un corte. Una al sur (al salir del bosque) y otra al sur de Valle Alegre, con su parada.
+const FLATS = [{ x0: -34, x1: -14, z0: -284, z1: -268, m: 8 }, { x0: 6, x1: 62, z0: -1288, z1: -1259, m: 10 }];
+function flatK(x, z) {
+  let k = 1;
+  for (const f of FLATS) { const dx = Math.max(f.x0 - x, 0, x - f.x1), dz = Math.max(f.z0 - z, 0, z - f.z1); k = Math.min(k, sstep(0, f.m, Math.hypot(dx, dz))); }
+  return k;
+}
 function mountainH(x, z) {
   if (z > NORTH_Z || z < Z_FOREST2) return 0;
   let h = 0;
@@ -25,7 +33,7 @@ function mountainH(x, z) {
     const m = Math.min(1, h / 60) * (1 - sstep(320, 380, h));
     h += m * (9 * Math.sin(x * 0.031 + 1.3) * Math.sin(z * 0.027 + 0.7) + 5 * Math.sin(x * 0.071 - z * 0.053) + 2.5 * Math.sin(x * 0.13 + z * 0.11));
   }
-  return Math.max(0, h) * sstep(NORTH_Z, NORTH_Z - 30, z) * sstep(Z_FOREST2, Z_FOREST2 + 30, z);
+  return Math.max(0, h) * sstep(NORTH_Z, NORTH_Z - 30, z) * sstep(Z_FOREST2, Z_FOREST2 + 30, z) * flatK(x, z);
 }
 // rejilla de alturas: la malla y los pies de Tamachin usan los mismos triángulos
 const TG = { x0: -720, z0: NORTH_Z, s: 8, nx: 181, nz: 148 };              // filas hacia el norte: z = z0 - j·s
@@ -193,12 +201,49 @@ function terrainRibbon(pts, halfW, lift, step) {
 terrainRibbon(TRAIL, 1.35, 0.12, 2.5);
 
 // el muro de árboles del borde norte del bosque se vuelve sólido, menos donde pasa el sendero
-for (const t of trees) if (t.z < -265.5 && Math.abs(t.x) < 72) {
+for (const t of trees) if (t.z < -265.5 && Math.abs(t.x) < 72 && t.s > 0.01) {   // los de la carretera ya no están (03-world.js)
   if (Math.abs(t.x - TRAIL_GAP_X) < 4.6) { t.s = 0.001; setTreeMatrix(t); } else solidCircle(t.x, t.z, 0.5 * t.s);
 }
 treeMesh[0].instanceMatrix.needsUpdate = treeMesh[1].instanceMatrix.needsUpdate = true;
-solidBox(-72, -3.6, NORTH_Z + 4.6, NORTH_Z + 6); solidBox(12.4, 72, NORTH_Z + 4.6, NORTH_Z + 6);   // como antes, se detiene a unos metros del muro (sin colarse entre troncos); solo se pasa por el sendero
+// como antes, se detiene a unos metros del muro (sin colarse entre troncos); solo se pasa por el sendero y por la carretera
+solidBox(-72, -30.4, NORTH_Z + 4.6, NORTH_Z + 6); solidBox(-17.6, -3.6, NORTH_Z + 4.6, NORTH_Z + 6); solidBox(12.4, 72, NORTH_Z + 4.6, NORTH_Z + 6);
 northSign('Montañas ↑', TRAIL_GAP_X - 3.4, -262.5, 2.8);
+
+// ───────────────────────── carretera: las bocas del túnel y el asfalto ─────────────────────────
+// Las dos bocas del túnel de las montañas (mundos/tunel.js) son portales como los de la ciudad, con su loma contra la ladera, cada una en
+// su explanada (FLATS). Lo oscuro de adentro esconde a los autos que se pierden ahí (04-life.js). `inw`: hacia dónde queda adentro (en z);
+// `face`: el frente de la boca; `dz`: el centro de la loma.
+const MOUTHS = [{ key: 'sur', x: -24, z: ROAD_FACE, ry: Math.PI, inw: -1, label: 'Valle Alegre' }, { key: 'norte', x: ROAD_N_FACE.x, z: ROAD_N_FACE.z, ry: 0, inw: 1, label: 'Ciudad' }];
+for (const m of MOUTHS) {
+  m.face = m.z - m.inw * 0.5; m.dz = m.z + m.inw * 11; PORTALS.push([m.x, m.z, 0, m.inw]);   // la cámara sube para verlo por encima del portal y su loma (edgeTop)
+  northB.merge(PF_PORTAL, m.x, 0, m.z, m.ry);
+  solidBox(m.x - 5, m.x + 5, Math.min(m.face, m.z + m.inw * 4), Math.max(m.face, m.z + m.inw * 4)); solidCircle(m.x, m.dz, 10.9);
+  const p = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4 * 160 / 512), new THREE.MeshLambertMaterial({ map: roadSignTex(m.label) }));   // en el dintel, sobre la placa
+  p.position.set(m.x, 4.3, m.z - m.inw * 0.74); p.rotation.y = m.inw < 0 ? 0 : Math.PI; scene.add(p);
+}
+CALM.push({ x0: -29, x1: -19, z0: ROAD_FACE - 4, z1: ROAD_FACE + 8 });   // los autos que entran y salen no le pitan ahí
+// el asfalto, con orillas blancas y la raya amarilla de las calles; sigue al suelo (también sobre el puente: groundY)
+const roadTex = canvasTex(128, 128, (g, W, H) => {
+  const R = mulberry(3131); g.fillStyle = '#4b4e5a'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 260; i++) { g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; g.fillRect(R() * W, R() * H, 1 + R() * 3, 1 + R() * 3); }
+  const e = Math.max(2, Math.round(W * 0.28 / (2 * ROAD_HALF))), dw = Math.max(2, Math.round(W * 0.18 / (2 * ROAD_HALF)));
+  g.fillStyle = '#f4f1e8'; g.fillRect(0, 0, e, H); g.fillRect(W - e, 0, e, H);
+  g.fillStyle = '#ffe07a'; g.fillRect(W / 2 - dw / 2, 0, dw, H / 2);
+});
+roadTex.wrapT = THREE.RepeatWrapping;
+const roadMat = new THREE.MeshLambertMaterial(decal({ map: roadTex }));
+function roadRibbon(R, d0, d1) {                                   // tres filas, como el sendero: sigue al suelo de orilla a orilla
+  const pos = [], uv = [], idx = [], o = {}; let i = 0;
+  for (let d = d0; ; d = Math.min(d1, d + 1)) {
+    roadAt(R, d, o);
+    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * ROAD_HALF * sd, z = o.z + o.nz * ROAD_HALF * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(0.5 - sd * 0.5, d / 3.2); }
+    if (i) { const q = i * 3; idx.push(q - 3, q, q - 2, q - 2, q, q + 1, q - 2, q + 1, q - 1, q - 1, q + 1, q + 2); }
+    i++; if (d >= d1) break;
+  }
+  const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
+  const m = new THREE.Mesh(g, roadMat); m.receiveShadow = true; scene.add(m); return m;
+}
+roadRibbon(ROAD, 1.9, ROAD.len - 10); roadRibbon(ROAD_N, 10, ROAD_N.len);
 
 // ───────────────────────── montañas: árboles, rocas, cimas ─────────────────────────
 { const R = mulberry(9101), r2 = (a, b) => a + (b - a) * R();
@@ -208,7 +253,7 @@ northSign('Montañas ↑', TRAIL_GAP_X - 3.4, -262.5, 2.8);
   for (let z = NORTH_Z - 4; z > Z_TOWN_S + 1; z -= 2.9) for (const sx of [-1, 1]) edge(sx * (X_MOUNT + 3.5 + R() * 1.2), z);
   for (let z = NORTH_Z - 9; z > Z_TOWN_S + 8; z -= 12.5) for (let x = -X_MOUNT - 40; x <= X_MOUNT + 40; x += 12.5) {
     const px = x + r2(-5, 5), pz = z + r2(-5, 5), h = terrainY(px, pz), sl = slopeAt(px, pz), u = R(), s = r2(0.9, 1.5), ry = R() * TAU, tint = r2(0.84, 1.04);
-    if (nearTrail(px, pz, 3.6) || Math.hypot(px, pz - Z_TOWN_S) < 22 || Math.abs(Math.abs(px) - X_MOUNT - 4) < 3.5 || pz > NORTH_Z - 8 || pz < Z_TOWN_S + 6) continue;
+    if (nearTrail(px, pz, 3.6) || nearRoad(px, pz, ROAD_HALF + 3) || flatK(px, pz) < 0.95 || MOUTHS.some((m) => Math.hypot(px - m.x, pz - m.dz) < 13) || Math.hypot(px, pz - Z_TOWN_S) < 22 || Math.abs(Math.abs(px) - X_MOUNT - 4) < 3.5 || pz > NORTH_Z - 8 || pz < Z_TOWN_S + 6) continue;
     if (h < 255 && sl < 1.1 && u < 0.46 * (1 - h / 270) + 0.07) { addStatic('pine', px, h - 0.15, pz, s, ry, tint); northCircle(px, pz, 0.36 * s); }
     else if (u > 0.92 && sl < 1.5) { const rs = s * 0.9; addStatic('rock', px, h - 0.2 * rs, pz, rs, ry); if (rs > 0.95) northCircle(px, pz, 0.72 * rs); }
   }

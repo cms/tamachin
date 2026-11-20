@@ -900,8 +900,10 @@ function resolvePlayer() {
   world.collide(pos, r);                                            // lo demás de cada mundo: en la Tierra, autos, vecinos y límites
 }
 function earthCollide(pos, r) {
-  if (pos.z > -66 && clock > 0) for (const c of cars) {             // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
-    if (pos.y < c.h * 0.8) pushOutBox(pos, r * 0.8, carRect(c, 0));   // un choque solo lo empuja (antes: knock(c) si el auto iba a más de 2.2 m/s)
+  if (clock > 0) for (const c of cars) {                            // antes del primer cuadro los autos aún no están en la calle (todos en el origen)
+    if (Math.abs(c.x - pos.x) > 7 || Math.abs(c.z - pos.z) > 7 || pos.y >= c.y + c.h * 0.8) continue;
+    if (Math.abs(c.fx) > 0.999 || Math.abs(c.fz) > 0.999) pushOutBox(pos, r * 0.8, carRect(c, 0));   // un choque solo lo empuja (antes: knock(c) si el auto iba a más de 2.2 m/s)
+    else for (let k = -1; k <= 1; k++) { const o = k * (c.half - c.hw); pushOutCircle(pos, r * 0.8, c.x + c.fx * o, c.z + c.fz * o, c.hw); }   // en una curva de la carretera
   }
   for (const n of npcs) pushOutCircle(pos, r, n.pos.x, n.pos.z, 0.5 * n.T.scale);
   northCollide(pos, r); keepInWorld(pos);                           // árboles del norte y límites por franja (05-norte.js)
@@ -962,6 +964,7 @@ function stepSurface(x, z, perch) {   // qué pisa: con las mismas medidas con q
   if (onBridge(x, z)) return 'madera';
   if (P.inWater || (riverDepth(x, z) < -0.2 && P.pos.y < 0)) return 'agua';
   if (weather.wet > 0.3 && puddleAt(x, z)) return 'charco';
+  if (z < -63 && nearRoad(x, z, ROAD_HALF)) return 'piedra';        // la carretera y su puente
   if (z < NORTH_Z) return northSurface(x, z);                       // cerros, pueblo, bosque sin fin (05-norte.js)
   if (z < -62.6) return (z > -246.5 && Math.abs(x - pathX(z)) < 1.5) || nearTrail(x, z, 1.35) ? 'tierra' : 'pasto';   // el camino y el bosque
   const road = ROADS.some((r) => Math.abs(x - r) < RW + 0.28 || Math.abs(z - r) < RW + 0.28);   // las calles se pintan encima de los senderos
@@ -1108,7 +1111,7 @@ function updateCamera(dt) {
     let lift = 0;                                                   // loma (edgeTop), el rayo hacia Tamachin choca: se sube lo necesario
     const fy = P.pos.y + 0.3;                                       // desde los pies: que se vea entero, no solo la cabeza
     for (let i = 1; i <= 10; i++) {
-      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? world.ground(x, z) : world.edge(x, z);
+      const k = i / 10, x = lerp(P.pos.x, _cp.x, k), z = lerp(P.pos.z, _cp.z, k), top = hills ? Math.max(world.ground(x, z), world.edge(x, z)) : world.edge(x, z);
       const need = top + 0.35 + 0.8 * k - lerp(fy, _cp.y, k); if (need > 0) lift = Math.max(lift, need / k);
     }
     _cp.y += lift;
@@ -1293,6 +1296,7 @@ function updateCampfire(dt) {
 function zoneName() {
   const P = player, x = P.pos.x, z = P.pos.z;
   if (P.inHouse) return 'Casa de Tamachin';
+  if (z < -63 && z > Z_TOWN_S && nearRoad(x, z, ROAD_HALF + 1.5)) return onRoadBridge(x, z) ? 'Puente de la carretera' : 'Carretera a Valle Alegre';
   if (z < NORTH_Z) {
     if (z < Z_FOREST2) return 'Bosque sin fin · ' + Math.max(1, Math.round(Z_FOREST2 - z)) + ' m';
     if (z < Z_TOWN_N) return 'Prado del bosque sin fin';

@@ -13,7 +13,67 @@ const RIVER_HALF = 4.4;
 const BR = { x: 0, z: riverZ(0) };
 const onBridge = (x, z) => Math.abs(x - BR.x) < 1.9 && Math.abs(z - BR.z) < 7.6;
 function riverDepth(x, z) { if (z > -186 || z < -224) return 0; const d = RIVER_HALF - Math.abs(z - riverZ(x)); return d <= 0 ? 0 : -0.55 * Math.min(1, d / 1.3); }
-function groundY(x, z) { if (z < NORTH_Z) return terrainY(x, z); if (onBridge(x, z)) { const u = (z - BR.z) / 7.6; return 0.8 * (1 - u * u); } return riverDepth(x, z); }   // montañas: 05-norte.js
+
+// ───────────────────────── carretera a Valle Alegre ─────────────────────────
+// Sale de la ciudad por donde estaba el túnel del noroeste, rodea el molino por el oeste, cruza el bosque y el río (con su puente) y entra
+// a la boca sur del túnel de las montañas (mundos/tunel.js). Del otro lado, `ROAD_N` va de la boca norte a la entrada de Valle Alegre.
+// Son datos puros (nada de `rnd`): curvas suaves por los puntos de control, con un punto cada metro. `roadAt(R, d, o)` da el punto a `d`
+// metros del principio, su rumbo (tx, tz) y la normal hacia la derecha de quien va de ida (nx, nz). 8 m de ancho, carriles a ±2 m.
+const ROAD_HALF = RW + 0.28;                                         // el asfalto y sus orillas blancas, como las calles
+function roadPath(ctrl) {
+  const fine = [];
+  for (let i = 0; i < ctrl.length - 1; i++) {                       // Catmull-Rom por los puntos de control
+    const p0 = ctrl[Math.max(0, i - 1)], p1 = ctrl[i], p2 = ctrl[i + 1], p3 = ctrl[Math.min(ctrl.length - 1, i + 2)];
+    for (let k = 0; k < 40; k++) {
+      const t = k / 40, t2 = t * t, t3 = t2 * t, c = (a, b, c2, d) => 0.5 * (2 * b + (c2 - a) * t + (2 * a - 5 * b + 4 * c2 - d) * t2 + (3 * b - a - 3 * c2 + d) * t3);
+      fine.push([c(p0[0], p1[0], p2[0], p3[0]), c(p0[1], p1[1], p2[1], p3[1])]);
+    }
+  }
+  fine.push(ctrl[ctrl.length - 1]);
+  const xs = [fine[0][0]], zs = [fine[0][1]]; let acc = 0, want = 1;  // otra vez, un punto cada metro
+  for (let i = 1; i < fine.length; i++) {
+    const a = fine[i - 1], b = fine[i], l = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    while (acc + l >= want) { const t = (want - acc) / l; xs.push(lerp(a[0], b[0], t)); zs.push(lerp(a[1], b[1], t)); want++; }
+    acc += l;
+  }
+  const n = xs.length, R = { x: new Float32Array(xs), z: new Float32Array(zs), tx: new Float32Array(n), tz: new Float32Array(n), n, len: n - 1 };
+  for (let i = 0; i < n; i++) { const a = Math.max(0, i - 1), b = Math.min(n - 1, i + 1), dx = R.x[b] - R.x[a], dz = R.z[b] - R.z[a], l = Math.hypot(dx, dz) || 1; R.tx[i] = dx / l; R.tz[i] = dz / l; }
+  let x0 = Infinity, x1 = -Infinity, z0 = Infinity, z1 = -Infinity; for (let i = 0; i < n; i++) { x0 = Math.min(x0, R.x[i]); x1 = Math.max(x1, R.x[i]); z0 = Math.min(z0, R.z[i]); z1 = Math.max(z1, R.z[i]); }
+  R.box = { x0, x1, z0, z1 }; return R;
+}
+function roadAt(R, d, o) {
+  const f = clamp(d, 0, R.len), i = Math.min(R.n - 2, Math.floor(f)), t = f - i;
+  o.x = lerp(R.x[i], R.x[i + 1], t); o.z = lerp(R.z[i], R.z[i + 1], t);
+  let tx = lerp(R.tx[i], R.tx[i + 1], t), tz = lerp(R.tz[i], R.tz[i + 1], t); const l = Math.hypot(tx, tz) || 1; o.tx = tx / l; o.tz = tz / l; o.nx = -o.tz; o.nz = o.tx;
+  return o;
+}
+// la ciudad termina en z −62; la boca sur está en z −280 y la carretera sigue 10 m adentro (ahí se pierden los autos)
+const ROAD_FACE = -280, ROAD = roadPath([[-24, -62], [-24, -76], [-31, -92], [-36, -106], [-36, -120], [-30, -136], [-24, -152], [-24, -170], [-24, ROAD_FACE - 10]]);
+const ROAD_N_FACE = { x: 34, z: -1262 }, ROAD_N = roadPath([[34, -1252], [34, -1266], [30, -1274], [20, -1280], [9, -1281]]);
+// qué tan lejos está (x, z) del centro de la carretera (de cualquiera de las dos); Infinity si está a más de `d`
+function roadDist(x, z, d) {
+  let best = Infinity;
+  for (const R of [ROAD, ROAD_N]) {
+    const b = R.box; if (x < b.x0 - d || x > b.x1 + d || z < b.z0 - d || z > b.z1 + d) continue;
+    for (let i = 0; i < R.n - 1; i++) {
+      const ax = R.x[i], az = R.z[i]; if (Math.abs(az - z) > d + 1.5 || Math.abs(ax - x) > d + 1.5) continue;
+      const ex = R.x[i + 1] - ax, ez = R.z[i + 1] - az, L2 = ex * ex + ez * ez, t = L2 ? clamp(((x - ax) * ex + (z - az) * ez) / L2, 0, 1) : 0;
+      best = Math.min(best, Math.hypot(x - ax - ex * t, z - az - ez * t));
+    }
+  }
+  return best <= d ? best : Infinity;
+}
+const nearRoad = (x, z, d) => roadDist(x, z, d) <= d;
+// El puente de la carretera sobre el río: la losa sube 0.75 m sobre el agua y baja en rampas hasta 12.5 m de su centro.
+const RB = { x: -24, z: riverZ(-24), hw: 4.6, flat: 6.5, end: 12.5, h: 0.75 };
+const onRoadBridge = (x, z) => Math.abs(x - RB.x) < RB.hw && Math.abs(z - RB.z) < RB.end;
+const roadBridgeY = (z) => RB.h * sstep(RB.end, RB.flat, Math.abs(z - RB.z));
+function groundY(x, z) {   // montañas: 05-norte.js
+  if (z < NORTH_Z) return terrainY(x, z);
+  if (onBridge(x, z)) { const u = (z - BR.z) / 7.6; return 0.8 * (1 - u * u); }
+  if (onRoadBridge(x, z)) return roadBridgeY(z);
+  return riverDepth(x, z);
+}
 const HOUSE = { x0: -6, x1: 6, z0: -13, z1: -4, h: 3.6 };
 const CLEAR = [{ x: pathX(-240), z: -240, r: 8.5 }, { x: -35, z: -186, r: 9 }, { x: 36, z: -236, r: 9 }, { x: BR.x, z: BR.z - 13, r: 5 }];
 const TRUNK = '#8a5a3a', WOOD = '#b98552', STONE = '#d9d2c2';
@@ -249,16 +309,17 @@ function updateLights(t) {
   }
 }
 
-// túneles en los extremos de las calles y setos alrededor de la ciudad
+// túneles en los extremos de las calles y setos alrededor de la ciudad. Al noroeste no hay túnel: ahí sale la carretera.
 for (const r of ROADS) {
-  cityB.merge(PF_PORTAL, r, 0, -60, Math.PI); solidBox(r - 5, r + 5, -64, -59.5); solidCircle(r, -71, 10.9);
+  if (r > 0) { cityB.merge(PF_PORTAL, r, 0, -60, Math.PI); solidBox(r - 5, r + 5, -64, -59.5); solidCircle(r, -71, 10.9); }
   cityB.merge(PF_PORTAL, r, 0, 60, 0); solidBox(r - 5, r + 5, 59.5, 64);
   cityB.merge(PF_PORTAL, -60, 0, r, -Math.PI / 2); solidBox(-64, -59.5, r - 5, r + 5);
   cityB.merge(PF_PORTAL, 60, 0, r, Math.PI / 2); solidBox(59.5, 64, r - 5, r + 5);
 }
 // Qué tan alto es el borde de la ciudad en (x, z): setos (2.4 m con sus bultos), túneles (4.9 m) y la loma detrás de cada uno
-// (una esfera de 11 m de radio hundida 2.5 m). Con la cámara baja, updateCamera la sube lo necesario para ver por encima.
-const PORTALS = ROADS.flatMap((r) => [[r, -60, 0, -1], [r, 60, 0, 1], [-60, r, -1, 0], [60, r, 1, 0]]);   // x, z y hacia fuera
+// (una esfera de 11 m de radio hundida 2.5 m). Con la cámara baja, updateCamera la sube lo necesario para ver por encima. También
+// las bocas del túnel de la carretera, al pie de la montaña (05-norte.js las agrega a PORTALS).
+const PORTALS = ROADS.flatMap((r) => [[r, -60, 0, -1], [r, 60, 0, 1], [-60, r, -1, 0], [60, r, 1, 0]]).filter((p) => !(p[0] < 0 && p[1] === -60));   // x, z y hacia fuera
 function edgeTop(x, z) {
   const ax = Math.abs(x), az = Math.abs(z); if (ax < 59 && az < 59) return 0;
   let h = (ax > 62.2 && ax < 64.2 && az < 64.2) || (az > 62.2 && az < 64.2 && ax < 64.2) ? 2.4 : 0;
@@ -270,14 +331,33 @@ function edgeTop(x, z) {
   return h;
 }
 const HEDGE = '#4fae5a', HEDGE2 = '#5fc06a';
-function hedge(x0, z0, x1, z1) {
-  const horiz = Math.abs(x1 - x0) > Math.abs(z1 - z0), len = Math.hypot(x1 - x0, z1 - z0), cx = (x0 + x1) / 2, cz = (z0 + z1) / 2;
-  cityB.rbox(HEDGE, cx, 0.9, cz, horiz ? len : 1.6, 1.8, horiz ? 1.6 : len, 0.5);
-  for (let d = 2; d < len - 1; d += rr(3, 5)) { const t = d / len; cityB.ico(HEDGE2, lerp(x0, x1, t), 1.7, lerp(z0, z1, t), rr(0.8, 1.1), rr(0.5, 0.7), rr(0.8, 1.0)); }
+// `gap`: [desde, hasta] a lo largo del seto donde no hay seto (la salida a la carretera). Los bultos de ahí se sortean igual: un `rr` de
+// menos movería todo lo que se genera después.
+function hedge(x0, z0, x1, z1, gap) {
+  const horiz = Math.abs(x1 - x0) > Math.abs(z1 - z0), len = Math.hypot(x1 - x0, z1 - z0);
+  const box = (a, b) => { if (b - a < 0.01) return; const cx = lerp(x0, x1, (a + b) / 2 / len), cz = lerp(z0, z1, (a + b) / 2 / len); cityB.rbox(HEDGE, cx, 0.9, cz, horiz ? b - a : 1.6, 1.8, horiz ? 1.6 : b - a, 0.5); };
+  if (gap) { box(0, gap[0]); box(gap[1], len); } else box(0, len);
+  for (let d = 2; d < len - 1; d += rr(3, 5)) { const t = d / len, sx = rr(0.8, 1.1), sy = rr(0.5, 0.7), sz = rr(0.8, 1.0); if (!gap || d < gap[0] - 0.6 || d > gap[1] + 0.6) cityB.ico(HEDGE2, lerp(x0, x1, t), 1.7, lerp(z0, z1, t), sx, sy, sz); }
 }
-hedge(-64, -63.2, -5, -63.2); hedge(5, -63.2, 64, -63.2); hedge(-64, 63.2, 64, 63.2); hedge(-63.2, -64, -63.2, 64); hedge(63.2, -64, 63.2, 64);
-solidBox(-64, -4.9, -64.2, -62.4); solidBox(4.9, 64, -64.2, -62.4);
+const EXIT = { x0: -29.4, x1: -18.6 };                               // la salida a la carretera, en el seto norte
+hedge(-64, -63.2, -5, -63.2, [EXIT.x0 + 64, EXIT.x1 + 64]); hedge(5, -63.2, 64, -63.2); hedge(-64, 63.2, 64, 63.2); hedge(-63.2, -64, -63.2, 64); hedge(63.2, -64, 63.2, 64);
+solidBox(-64, EXIT.x0, -64.2, -62.4); solidBox(EXIT.x1, -4.9, -64.2, -62.4); solidBox(4.9, 64, -64.2, -62.4);
 for (const sx of [-1, 1]) { cityB.rbox(STONE, sx * 5.1, 1.4, -63.2, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', sx * 5.1, 3.15, -63.2, 0.42); LAMPS.push({ x: sx * 5.1, y: 3.15, z: -63.2, r: 0.45, pool: false }); }
+for (const x of [EXIT.x0 - 0.2, EXIT.x1 + 0.2]) { cityB.rbox(STONE, x, 1.4, -63.2, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', x, 3.15, -63.2, 0.42); LAMPS.push({ x, y: 3.15, z: -63.2, r: 0.45, pool: false }); }
+// letreros verdes de carretera (sin `rnd`: los usan la salida y las bocas del túnel); ry 0 mira al sur
+const roadSignTex = (text) => canvasTex(512, 160, (g, W, Hh) => {
+  g.fillStyle = '#1f7a4d'; g.fillRect(0, 0, W, Hh); g.strokeStyle = '#ffffff'; g.lineWidth = 10; g.strokeRect(12, 12, W - 24, Hh - 24);
+  let fs = 80; g.textAlign = 'center'; g.textBaseline = 'middle';
+  do { g.font = '900 ' + fs + 'px Nunito, "Trebuchet MS", Arial, sans-serif'; fs -= 4; } while (g.measureText(text).width > W - 70 && fs > 20);
+  g.fillStyle = '#ffffff'; g.fillText(text, W / 2, Hh / 2 + 4);
+});
+function roadSign(B, text, x, y0, z, w, ry) {
+  const tex = roadSignTex(text), h = w * 160 / 512, c = Math.cos(ry || 0), s = Math.sin(ry || 0), m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshLambertMaterial({ map: tex }));
+  m.position.set(x + s * 0.07, y0 + 2.6, z + c * 0.07); m.rotation.y = ry || 0; scene.add(m);
+  B.box('#14573a', x, y0 + 2.6, z, w + 0.1, h + 0.1, 0.1, ry || 0);
+  for (const sx of [-1, 1]) { const px = x + c * sx * w * 0.36 - s * 0.1, pz = z - s * sx * w * 0.36 - c * 0.1; B.cyl('#8a8f99', px, y0 + 1.25, pz, 0.06, 0.06, 2.5, 8); solidCircle(px, pz, 0.12); }
+}
+roadSign(cityB, 'Valle Alegre ↑', -16.6, 0, -66.5, 3.2);
 
 // ───────────────────────── la casa de Tamachin ─────────────────────────
 const house = (() => {
@@ -489,8 +569,9 @@ for (let q = 0; q < 34; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (fr
 for (let q = 0; q < 150; q++) { const x = rr(-60, 60), z = rr(-260, -162); if (freeSpot(x, z, 1.9)) addFlower(x, z); }
 for (let q = 0; q < 380; q++) { const x = rr(-60, 60), z = rr(-262, -160); if (freeSpot(x, z, 1.8)) tufts.push({ x, z, s: rr(0.9, 1.7) }); }
 for (let q = 0; q < 34; q++) {
-  const x = rr(-58, 58), z = rr(-258, -164); if (!freeSpot(x, z, 2.2)) continue; const s = rr(0.7, 1.3);
-  forestB.cyl('#fff1d6', x, 0.16 * s, z, 0.07 * s, 0.1 * s, 0.32 * s, 8).sph(rnd() < 0.7 ? '#ef4b4b' : '#ffb347', x, 0.33 * s, z, 0.24 * s, 0.15 * s, 0.24 * s)
+  const x = rr(-58, 58), z = rr(-258, -164); if (!freeSpot(x, z, 2.2)) continue; const s = rr(0.7, 1.3), red = rnd() < 0.7;
+  if (nearRoad(x, z, ROAD_HALF + 0.6)) continue;                    // en la carretera no (ya se sortearon sus números)
+  forestB.cyl('#fff1d6', x, 0.16 * s, z, 0.07 * s, 0.1 * s, 0.32 * s, 8).sph(red ? '#ef4b4b' : '#ffb347', x, 0.33 * s, z, 0.24 * s, 0.15 * s, 0.24 * s)
     .sph('#ffffff', x + 0.1 * s, 0.43 * s, z + 0.08 * s, 0.045 * s).sph('#ffffff', x - 0.12 * s, 0.4 * s, z + 0.02 * s, 0.04 * s).sph('#ffffff', x, 0.45 * s, z - 0.1 * s, 0.04 * s);
 }
 // río y puente
@@ -506,11 +587,11 @@ const riverGeo = ribbon(80, riverAt, RIVER_HALF, 0.07, 0.07);
 const river = new THREE.Mesh(riverGeo, new THREE.MeshLambertMaterial(decal({ map: waterTex, transparent: true, opacity: 0.93, side: THREE.DoubleSide, polygonOffsetFactor: -4, polygonOffsetUnits: -4 })));
 river.receiveShadow = true; scene.add(river);
 for (let q = 0; q < 22; q++) {
-  const x = rr(-60, 60); if (Math.abs(x) < 5) continue; const z = riverZ(x) + rr(-3.6, 3.6);
-  if (q % 3 === 0) forestB.rock('#b9b3a6', x, 0.1, z, rr(0.35, 0.7), rr(0.25, 0.4), rr(0.35, 0.6), rnd() * 3);
-  else forestB.cyl('#58b368', x, 0.1, z, 0.42, 0.42, 0.03, 12).sph(q % 2 ? '#ff8fb1' : '#ffffff', x + 0.1, 0.16, z, 0.1, 0.07, 0.1);
+  const x = rr(-60, 60); if (Math.abs(x) < 5) continue; const z = riverZ(x) + rr(-3.6, 3.6), under = Math.abs(x - RB.x) < RB.hw + 1;   // bajo el puente de la carretera no
+  if (q % 3 === 0) { const a = rr(0.35, 0.7), b = rr(0.25, 0.4), c = rr(0.35, 0.6), ry = rnd() * 3; if (!under) forestB.rock('#b9b3a6', x, 0.1, z, a, b, c, ry); }
+  else if (!under) forestB.cyl('#58b368', x, 0.1, z, 0.42, 0.42, 0.03, 12).sph(q % 2 ? '#ff8fb1' : '#ffffff', x + 0.1, 0.16, z, 0.1, 0.07, 0.1);
 }
-for (let q = 0; q < 46; q++) { const x = rr(-60, 60); if (Math.abs(x) < 4) continue; const z = riverZ(x) + (rnd() < 0.5 ? -1 : 1) * rr(4.5, 5.3), h = rr(0.8, 1.5); forestB.cyl('#6cbf5a', x, h / 2, z, 0.025, 0.04, h, 5).cyl('#7a4f32', x, h + 0.08, z, 0.05, 0.05, 0.26, 6); }
+for (let q = 0; q < 46; q++) { const x = rr(-60, 60); if (Math.abs(x) < 4) continue; const z = riverZ(x) + (rnd() < 0.5 ? -1 : 1) * rr(4.5, 5.3), h = rr(0.8, 1.5); if (Math.abs(x - RB.x) < RB.hw + 0.8) continue; forestB.cyl('#6cbf5a', x, h / 2, z, 0.025, 0.04, h, 5).cyl('#7a4f32', x, h + 0.08, z, 0.05, 0.05, 0.26, 6); }
 for (let k = -7; k <= 7; k++) {
   const z = BR.z + k, u = k / 7.6, gy = 0.8 * (1 - u * u), rx = Math.atan(1.6 * u / 7.6);
   forestB.box(k % 2 ? '#b98552' : '#a9774a', BR.x, gy - 0.07, z, 3.7, 0.14, 0.94, 0, rx);
@@ -583,8 +664,7 @@ const campfire = (() => {
   glow.position.set(CAMP.x, 0.06, CAMP.z); glow.raycast = () => {}; scene.add(glow);
   return { flames, core, sparks, smoke, embers, glow, on: true, sparkT: 0 };
 })();
-forestB.cyl(TRUNK, -22, 0.4, -176, 0.4, 0.45, 5, 10, Math.PI / 2, 0.4); solidBox(-24.4, -19.6, -177, -175);
-forestB.cyl(TRUNK, 24, 0.4, -250, 0.4, 0.45, 4.4, 10, Math.PI / 2, -0.9); solidBox(22.2, 25.8, -251.6, -248.4);
+forestB.cyl(TRUNK, 24, 0.4, -250, 0.4, 0.45, 4.4, 10, Math.PI / 2, -0.9); solidBox(22.2, 25.8, -251.6, -248.4);   // un tronco caído (el otro, en (−22, −176), estaba donde pasa la carretera)
 // arbustos de bayas: se comen y vuelven a crecer. Tienen su propia semilla para no mover nada de lo que se generó antes.
 const BERRY_KINDS = [{ name: 'arándanos', color: '#4b62d6', leaf: '#3f9a52' }, { name: 'frambuesas', color: '#ff4f7b', leaf: '#4aa85a' }, { name: 'moras', color: '#5a2d6e', leaf: '#3a8f4c' }];
 const berryBushes = [];
@@ -614,6 +694,37 @@ const berryMesh = (() => {
 const _bpm = new THREE.Matrix4();
 function setBerry(b, q) { const s = 0.118 * b.s * Math.max(0.001, q.k); berryMesh.setMatrixAt(q.i, _bpm.makeScale(s, s, s).setPosition(q.x, q.y, q.z)); }
 for (const b of berryBushes) for (const q of b.berries) setBerry(b, q);
+
+// ───────────────────────── la carretera: despejar y el puente ─────────────────────────
+// Lo que cayó sobre la carretera se quita después de generarlo todo, también las bayas (que se acomodan según los árboles, arbustos y
+// rocas): si se saltara al generarlo, cada `rnd` de menos movería todo lo que viene después. Los árboles se encogen hasta no verse,
+// como en el hueco del sendero (05-norte.js); sus troncos, rocas y arbustos dejan de chocar.
+{ const off = (x, z, d) => nearRoad(x, z, d);
+  for (const t of trees) if (off(t.x, t.z, ROAD_HALF + 2.2)) t.s = 0.001;
+  const gone = new Set();
+  for (let i = circles.length; i--;) { const c = circles[i]; if (off(c.x, c.z, ROAD_HALF + 0.5 + c.r)) { gone.add(c); circles.splice(i, 1); } }
+  for (let i = perches.length; i--;) if (gone.has(perches[i])) perches.splice(i, 1);
+  for (const L of [bushes, rocks, tufts, flowers]) for (let i = L.length; i--;) if (off(L[i].x, L[i].z, ROAD_HALF + 0.9)) L.splice(i, 1);
+}
+// El puente: la losa (groundY, arriba) sobre dos muros que bajan al agua, con barandal de los dos lados. El asfalto que lo cubre es el de
+// la carretera (05-norte.js), que sigue la altura del suelo.
+{ const z0 = RB.z - RB.end, z1 = RB.z + RB.end, n = 26, CON = '#cfc9bd', RAIL = '#f4f1e8';
+  for (let i = 0; i < n; i++) {                                      // la losa por tramos, para que siga las rampas
+    const za = lerp(z0, z1, i / n), zb = lerp(z0, z1, (i + 1) / n), ya = roadBridgeY(za), yb = roadBridgeY(zb), zm = (za + zb) / 2, ym = (ya + yb) / 2;
+    if (ym < 0.02) continue;
+    forestB.box(CON, RB.x, ym - 0.2, zm, RB.hw * 2, 0.4, zb - za + 0.02, 0, Math.atan2(ya - yb, zb - za));
+    for (const sx of [-1, 1]) forestB.box('#bdb6a8', RB.x + sx * (RB.hw - 0.12), ym + 0.12, zm, 0.24, 0.3, zb - za + 0.02, 0, Math.atan2(ya - yb, zb - za));   // la guarnición
+  }
+  for (const dz of [-3.2, 3.2]) for (const sx of [-1, 0, 1]) forestB.cyl(CON, RB.x + sx * 3.2, 0.1, RB.z + dz, 0.32, 0.36, 1.3, 10);   // pilares en el agua
+  const r0 = RB.z - RB.flat - 1.5, r1 = RB.z + RB.flat + 1.5;
+  for (const sx of [-1, 1]) {
+    const x = RB.x + sx * (RB.hw - 0.12);
+    for (let z = r0; z <= r1 + 0.01; z += (r1 - r0) / 8) forestB.cyl(RAIL, x, roadBridgeY(z) + 0.75, z, 0.06, 0.06, 0.9, 7);
+    for (let i = 0; i < 8; i++) { const za = r0 + (r1 - r0) * i / 8, zb = r0 + (r1 - r0) * (i + 1) / 8, ya = roadBridgeY(za), yb = roadBridgeY(zb);
+      for (const h of [0.75, 1.15]) forestB.box(RAIL, x, (ya + yb) / 2 + h, (za + zb) / 2, 0.08, 0.08, zb - za + 0.04, 0, Math.atan2(ya - yb, zb - za)); }
+    solidBox(x - 0.15, x + 0.15, r0, r1);                              // barandales: al puente se sube por las rampas
+  }
+}
 
 scene.add(cityB.mesh(), gardenB.mesh(), parkB.mesh(), meadowB.mesh(), forestB.mesh());
 
