@@ -151,9 +151,9 @@ function doAction() {
 }
 // Ya no se usa: con el tráfico amable los autos no lo atropellan (resolvePlayer). Queda por si se quiere volver a los atropellos.
 function knock(c) {
-  const P = player, L = c.L, k = Math.max(6, c.v * 0.9);
+  const P = player, k = Math.max(6, c.v * 0.9), side = (P.pos.x - c.x) * c.fz - (P.pos.z - c.z) * c.fx >= 0 ? 3 : -3;   // hacia delante y hacia su lado
   P.state = 'fly'; P.vy = 7.6; P.onGround = false; P.flySpin = 0; clearTemp();
-  if (L.axis === 'x') { P.vx = L.dir * k; P.vz = (P.pos.z >= c.z ? 1 : -1) * 3; } else { P.vz = L.dir * k; P.vx = (P.pos.x >= c.x ? 1 : -1) * 3; }
+  P.vx = c.fx * k + c.fz * side; P.vz = c.fz * k - c.fx * side;
   c.pause = 2.4; c.v = 0; SFX.hit(); burst('star', P.pos.x, 1.4, P.pos.z, 7); say(c, '¡Ay, perdón!', 2);
 }
 function land() {
@@ -1562,7 +1562,7 @@ function updateBlobs() {
   }
   if (world === EARTH) {
     for (const v of npcs) if (v.T.group.visible && near(v.pos.x, v.pos.z)) put(v.pos.x, v.pos.y, v.pos.z, 1.4 * v.T.scale, 1.4 * v.T.scale);
-    for (const c of cars) if (near(c.x, c.z)) { const ax = c.L.axis === 'x', l = c.half * 2.15, w = c.hw * 2.3; put(c.x, 0, c.z, ax ? l : w, ax ? w : l); }
+    for (const c of cars) if (near(c.x, c.z)) put(c.x, c.y, c.z, c.hw * 2.3, c.half * 2.15, Math.atan2(c.fx, c.fz));
   }
   for (const c of creatures) {
     const size = BLOB_SIZE[c.kind]; if (!size || (c.world || EARTH.name) !== world.name || !near(c.pos.x, c.pos.z) || (c.mesh && !c.mesh.visible)) continue;

@@ -16,17 +16,28 @@ function carGeo(type, paint) {
   }
   return b.geometry();
 }
+// Cada carril es una ruta. `c.s` es la coordenada de su eje dentro de la ciudad, como siempre; `L.at(s, o)` pone en `o` dónde queda
+// (x, z), hacia dónde mira (fx, fz: unitario) y a qué altura (y). Los autos dan la vuelta al pasar `hi` (o `lo`, los que van hacia
+// atrás), dentro de un túnel, donde no se ven.
 const lanes = [];
 for (const r of ROADS) lanes.push({ axis: 'z', dir: 1, fixed: r - 2, road: r }, { axis: 'z', dir: -1, fixed: r + 2, road: r }, { axis: 'x', dir: 1, fixed: r + 2, road: r }, { axis: 'x', dir: -1, fixed: r - 2, road: r });
-for (const L of lanes) { L.lightAxis = L.axis === 'z' ? 'NS' : 'EW'; L.stops = ROADS.map((c) => ({ pos: c - L.dir * 7.7, I: L.axis === 'z' ? interAt(L.road, c) : interAt(c, L.road) })); }
-const cars = [];
+function laneAt(s, o) {
+  const L = this; if (L.axis === 'x') { o.x = s; o.z = L.fixed; o.fx = L.dir; o.fz = 0; } else { o.x = L.fixed; o.z = s; o.fx = 0; o.fz = L.dir; }
+  o.y = 0; return o;
+}
+for (const L of lanes) {
+  L.lightAxis = L.axis === 'z' ? 'NS' : 'EW'; L.stops = ROADS.map((c) => ({ pos: c - L.dir * 7.7, I: L.axis === 'z' ? interAt(L.road, c) : interAt(c, L.road) }));
+  L.lo = -74; L.hi = 74; L.at = laneAt;
+}
+const cars = [], _la = { x: 0, z: 0, fx: 0, fz: 1, y: 0 };
+function placeCar(c) { c.L.at(c.s, _la); c.x = _la.x; c.z = _la.z; c.fx = _la.fx; c.fz = _la.fz; c.y = _la.y; }
 const PAINTS = ['#ff6b6b', '#5aa9ff', '#4fc3a1', '#ffffff', '#c58bff', '#ff9f6b', '#2f3a56', '#f78fb3'];
 function addCar(L, s, type, paint) {
   const mesh = new THREE.Mesh(carGeo(type, paint), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);
   mesh.rotation.y = L.axis === 'z' ? (L.dir > 0 ? 0 : Math.PI) : (L.dir > 0 ? Math.PI / 2 : -Math.PI / 2);
   const bus = type === 'bus';
-  const c = { L, s, v: 0, vmax: rr(7.5, 10.5) * (bus ? 0.8 : 1), half: bus ? 4.05 : 2.15, hw: bus ? 1.2 : 1.0, h: bus ? 2.8 : 1.55, mesh, pause: 0, honkT: 0, stuck: 0, x: 0, z: 0 };
-  c.bubblePos = (v) => v.set(c.x, c.h + 0.5, c.z); cars.push(c);
+  const c = { L, s, v: 0, vmax: rr(7.5, 10.5) * (bus ? 0.8 : 1), half: bus ? 4.05 : 2.15, hw: bus ? 1.2 : 1.0, h: bus ? 2.8 : 1.55, mesh, pause: 0, honkT: 0, stuck: 0, x: 0, z: 0, y: 0, fx: 0, fz: 1 };
+  c.bubblePos = (v) => v.set(c.x, c.y + c.h + 0.5, c.z); cars.push(c);
 }
 lanes.forEach((L, i) => {
   const n = i % 3 === 0 ? 1 : 2;
@@ -56,23 +67,23 @@ function updateCarLights() {
   cars.forEach((c, i) => {
     const ry = c.mesh.rotation.y, fx = Math.sin(ry), fz = Math.cos(ry); _clq.setFromAxisAngle(_clUp, ry);
     c.lm.setMatrixAt(c.li, _clm.compose(c.mesh.position, _clq, _cls.set(1, 1, 1)));
-    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6, 1, 6.5)));   // 6.5 m enfrente
+    carLights.beam.setMatrixAt(i, _clm.compose(_clv.set(c.x + fx * (c.half + 3.2), c.y + 0.08, c.z + fz * (c.half + 3.2)), _clq, _cls.set(c.hw * 2.6, 1, 6.5)));   // 6.5 m enfrente
   });
   for (const k in carLights) carLights[k].instanceMatrix.needsUpdate = true;
 }
 const carBox = { x0: 0, x1: 0, z0: 0, z1: 0 };
-function carRect(c, pad) {
-  const a = c.L.axis === 'x';
+function carRect(c, pad) {                                           // la caja de un auto que va a lo largo de x o de z
+  const a = Math.abs(c.fx) > Math.abs(c.fz);
   carBox.x0 = c.x - (a ? c.half : c.hw) - pad; carBox.x1 = c.x + (a ? c.half : c.hw) + pad; carBox.z0 = c.z - (a ? c.hw : c.half) - pad; carBox.z1 = c.z + (a ? c.hw : c.half) + pad; return carBox;
 }
 // Donde los autos esperan a Tamachin sin pitar ni asustarlo, como con el monito verde: la boca del túnel de la luna (mundos/luna.js).
 const CALM = [];
 const calmAt = (x, z) => CALM.some((r) => x > r.x0 && x < r.x1 && z > r.z0 && z < r.z1);
 function updateCars(dt, t) {
-  for (const c of cars) { c.x = c.L.axis === 'x' ? c.s : c.L.fixed; c.z = c.L.axis === 'x' ? c.L.fixed : c.s; }
+  for (const c of cars) placeCar(c);
   const P = player, inCity = P.pos.z > -66, pz = inCity ? zebraAt(P.pos.x, P.pos.z, 0.6) : null, polite = (!!pz && pz.state !== 'stop') || (inCity && calmAt(P.pos.x, P.pos.z));   // cruza con el monito verde
   for (const c of cars) {
-    const L = c.L, dir = L.dir, ax = L.axis === 'x'; let gap = 999, cross = false, honk = false;
+    const L = c.L, dir = L.dir, fx = c.fx, fz = c.fz; let gap = 999, cross = false, honk = false;   // al frente: (fx, fz); al lado: (fz, −fx)
     const front = c.s + dir * c.half;
     for (const st of L.stops) {
       const d = (st.pos - front) * dir; if (d < -0.6 || d > 40) continue;
@@ -80,8 +91,8 @@ function updateCars(dt, t) {
     }
     for (const o of cars) {
       if (o === c) continue;
-      const dx = o.x - c.x, dz = o.z - c.z, fwd = (ax ? dx : dz) * dir; if (fwd <= 0 || fwd > 30) continue;
-      const lat = Math.abs(ax ? dz : dx), same = o.L.axis === L.axis;
+      const dx = o.x - c.x, dz = o.z - c.z, fwd = dx * fx + dz * fz; if (fwd <= 0 || fwd > 30) continue;
+      const lat = Math.abs(dx * fz - dz * fx), same = Math.abs(fx * o.fx + fz * o.fz) > 0.7;   // en la misma dirección o en la contraria
       if (lat < c.hw + (same ? o.hw : o.half) + 0.25) {
         if (!same && c.stuck > 5) continue;
         const g = fwd - c.half - (same ? o.half : o.hw) - 1.6; if (g < gap) gap = g; if (!same && g < 1.5) cross = true;
@@ -89,7 +100,7 @@ function updateCars(dt, t) {
     }
     let pg = 999;                                                    // qué tan lejos va Tamachin delante, en su carril
     if (inCity && P.state !== 'fly') {
-      const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = (ax ? dx : dz) * dir, lat = Math.abs(ax ? dz : dx);
+      const dx = P.pos.x - c.x, dz = P.pos.z - c.z, fwd = dx * fx + dz * fz, lat = Math.abs(dx * fz - dz * fx);
       if (fwd > 0 && lat < c.hw + 0.8 && P.pos.y < 1.6) { const g = fwd - c.half - 1.3; if (g < 7) { pg = g; gap = Math.min(gap, g); honk = !polite; } }
     }
     let target = c.vmax; if (c.pause > 0) { c.pause -= dt; target = 0; }
@@ -104,9 +115,9 @@ function updateCars(dt, t) {
       c.v = Math.min(c.v, vMax);
     } else c.scared = false;
     c.stuck = cross && c.v < 0.3 ? c.stuck + dt : Math.max(0, c.stuck - dt * 3);
-    c.s += dir * c.v * dt; if (c.s * dir > 74) c.s -= dir * 148;
-    c.x = ax ? c.s : L.fixed; c.z = ax ? L.fixed : c.s;
-    c.mesh.position.set(c.x, Math.sin(t * 9 + c.vmax * 7) * 0.012 * Math.min(1, c.v / 4), c.z);
+    c.s += dir * c.v * dt; if (dir > 0 ? c.s > L.hi : c.s < L.lo) c.s -= dir * (L.hi - L.lo);
+    placeCar(c);
+    c.mesh.position.set(c.x, c.y + Math.sin(t * 9 + c.vmax * 7) * 0.012 * Math.min(1, c.v / 4), c.z); c.mesh.rotation.y = Math.atan2(c.fx, c.fz);
     c.honkT -= dt;
     if (honk && c.v < 3.5 && c.honkT <= 0) { c.honkT = rand(1.8, 2.8); say(c, choose(['¡Piii, piii!', '¡Cuidado, Tamachin!', '¡Bip, bip!', '¡Muévete, porfa!']), 1.4); SFX.honk(); }
   }
