@@ -996,7 +996,26 @@ function busEta(st) { let d = st.s - bus.s; if (d < 0) d += BUS_LINE.hi; return 
 const busEtaLine = (st) => { const t = busEta(st), m = Math.round(t / 60); return t < 25 ? '¡Ya casi llega el autobús!' : m <= 1 ? 'El autobús llega en un minuto.' : 'El autobús llega en ' + m + ' minutos.'; };
 for (const st of BUS_STOPS) interacts.push({ pos: st.at, range: 3.2, label: () => (bus.halt === st ? 'Subir al autobús' : 'Esperar el autobús'),
   act: () => { if (bus.halt === st) boardBus(st); else say(player, busEtaLine(st), 2.8); } });
-function updateBusStops() { for (const st of BUS_STOPS) st.roof.visible = Math.hypot(player.pos.x - st.under[0], player.pos.z - st.under[1]) > 2.4; }   // abajo del techito, no lo tapa
+// El techito de cada parada se quita solo si de verdad tapa a Tamachin: si el rayo de la cámara a alguno de sus puntos (los de ROOF_PTS,
+// como el kiosco, menos los pies: una losa delgada que solo le tapa los pies no estorba) pasa por la losa (`st.slab`, 05-norte.js), con
+// margen m: mayor si ya está quitado, para que no parpadee en la orilla. Antes bastaba con acercarse: detrás de la parada se quitaba
+// aunque no tapara nada.
+function slabCrosses(S, m) {
+  const P = player, sc = P.T.scale, c = camView.vc, s = camView.vs;
+  for (const [u, h] of ROOF_PTS) {
+    if (h < 0.5) continue;
+    const px = P.pos.x + u * sc * c, py = P.pos.y + h * sc, pz = P.pos.z - u * sc * s, dx = camPos.x - px, dy = camPos.y - py, dz = camPos.z - pz;
+    let a = 0, b = 1;
+    for (const [ax, hw] of S.axes) {                                   // el tramo cámara→punto (t de 0 a 1) dentro de cada par de caras
+      const o = (px - S.x) * ax[0] + (py - S.y) * ax[1] + (pz - S.z) * ax[2], v = dx * ax[0] + dy * ax[1] + dz * ax[2], w = hw + m;
+      if (Math.abs(v) < 1e-6) { if (Math.abs(o) > w) { a = 2; break; } continue; }
+      const t0 = (-w - o) / v, t1 = (w - o) / v; a = Math.max(a, Math.min(t0, t1)); b = Math.min(b, Math.max(t0, t1)); if (a > b) break;
+    }
+    if (a <= b) return true;
+  }
+  return false;
+}
+function updateBusStops() { for (const st of BUS_STOPS) st.roof.visible = !slabCrosses(st.slab, st.roof.visible ? 0.1 : 0.35); }
 // arriba del autobús, cada cuadro (updatePlayer): Tamachin va donde va él; en las bocas, el telón y el tubo
 function updateRide(dt) {
   const P = player, R = P.ride;

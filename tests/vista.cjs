@@ -19,7 +19,7 @@ module.exports = {
       for (const o of city) { const cx = (o.x0 + o.x1) / 2, cz = (o.z0 + o.z1) / 2; out.push([cx, o.z0 - 1.2], [cx, o.z1 + 1.2], [o.x0 - 1.2, cz], [o.x1 + 1.2, cz]); }
       out.push([-4, -11], [4, -11], [-4, -6], [4, -6], [0, -8.5], [0, -14.5], [-7.5, -8.5], [7.5, -8.5], [0, -2.5]);   // la casa
       out.push([3, -175], [-6, -190], [12, -232], [-20, -250], [30, -170], [-35, -186]);                            // el bosque
-      out.push([-24, -58], [-22, -68], [-36, -112], [-24, -212], [-24, -276], [34, -1266]);                         // la carretera: la salida, el molino, el puente y las bocas
+      out.push([-24, -58], [-22, -68], [-36, -112], [-24, -212], [-24, -276], [24, -1266], [24, -1291]);                         // la carretera: la salida, el molino, el puente y las bocas
       for (const st of window.__dbg.BUS_STOPS) out.push([st.at.x, st.at.z], [st.under[0], st.under[1]]);              // las paradas del autobús: junto y abajo del techito
       return out;
     });

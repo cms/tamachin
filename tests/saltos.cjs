@@ -75,7 +75,7 @@ module.exports = {
     await place(bld.x, bld.z1 + 1.4); await hold(['KeyW'], 2200, 300); s = await st();
     T.check('la pared de un edificio no se brinca', s.z > bld.z1, 'z ' + f2(s.z - bld.z1) + ' de la pared');
     const HS = await E(() => window.__dbg.TOWN_Z + 63.2);
-    await place(20, HS + 2.2); await hold(['KeyW'], 2200, 300); s = await st();
+    await place(50, HS + 2.2); await hold(['KeyW'], 2200, 300); s = await st();
     T.check('el seto de Valle Alegre no se brinca', s.z > HS + 0.8, 'z ' + f2(s.z - HS) + ' del seto');
     const br = await E(() => window.__dbg.BR);
     await place(br.x + 2.8, br.z); await hold(['KeyA'], 1800, 300); s = await st();

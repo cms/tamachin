@@ -232,29 +232,65 @@ const roadTex = canvasTex(128, 128, (g, W, H) => {
 });
 roadTex.wrapT = THREE.RepeatWrapping;
 const roadMat = new THREE.MeshLambertMaterial(decal({ map: roadTex }));
-function roadRibbon(R, d0, d1, half, mat) {                       // tres filas, como el sendero: sigue al suelo de orilla a orilla
+// `gap(o, sd)`: en esa fila y ese lado no va la orilla blanca (la boca de una terminal: ahí el asfalto sigue de largo). La u se corre hacia
+// adentro de la raya; entre una fila con orilla y otra sin ella, la raya se acaba en diagonal en un metro.
+const EDGE_U = 0.07;
+function roadRibbon(R, d0, d1, half, mat, gap) {                  // tres filas, como el sendero: sigue al suelo de orilla a orilla
   const pos = [], uv = [], idx = [], o = {}; let i = 0;
   for (let d = d0; ; d = Math.min(d1, d + 1)) {
     roadAt(R, d, o);
-    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * half * sd, z = o.z + o.nz * half * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(0.5 - sd * 0.5, d / 3.2); }
+    for (const sd of [1, 0, -1]) { const x = o.x + o.nx * half * sd, z = o.z + o.nz * half * sd; pos.push(x, Math.max(0, groundY(x, z)) + 0.035, z); uv.push(sd && gap && gap(o, sd) ? (sd > 0 ? EDGE_U : 1 - EDGE_U) : 0.5 - sd * 0.5, d / 3.2); }
     if (i) { const q = i * 3; idx.push(q - 3, q, q - 2, q - 2, q, q + 1, q - 2, q + 1, q - 1, q - 1, q + 1, q + 2); }
     i++; if (d >= d1) break;
   }
   const g = new THREE.BufferGeometry(); g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3)); g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2)); g.setIndex(idx); g.computeVertexNormals();
   const m = new THREE.Mesh(g, mat); m.receiveShadow = true; scene.add(m); return m;
 }
-roadRibbon(ROAD, 0, ROAD.len - 10, ROAD_HALF, roadMat); roadRibbon(ROAD_N, 10, ROAD_N.len, ROAD_HALF, roadMat);   // desde la orilla de la ciudad: tapa la franja del seto
-// las terminales del autobús (BUS_C, BUS_V; 04-life.js): un carril con orillas, un poco abajo de la carretera donde se juntan
-const busTex = canvasTex(64, 64, (g, W, H) => { const R = mulberry(3132); g.fillStyle = '#4b4e5a'; g.fillRect(0, 0, W, H);
-  for (let i = 0; i < 70; i++) { g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; g.fillRect(R() * W, R() * H, 1 + R() * 2, 1 + R() * 2); }
-  const e = Math.max(2, Math.round(W * 0.25 / (2 * BUS_HALF))); g.fillStyle = '#f4f1e8'; g.fillRect(0, 0, e, H); g.fillRect(W - e, 0, e, H); });
-busTex.wrapT = THREE.RepeatWrapping;
-const busMat = new THREE.MeshLambertMaterial({ map: busTex, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 });
-roadRibbon(BUS_C, 0, BUS_C.len, BUS_HALF, busMat); roadRibbon(BUS_V, 0, BUS_V.len, BUS_HALF, busMat);
+// Las terminales del autobús (BUS_C, BUS_V; 04-life.js). Cada una es UNA pieza plana, pintada en un lienzo con el trazo de su ruta: el
+// asfalto y sus orillas son la unión de todo el trazo, así los tramos que se juntan no se enciman (antes eran cintas, cada una con sus
+// orillas, y donde se cruzaban parpadeaban y pintaban rayas sobre el asfalto de la otra). Del lienzo se borra lo que cae debajo de la
+// carretera (que va encima, sin encimarse) y lo que sale del otro lado; en el norte, también lo de adentro de la boca. La carretera no
+// pinta su orilla donde entra la terminal (`busGap`). Va a 0.02 m, en suelo plano (el prado y la explanada).
+const BUS_EDGE = 0.28;
+// El trazo que se pinta es la ruta del autobús, pero lo que va por el carril de este lado (donde entra o sale siguiendo la carretera) se
+// corre hasta 1.3 m hacia el centro: así su orilla queda debajo de la carretera y el asfalto sale de la orilla poco a poco, sin el
+// chipote de la punta redonda. Desde 5 m del centro (ya afuera) es la ruta tal cual.
+function busDrawn(B, R, near) {
+  const pts = [], o = {};
+  for (let i = 0; i < B.n; i++) {
+    const x = B.x[i], z = B.z[i]; let best = Infinity, bd = 0;
+    for (let k = 0; k < R.n; k++) { const q = (R.x[k] - x) ** 2 + (R.z[k] - z) ** 2; if (q < best) { best = q; bd = k; } }
+    roadAt(R, bd, o); const off = ((x - o.x) * o.nx + (z - o.z) * o.nz) * near, sh = 1.3 * (1 - sstep(2, 5, off));
+    pts.push([x - o.nx * near * sh, z - o.nz * near * sh]);
+  }
+  return roadPath(pts);
+}
+for (const r of [BUS_RING.c, BUS_RING.v]) r.drawn = busDrawn(r.path, r.road, r.near);
+function busDecal(B, R, near, faceZ) {
+  const pad = BUS_HALF + 1, S = Math.max(B.box.x1 - B.box.x0, B.box.z1 - B.box.z0) + 2 * pad, x0 = (B.box.x0 + B.box.x1 - S) / 2, z0 = (B.box.z0 + B.box.z1 - S) / 2, N = 512, K = N / S;
+  const tex = canvasTex(N, N, (g) => {
+    const trace = (P, off) => { g.beginPath(); const o = {}; for (let i = 0; i < P.n; i++) { roadAt(P, i, o); const x = (o.x + o.nx * off - x0) * K, z = (o.z + o.nz * off - z0) * K; if (i) g.lineTo(x, z); else g.moveTo(x, z); } };
+    g.lineCap = g.lineJoin = 'round'; trace(B, 0);
+    g.strokeStyle = '#f4f1e8'; g.lineWidth = 2 * (BUS_HALF + BUS_EDGE) * K; g.stroke();
+    g.strokeStyle = '#4b4e5a'; g.lineWidth = 2 * BUS_HALF * K; g.stroke();
+    const Rn = mulberry(3132); g.globalCompositeOperation = 'source-atop';
+    for (let i = 0; i < N * N / 120; i++) { g.fillStyle = Rn() < 0.5 ? 'rgba(255,255,255,.05)' : 'rgba(0,0,0,.08)'; g.fillRect(Rn() * N, Rn() * N, 1 + Rn() * 2, 1 + Rn() * 2); }
+    g.globalCompositeOperation = 'destination-out'; g.strokeStyle = '#000';
+    trace(R, 0); g.lineWidth = 2 * (ROAD_HALF - 0.03) * K; g.stroke();
+    trace(R, -near * (ROAD_HALF + 8)); g.lineWidth = 16.2 * K; g.stroke();
+    if (faceZ != null) g.fillRect(0, (faceZ - z0) * K, N, N);
+  });
+  const m = new THREE.Mesh(new THREE.PlaneGeometry(S, S), new THREE.MeshLambertMaterial({ map: tex, alphaTest: 0.5, polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1 }));
+  m.rotation.x = -Math.PI / 2; m.position.set(x0 + S / 2, 0.02, z0 + S / 2); m.receiveShadow = true; m.raycast = () => {}; scene.add(m); return m;
+}
+const busGap = (R) => (o, sd) => [BUS_RING.c, BUS_RING.v].some((r) => r.road === R && sd === r.near &&   // justo afuera de la orilla hay asfalto de la terminal
+  pathDist(r.drawn, o.x + o.nx * sd * (ROAD_HALF + 0.15), o.z + o.nz * sd * (ROAD_HALF + 0.15), BUS_HALF) < BUS_HALF - 0.05);
+roadRibbon(ROAD, 0, ROAD.len - 10, ROAD_HALF, roadMat, busGap(ROAD)); roadRibbon(ROAD_N, 10, ROAD_N.len, ROAD_HALF, roadMat, busGap(ROAD_N));   // desde la orilla de la ciudad: tapa la franja del seto
+busDecal(BUS_RING.c.drawn, ROAD, BUS_RING.c.near); busDecal(BUS_RING.v.drawn, ROAD_N, BUS_RING.v.near, ROAD_N_FACE.z);
 // las paradas: un techito con su banca, la placa a dónde va, y el piso; el techo va aparte para quitarlo cuando Tamachin está abajo (06-main.js)
-for (const r of [BUS_RING.c, BUS_RING.v]) {                       // en cada glorieta, un farol en la isla; ahí el autobús no le pita a nadie
-  northB.merge(PF_LAMP, r.x, 0, r.z, 0); solidCircle(r.x, r.z, 0.18); lampAt(r.x, r.z, 0);
-  CALM.push({ x0: r.x - r.r - 8, x1: r.x + r.r + 4, z0: r.z - r.r - 4, z1: r.z + r.r + 4 });
+for (const st of BUS_STOPS) {                                      // en cada glorieta, un farol en la isla; ahí y en la parada el autobús no le pita a nadie
+  const r = st.ring; northB.merge(PF_LAMP, r.x, 0, r.z, 0); solidCircle(r.x, r.z, 0.18); lampAt(r.x, r.z, 0);
+  CALM.push({ x0: Math.min(r.x - r.r, st.at.x) - 4, x1: Math.max(r.x + r.r, st.at.x) + 4, z0: Math.min(r.z - r.r, st.at.z) - 4, z1: Math.max(r.z + r.r, st.at.z) + 4 });
 }
 for (const st of BUS_STOPS) {
   const B = new Batch(), ry = st.heading, c = Math.cos(ry), sn = Math.sin(ry), P = (u, v) => [st.at.x + sn * u + c * v, st.at.z + c * u - sn * v];   // u: hacia afuera, v: a lo largo
@@ -263,6 +299,7 @@ for (const st of BUS_STOPS) {
   { const [x, z] = P(1.0, 0); B.box('#bfe6ff', x, 1.3, z, 3.4, 1.6, 0.08, ry).box('#8a8f99', x, 0.45, z, 3.4, 0.2, 0.1, ry); solidBox(...[P(0.92, -1.75), P(1.08, 1.75), P(0.92, 1.75), P(1.08, -1.75)].reduce((a, q) => [Math.min(a[0], q[0]), Math.max(a[1], q[0]), Math.min(a[2], q[1]), Math.max(a[3], q[1])], [Infinity, -Infinity, Infinity, -Infinity])); }
   { const [x, z] = P(0.6, 0); B.box(WOOD, x, 0.46, z, 2.6, 0.08, 0.5, ry).box('#8a8f99', x, 0.22, z, 2.2, 0.44, 0.08, ry); }
   const [rx, rz] = P(0.35, 0), roof = new Batch().box('#4f78d6', rx, 2.45, rz, 4.0, 0.12, 1.9, ry).mesh(); roof.castShadow = true; scene.add(roof); st.roof = roof; st.under = P(0.4, 0);
+  st.slab = { x: rx, y: 2.45, z: rz, axes: [[[sn, 0, c], 0.95], [[c, 0, -sn], 2.0], [[0, 1, 0], 0.06]] };   // la losa del techo: hacia afuera, a lo largo y alto (medias medidas)
   const [sx, sz] = P(0.2, 2.6); B.cyl('#8a8f99', sx, 1.4, sz, 0.06, 0.06, 2.8, 8); solidCircle(sx, sz, 0.12);   // la placa: a dónde va
   const mat = new THREE.MeshLambertMaterial({ map: roadSignTex(st.key === 'ciudad' ? 'Autobús a Valle Alegre' : 'Autobús a la ciudad') });
   for (const k of [0, 1]) { const m = new THREE.Mesh(new THREE.PlaneGeometry(1.9, 1.9 * 160 / 512), mat); m.position.set(sx + Math.cos(ry) * 0.03 * (k ? 1 : -1), 2.65, sz - Math.sin(ry) * 0.03 * (k ? 1 : -1)); m.rotation.y = ry + (k ? Math.PI / 2 : -Math.PI / 2); scene.add(m); }   // de los dos lados
@@ -297,7 +334,8 @@ for (const st of BUS_STOPS) {
 }
 
 // ───────────────────────── Valle Alegre ─────────────────────────
-// Un pueblo sin autos: calles empedradas, kiosco en la plaza, mercado al sur y posada con hamaca al norte.
+// Un pueblo sin tráfico (solo entra el auto de Tamachin, por el portón de la carretera): calles empedradas, kiosco en la plaza, mercado al
+// sur y posada con hamaca al norte.
 const TBX = [[-62, -28], [-20, 20], [28, 62]], TBZ = TBX.map(([a, b]) => [TOWN_Z + a, TOWN_Z + b]);
 const TOWN_GARDEN = [TBX[1][0] + 2.8, TBZ[0][0] + 2.8, TBX[1][1] - 2.8, TBZ[0][1] - 2.8], TOWN_PATH = 1.4;   // el jardín de la posada y su vereda; lo demás es empedrado
 const TOWN = { hammock: { x: 8.6, y: 1.05, z: TOWN_Z - 44.6 }, market: { x: 0, z: TOWN_Z + 41.5 }, stalls: [-10.5, 10.5] };   // puestos a los lados: el portón sur da a un pasillo
@@ -308,6 +346,7 @@ const TOWN = { hammock: { x: 8.6, y: 1.05, z: TOWN_Z - 44.6 }, market: { x: 0, z
     TBX.forEach((bx, i) => TBZ.forEach((bz, j) => { if (i === 1 && j === 0) return; rect(bx[0] + 2.8, bz[0] + 2.8, bx[1] - 2.8, bz[1] - 2.8, i === 1 ? '#e6d8bd' : '#cfc7b6'); }));
     rect(...TOWN_GARDEN, '#93d470'); rect(-TOWN_PATH, TOWN_Z - 64, TOWN_PATH, TBZ[0][1], STONE2);   // jardín de la posada y su vereda
     for (const r of [-24, 24]) { rect(r - 4, TOWN_Z - 62.6, r + 4, TOWN_Z + 62.6, COB); rect(-62.6, TOWN_Z + r - 4, 62.6, TOWN_Z + r + 4, COB); }
+    rect(ROAD_N_FACE.x - 4, TOWN_Z + 62.6, ROAD_N_FACE.x + 4, TOWN_Z + 64, COB);   // bajo el portón de la carretera
     for (let i = 0; i < 5200; i++) { const r = [-24, 24][i % 2], a = TOWN_Z + (R() * 2 - 1) * 62, b = r + (R() * 2 - 1) * 3.8, w = 0.4 + R() * 0.5; g.fillStyle = R() < 0.5 ? 'rgba(255,255,255,.12)' : 'rgba(90,70,50,.13)';
       if (i % 4 < 2) g.fillRect(X(b), Z(a), w * K, w * K * 0.8); else g.fillRect(X(a - TOWN_Z), Z(b + TOWN_Z), w * K, w * K * 0.8); }
     g.strokeStyle = 'rgba(150,120,90,.25)'; g.lineWidth = 1.2; g.beginPath();                     // baldosas de la plaza y el mercado
@@ -390,8 +429,11 @@ const townB = new Batch();
     townB.rbox(HEDGE, cx, 0.9, cz, horiz ? len : 1.6, 1.8, horiz ? 1.6 : len, 0.5); for (let d = 2; d < len - 1; d += 4) townB.ico(HEDGE2, lerp(x0, x1, d / len), 1.7, lerp(z0, z1, d / len), 0.95, 0.6, 0.9);
     solidBox(Math.min(x0, x1) - (horiz ? 0 : 0.8), Math.max(x0, x1) + (horiz ? 0 : 0.8), Math.min(z0, z1) - (horiz ? 0.8 : 0), Math.max(z0, z1) + (horiz ? 0.8 : 0)); };
   const HN = TOWN_Z - 63.2, HS = TOWN_Z + 63.2;
-  hedgeT(-64, HN, -5, HN); hedgeT(5, HN, 64, HN); hedgeT(-64, HS, -5, HS); hedgeT(5, HS, 64, HS); hedgeT(-63.2, HN, -63.2, HS); hedgeT(63.2, HN, 63.2, HS);
+  hedgeT(-64, HN, -5, HN); hedgeT(5, HN, 64, HN); hedgeT(-64, HS, -5, HS); hedgeT(5, HS, ROAD_N_FACE.x - 5.4, HS); hedgeT(ROAD_N_FACE.x + 5.4, HS, 64, HS); hedgeT(-63.2, HN, -63.2, HS); hedgeT(63.2, HN, 63.2, HS);
   for (const z of [HN, HS]) for (const sx of [-1, 1]) townB.rbox(STONE, sx * 5.1, 1.4, z, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', sx * 5.1, 3.15, z, 0.42);
+  // el portón de la carretera (ROAD_N, 03-world.js): la calle del este sigue por él, con pilares como los de la salida de la ciudad
+  for (const sx of [-1, 1]) { const x = ROAD_N_FACE.x + sx * 5.6; townB.rbox(STONE, x, 1.4, HS, 1.3, 2.8, 1.9, 0.2).sph('#ffd76a', x, 3.15, HS, 0.42); solidBox(x - 0.65, x + 0.65, HS - 0.95, HS + 0.95); LAMPS.push({ x, y: 3.15, z: HS, r: 0.45, pool: false }); }
+  roadSign(townB, 'Valle Alegre', ROAD_N_FACE.x - 7.4, 0, HS + 3.4, 3.2);
   // prado entre el pueblo y el bosque sin fin, con hileras de pinos a los lados
   for (let z = HN - 3; z > Z_FOREST2 + 1; z -= 3.6) for (const sx of [-1, 1]) { const x = sx * r2(62.5, 64), s = r2(1.0, 1.4); addStatic('pine', x, 0, z, s, R() * TAU, r2(0.86, 1)); northCircle(x, z, 0.45 * s); }
   for (let k = 0; k < 90; k++) addStatic('tuft', r2(-58, 58), 0, r2(Z_FOREST2 + 2, HN - 2), r2(0.9, 1.5), R() * 6);
@@ -407,7 +449,7 @@ terrainRibbon([[0, Z_TOWN_N + 1], [0, Z_TOWN_N - 8], [forestTrailX(Z_FOREST2 + 6
   addNPC({ rng: R, name: 'Miel', shape: 'huevo', color: '#ffd23f', mood: 'enamorado', loop: tl(0, 2), lines: ['El bosque del norte no tiene fin… y está lleno de fruta.', 'Hay naranjas, manzanas, granadas, uvas, arándanos, fresas y sandías.', 'Dicen que nadie ha llegado al final del bosque.'] });
   addNPC({ rng: R, name: 'Chabacano', shape: 'gatito', color: '#ffb347', mood: 'contento', loop: tl(2, 0), lines: ['Las granadas son mis favoritas. Búscalas en los árboles del bosque.', 'Las uvas cuelgan de unos techitos de madera.', '¡Miau! ¿Ya probaste la sandía?'] });
   addNPC({ rng: R, name: 'Nopal', shape: 'cubito', color: '#58b368', mood: 'enojado', loop: tl(0, 0), lines: ['¡Hmpf! Alguien se comió todas las fresas.', '¡Grr! Subir la montaña me cansa.', 'Las fresas crecen a ras del suelo, por si no lo sabías.'] });
-  addNPC({ rng: R, name: 'Brote', shape: 'hongo', color: '#ff8a5c', mood: 'contento', loop: tl(2, 2), lines: ['¡El kiosco de la plaza es mi lugar favorito!', 'Aquí no pasan autos: el autobús de la ciudad da la vuelta afuera, junto al portón.'] });
+  addNPC({ rng: R, name: 'Brote', shape: 'hongo', color: '#ff8a5c', mood: 'contento', loop: tl(2, 2), lines: ['¡El kiosco de la plaza es mi lugar favorito!', 'El autobús de la ciudad da la vuelta afuera, junto al portón de la carretera.'] });
   addNPC({ rng: R, name: 'Copo', shape: 'fantasma', color: '#dff3ff', mood: 'dormido', home: { x: TOWN.hammock.x - 3.6, z: TOWN.hammock.z + 2.8, ry: 0.6 }, lines: ['Zzz… la hamaca es la más cómoda del valle…', 'Zzz… cinco minutitos…'] });
   addNPC({ rng: R, name: 'Lila', shape: 'estrella', color: '#c58bff', mood: 'contento', home: { x: TOWN.stalls[1] + 1.2, z: TOWN.market.z - 2.3, ry: 0 }, lines: ['¡Fruta fresca del bosque sin fin! Toma la que quieras.', 'Todo lo del mercado viene del bosque, al norte del pueblo.'] });
 }

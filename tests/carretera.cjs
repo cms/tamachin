@@ -136,7 +136,7 @@ module.exports = {
     // de punta a punta: sale por la boca norte, junto a Valle Alegre
     const thru = await E(FOLLOW, 1);
     const north = await st();
-    T.check('cruza el túnel caminando y sale por la boca norte, junto a Valle Alegre', north.world === 'tierra' && north.st === 'normal' && Math.abs(north.x - 34) < 1.5 && north.z < -1263 && north.z > -1272 && north.zone === 'Carretera a Valle Alegre', JSON.stringify({ ...north, ...thru }));
+    T.check('cruza el túnel caminando y sale por la boca norte, junto a Valle Alegre', north.world === 'tierra' && north.st === 'normal' && Math.abs(north.x - 24) < 1.5 && north.z < -1263 && north.z > -1272 && north.zone === 'Carretera a Valle Alegre', JSON.stringify({ ...north, ...thru }));
     T.check('dentro del túnel nada lo saca de su lugar: va siempre entre las paredes', thru.worst < 5.2, JSON.stringify(thru));
     await page.screenshot({ path: T.out('boca-norte-salida.jpg'), type: 'jpeg', quality: 70 });
 
@@ -170,7 +170,7 @@ module.exports = {
     await E(() => { window.__tamachin.setWorld('tierra', 0, 3.5); window.__tamachin.advance(0.3); });
 
     // capturas
-    for (const [name, x, z, yaw] of [['salida', -24, -52, 0], ['puente', -21, -196, 0], ['boca-sur', -24, -268, 0], ['boca-norte', 26, -1278, 200]]) {
+    for (const [name, x, z, yaw] of [['salida', -24, -52, 0], ['puente', -21, -196, 0], ['boca-sur', -24, -268, 0], ['boca-norte', 26, -1276, 200]]) {
       await E(([x, z, yaw]) => { const T = window.__tamachin; T.go(x, z); T.view.yaw = T.view.yawT = yaw * Math.PI / 180; T.advance(0.6); }, [x, z, yaw]);
       await page.waitForTimeout(200); await page.screenshot({ path: T.out(name + '.jpg'), type: 'jpeg', quality: 70 });
     }

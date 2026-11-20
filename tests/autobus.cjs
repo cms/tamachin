@@ -19,7 +19,7 @@ const RIDE = (max) => {
     if (w === 'tunel' && !D.bus.hidden) { const c = D.camera.position, q = D.tubeNear(c.x, c.z, {}); if (Math.abs(q.u) > D.TUBE.W) camOut++; }
   }
   T.advance(0.5);
-  return { t, seen, camOut, hidden, state: P.state, world: T.world(), x: +P.pos.x.toFixed(1), z: +P.pos.z.toFixed(1), visible: P.T.group.visible, zone: document.querySelector('#zone').textContent };
+  return { t, seen, camOut, hidden, state: P.state, world: T.world(), x: +P.pos.x.toFixed(1), z: +P.pos.z.toFixed(1), visible: P.T.group.visible, zone: document.querySelector('#zone').textContent, dv: D.BUS_STOPS.map((st) => +Math.hypot(P.pos.x - st.at.x, P.pos.z - st.at.z).toFixed(1)) };
 };
 
 module.exports = {
@@ -65,7 +65,7 @@ module.exports = {
     await E(() => window.__tamachin.advance(4));
     await page.screenshot({ path: T.out('arriba.jpg'), type: 'jpeg', quality: 70 });
     const r1 = await E(RIDE, 240);
-    T.check('pasa por el túnel (la cámara dentro del tubo) y se baja solo en Valle Alegre', r1.seen.join() === 'tierra,tunel,tierra' && r1.camOut === 0 && r1.state === 'normal' && r1.visible && r1.z < -1260 && r1.z > -1290 && r1.x < 22 && r1.zone === 'Parada del autobús de Valle Alegre', JSON.stringify(r1));
+    T.check('pasa por el túnel (la cámara dentro del tubo) y se baja solo en Valle Alegre', r1.seen.join() === 'tierra,tunel,tierra' && r1.camOut === 0 && r1.state === 'normal' && r1.visible && r1.dv[1] < 1.5 && r1.zone === 'Parada del autobús de Valle Alegre', JSON.stringify(r1));
     const bun = await E(() => { const r = window.__bun, P = window.__tamachin.player; return { riding: r.riding, visible: r.mesh.visible, d: +Math.hypot(r.pos.x - P.pos.x, r.pos.z - P.pos.z).toFixed(1), world: r.world || 'tierra' }; });
     T.check('el conejo se baja con él', !bun.riding && bun.visible && bun.d < 4 && bun.world === 'tierra', JSON.stringify(bun));
 
@@ -73,7 +73,7 @@ module.exports = {
     const w2 = await E(WAIT, [1, 240]);
     await E(() => { window.__dbg.doAction(); window.__tamachin.advance(0.3); });
     const r2 = await E(RIDE, 240);
-    T.check('de regreso: se sube en Valle Alegre y se baja en la ciudad, otra vez por el túnel', w2.halted && r2.seen.join() === 'tierra,tunel,tierra' && r2.state === 'normal' && r2.x < -45 && r2.z > -82 && r2.z < -68 && r2.zone === 'Terminal del autobús', JSON.stringify({ w2, r2 }));
+    T.check('de regreso: se sube en Valle Alegre y se baja en la ciudad, otra vez por el túnel', w2.halted && r2.seen.join() === 'tierra,tunel,tierra' && r2.state === 'normal' && r2.dv[0] < 1.5 && r2.zone === 'Terminal del autobús', JSON.stringify({ w2, r2 }));
 
     // en la carretera, el autobús frena por Tamachin sin tocarlo
     const brake = await E(() => {
@@ -105,6 +105,14 @@ module.exports = {
       return { inTube, world: T.world(), state: P.state, x: +P.pos.x.toFixed(1), z: +P.pos.z.toFixed(1), visible: P.T.group.visible, busOnEarth: D.bus.mesh.parent === D.EARTH.root, telon: document.querySelector('#telon').hidden };
     });
     T.check('«Volver al inicio» desde el autobús, a medio túnel: a pie frente a su casa, y el autobús sigue en la Tierra', home.inTube && home.world === 'tierra' && home.state === 'normal' && home.visible && home.x === 0 && home.z === 3.5 && home.busOnEarth && home.telon, JSON.stringify(home));
+
+    // el techito se quita solo si tapa a Tamachin: detrás de la parada, con la cámara de ese lado, se queda; abajo, con la cámara en alto, no
+    const roof = await E(() => {
+      const T = window.__tamachin, D = window.__dbg, st = D.BUS_STOPS[1], c = Math.cos(st.heading), s = Math.sin(st.heading), out = {};
+      for (const [k, u, yaw] of [['detras', 2.6, Math.PI], ['debajo', 0.4, 0]]) { T.go(st.at.x + s * u, st.at.z + c * u); T.view.yaw = T.view.yawT = yaw; T.advance(0.8); out[k] = st.roof.visible; }
+      return out;
+    });
+    T.check('el techito de la parada se quita solo si tapa a Tamachin (detrás, con la cámara de ese lado, se queda)', roof.detras && !roof.debajo, JSON.stringify(roof));
 
     // capturas: la parada, y adentro del túnel
     await E(() => { const T = window.__tamachin, D = window.__dbg, st = D.BUS_STOPS[0]; D.bus.s = st.s - 1; D.bus.pause = 0; D.bus.done = null; T.go(st.at.x + 1, st.at.z + 3); T.view.yaw = T.view.yawT = -1.2; T.advance(2); });

@@ -176,7 +176,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
 
 - **El trazo** (`ROAD`, `ROAD_N`, `roadPath`, `roadAt`, `roadDist`/`nearRoad`): curvas suaves por puntos de control, con un punto cada metro. Son datos puros, sin `rnd`.
   - `ROAD` sale de la ciudad por donde estaba el túnel del noroeste: el seto norte se abre en `EXIT`, y `hedge()` sortea igual los bultos del hueco. Rodea el molino por el oeste, cruza el bosque y el río, y entra 10 m a la boca sur del túnel de las montañas (`ROAD_FACE`, z −280).
-  - `ROAD_N` va de la boca norte (`ROAD_N_FACE`, al sur de Valle Alegre, del lado este, donde no pasa el sendero) a la entrada del pueblo.
+  - `ROAD_N` va derecho de la boca norte (`ROAD_N_FACE`, x 24: al sur de Valle Alegre, donde no pasa el sendero) al portón de la calle del este del pueblo. El seto sur se abre ahí entre dos pilares (como los de la salida de la ciudad, a 5.6 m del centro: `carretera` revisa que nada choque a 4.5 m) y el empedrado de la calle sigue por el hueco. Por ahí entra el auto de Tamachin.
   - 8 m de ancho (`ROAD_HALF` incluye las orillas blancas), carriles a ±2 m.
 - **Despejar sin mover `rnd`.** Lo que cayó sobre la carretera se quita después de generarlo, y después de las bayas, que se acomodan según los árboles, arbustos y rocas. Saltarlo al generarlo movería todo lo que viene después.
   - Los árboles se encogen a `s = 0.001`.
@@ -191,7 +191,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - El frente es sólido, como en los túneles de la ciudad, y la placa dice a dónde lleva.
   - Van en `PORTALS`, así la cámara sube por encima.
   - Empujar contra el frente lleva al túnel (abajo).
-- **El asfalto** (`roadRibbon`): tres filas que siguen `groundY` a 0.035 m, con la textura de las calles. Los pasos dicen `'piedra'` y arriba dice «Carretera a Valle Alegre» (`zoneName`).
+- **El asfalto** (`roadRibbon`): tres filas que siguen `groundY` a 0.035 m, con la textura de las calles. Los pasos dicen `'piedra'` y arriba dice «Carretera a Valle Alegre» (`zoneName`). Donde entra una terminal del autobús no lleva orilla blanca de ese lado (`gap`, `busGap`: la u se corre hacia adentro de la raya).
 - **Los autos** (`04-life.js`).
   - **Rutas:** cada carril es una ruta: `L.at(s)` da x, z, rumbo (`fx`, `fz`) y altura. En la ciudad, `c.s` es la coordenada del eje. Al frente y al lado se mide con el rumbo de cada auto; en una curva, el empujón va con tres círculos (`earthCollide`).
   - **Los dos carriles de la calle del oeste** (`L.ext`) siguen por `ROAD`: más allá de z −62, `c.s` baja un metro por cada metro de carretera.
@@ -213,10 +213,11 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   8. la carretera al sur.
 
   La vuelta dura unos 3 minutos.
-- **Las terminales** son glorietas fuera de la ciudad y del pueblo (`BUS_RING`, en `03-world.js` con la carretera), y se recorren al revés de las manecillas.
-  - Empiezan y terminan en un carril de su carretera, así el autobús pasa sin brincos.
-  - En la isla hay un farol, y alrededor `CALM`: ahí el autobús no le pita a nadie.
-  - Su asfalto (`busMat`, un carril) va un poco abajo de la carretera donde se juntan.
+- **Las terminales** son vueltas en U a un lado de la carretera (`BUS_RING`, en `03-world.js` con la carretera): la de la ciudad en el prado, al oeste de la salida; la de Valle Alegre en la explanada, al este de la carretera. Se recorren al revés de las manecillas.
+  - Empiezan y terminan en un carril de su carretera (`in`, `out`: a qué distancia; los tramos de `BUS_LINE` terminan y empiezan ahí), así el autobús pasa sin brincos. El tramo de regreso cruza el otro carril.
+  - `stop` dice dónde va la parada (en la ciudad, la punta oeste; en Valle Alegre, el tramo de regreso, junto al seto) y `near` de qué lado de la carretera está.
+  - En la isla hay un farol, y alrededor y en la parada `CALM`: ahí el autobús no le pita a nadie.
+  - **Su asfalto es una sola pieza plana** (`busDecal`, 05-norte.js), pintada en un lienzo con el trazo de la ruta: el asfalto y las orillas son la unión del trazo, así los tramos que se juntan no se enciman. Antes eran cintas con sus orillas: donde se cruzaban parpadeaban y pintaban rayas sobre el asfalto de la otra y de la carretera. Del lienzo se borra lo que cae debajo de la carretera (que va encima, sin encimarse), lo que sale del otro lado y lo de adentro de la boca. Lo que va por el carril de su lado se pinta corrido hacia el centro (`busDrawn`), para que el asfalto salga de la orilla sin chipote. Va a 0.02 m: necesita suelo plano (el prado, la explanada).
 - **El autobús** (`bus`) es un auto más en `cars`, agregado antes de `carLights` para que tenga luces.
   - No usa `rnd`.
   - En las terminales va a `BUS.slow` y en la carretera a `BUS.road`.
@@ -224,7 +225,7 @@ Nada de esto agrega luces ni pasadas de pantalla completa.
   - En el túnel está escondido (`c.hidden`): no se dibuja, no estorba ni lo estorban, y sus luces y su sombra se apagan. Al salir de la boca sur cede el paso a quien salga ahí.
   - El letrero de enfrente dice a dónde va (los tramos `north`).
 - **Las paradas** (`05-norte.js`) tienen techito, banca y su placa por los dos lados.
-  - El techo va aparte y se quita con Tamachin abajo (`updateBusStops`).
+  - El techo va aparte y se quita solo si tapa a Tamachin (`updateBusStops`, `slabCrosses`): si el rayo de la cámara a su centro, su cabeza o sus lados (`ROOF_PTS`, sin los pies) pasa por la losa (`st.slab`). Antes se quitaba con solo acercarse, aunque no tapara nada.
   - Arriba dice «Terminal del autobús» o «Parada del autobús de Valle Alegre».
   - «Subir al autobús» sale solo con él parado ahí; si no, «Esperar el autobús» y Tamachin dice en cuánto llega (`busEta`).
 - **Arriba** (estado `ride`, `P.ride`; `boardBus`, `updateRide`, `leaveBus`):
@@ -349,6 +350,7 @@ Con la cámara baja (15°) se ve hasta el horizonte: unas dos veces las llamadas
 - La luz de más en un teléfono: cuánto cuestan el viento y las nubes en el shader (una lectura de textura por pixel en todo lo que recibe luz) y las sombras de contacto (hasta 90 que se mueven, más las fijas); cómo se ven las sombras de las nubes al aire libre.
 - Manejar en un teléfono: cómo se siente la palanca (apuntar a dónde ir) y si 13 m/s se ven bien entre los edificios. Cómo suena el motor (se sintetiza; no se ha escuchado con calma) y si su volumen queda bien junto a la música.
 - El autobús en un teléfono: si la cámara que lo sigue (más lejos, detrás de él) se ve bien en las curvas de las terminales y en el túnel.
+- Las terminales del autobús pintadas en un lienzo (`busDecal`) en una GPU de verdad: las pruebas dibujan por software. Falta ver que no parpadeen junto a la carretera y que su orilla blanca (con `alphaTest` y mipmaps) se vea pareja de lejos.
 - La carretera y el túnel en un teléfono: cuánto cuesta el tubo (no echa sombra, pero sí la recibe) y si la luz tibia y la cámara baja, debajo de la bóveda, se ven bien.
 - La luna en un teléfono: cuánto cuesta (la malla del suelo, de unos 33 000 triángulos, también echa sombra), cómo se ven el cielo negro y la Tierra, y si con la cámara baja (16°) se juega bien. Que en iPhone empujar contra la boca del túnel con la palanca se sienta natural.
 - La versión nueva en un iPhone de verdad:

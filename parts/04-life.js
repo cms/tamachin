@@ -63,13 +63,13 @@ const BUS = { dwell: 14, road: 9.5, slow: 4.5, hidden: 380 };
 const BUS_LINE = (() => {
   const legs = [], add = (o) => { if (o.len == null) o.len = Math.abs(o.d1 - o.d0); o.s0 = legs.length ? legs[legs.length - 1].s0 + legs[legs.length - 1].len : 0; legs.push(o); };
   add({ path: BUS_C, d0: 0, d1: BUS_C.len, side: 0, limit: BUS.slow, north: true });                       // 0: la terminal de la ciudad
-  add({ path: ROAD, d0: 14, d1: ROAD.len, side: 1, limit: BUS.road, north: true });                      // 1: la carretera, al norte
+  add({ path: ROAD, d0: BUS_RING.c.out, d1: ROAD.len, side: 1, limit: BUS.road, north: true });          // 1: la carretera, al norte
   add({ hidden: 'norte', len: BUS.hidden, limit: BUS.road, north: true });                                // 2: el túnel
-  add({ path: ROAD_N, d0: 0, d1: ROAD_N.len, side: 1, limit: BUS.slow, north: true });                   // 3: de la boca norte
+  add({ path: ROAD_N, d0: 0, d1: BUS_RING.v.in, side: 1, limit: BUS.slow, north: true });                // 3: de la boca norte
   add({ path: BUS_V, d0: 0, d1: BUS_V.len, side: 0, limit: BUS.slow });                                  // 4: la terminal de Valle Alegre
-  add({ path: ROAD_N, d0: ROAD_N.len, d1: 0, side: -1, limit: BUS.slow });                               // 5: a la boca norte
+  add({ path: ROAD_N, d0: BUS_RING.v.out, d1: 0, side: -1, limit: BUS.slow });                           // 5: a la boca norte
   add({ hidden: 'sur', len: BUS.hidden, limit: BUS.road });                                               // 6: el túnel, de regreso
-  add({ path: ROAD, d0: ROAD.len, d1: 30, side: -1, limit: BUS.road });                                  // 7: la carretera, al sur
+  add({ path: ROAD, d0: ROAD.len, d1: BUS_RING.c.in, side: -1, limit: BUS.road });                       // 7: la carretera, al sur
   const L = { legs, dir: 1, lo: 0, hi: legs[7].s0 + legs[7].len, stops: [], lightAxis: 'NS', bus: true, _o: {} };
   L.leg = (s) => { s = ((s % L.hi) + L.hi) % L.hi; let i = legs.length - 1; while (i > 0 && legs[i].s0 > s) i--; return legs[i]; };
   L.at = function (s, o) {
@@ -84,9 +84,9 @@ const BUS_LINE = (() => {
 })();
 // las paradas: donde el autobús se detiene (s), dónde espera Tamachin (at, afuera, a la derecha del autobús) y hacia dónde mira al bajarse
 const BUS_STOPS = [['ciudad', BUS_C, 0, BUS_RING.c, '¡Llegamos a la ciudad!'], ['valle', BUS_V, 4, BUS_RING.v, '¡Llegamos a Valle Alegre!']].map(([key, R, leg, ring, line]) => {
-  let best = Infinity, bd = 0; for (let i = 0; i < R.n; i++) { const q = Math.hypot(R.x[i] - (ring.x - ring.r), R.z[i] - ring.z); if (q < best) { best = q; bd = i; } }   // en el lado oeste de su glorieta
+  let best = Infinity, bd = 0; for (let i = 0; i < R.n; i++) { const q = Math.hypot(R.x[i] - ring.stop[0], R.z[i] - ring.stop[1]); if (q < best) { best = q; bd = i; } }   // donde dice su glorieta
   const o = roadAt(R, bd, {}), out = BUS_HALF + 1.3;
-  return { key, s: BUS_LINE.legs[leg].s0 + bd, x: o.x, z: o.z, at: { x: o.x + o.nx * out, z: o.z + o.nz * out }, heading: Math.atan2(o.nx, o.nz), line };
+  return { key, ring, s: BUS_LINE.legs[leg].s0 + bd, x: o.x, z: o.z, at: { x: o.x + o.nx * out, z: o.z + o.nz * out }, heading: Math.atan2(o.nx, o.nz), line };
 });
 const bus = (() => {
   const mesh = new THREE.Mesh(carGeo('bus', '#4f78d6'), MAT_CAR); mesh.castShadow = true; mesh.receiveShadow = true; scene.add(mesh);

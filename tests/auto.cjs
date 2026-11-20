@@ -89,10 +89,18 @@ module.exports = {
     T.check('entra manejando al túnel de la montaña: el auto va con él', tin.world === 'tunel' && tin.carWorld === 'tunel' && tin.state === 'drive' && inTube, JSON.stringify(tin));
     const thru = await E(TUBE_DRIVE, 1);
     const tout = await car();
-    T.check('cruza el túnel manejando con la palanca y sale por la boca norte, junto a Valle Alegre', tout.world === 'tierra' && tout.carWorld === 'tierra' && tout.state === 'drive' && tout.z < -1262 && tout.z > -1290 && Math.abs(tout.x - 35) < 6, JSON.stringify({ tout, thru }));
+    T.check('cruza el túnel manejando con la palanca y sale por la boca norte, junto a Valle Alegre', tout.world === 'tierra' && tout.carWorld === 'tierra' && tout.state === 'drive' && tout.z < -1262 && tout.z > -1290 && Math.abs(tout.x - 25) < 4, JSON.stringify({ tout, thru }));
+    // de la boca, derecho por la carretera y por su portón a la calle del este de Valle Alegre
+    await keys(['KeyW'], 4.5); const town = await car();
+    T.check('de la boca norte entra derecho a Valle Alegre por el portón de la carretera', town.state === 'drive' && town.z < -1298 && Math.abs(town.x - 24) < 3.5 && town.v > 6, JSON.stringify(town));
+    // adentro: el roble de la banqueta (28.9, −1303.5) y las casas de la manzana del este (desde x 31.7) lo detienen
+    await driveAt(28.9, -1294.5, Math.PI); await keys(['KeyW'], 2.5); const tOak = await car();
+    await driveAt(24, -1310, Math.PI / 2); await keys(['KeyW'], 2.5); const tBld = await car();
+    const tIn = await E(([x, z]) => window.__dbg.occluders.filter((o) => !o.roof && x > o.x0 - 0.9 && x < o.x1 + 0.9 && z > o.z0 && z < o.z1).length, [tBld.x, tBld.z]);
+    T.check('en Valle Alegre no atraviesa un árbol de la banqueta ni una casa', tOak.z > -1302 && tBld.x < 31.7 && !tIn, JSON.stringify({ tOak, tBld, tIn }));
 
     // de regreso por el túnel: por la boca norte, al sur, y a medio túnel se guarda y se recarga (sigue manejando en el túnel)
-    await driveAt(36, -1270, 0); await keys(['KeyW'], 2.5); await E(() => window.__tamachin.advance(1.2)); const tin2 = await car();
+    await driveAt(26, -1270, 0); await keys(['KeyW'], 2.5); await E(() => window.__tamachin.advance(1.2)); const tin2 = await car();
     await E(() => window.dispatchEvent(new Event('pagehide')));
     await page.reload(); await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 }); await E(() => { document.querySelector('#help').hidden = true; window.__tamachin.advance(0.5); });
     const reT = await car(), reIn = await E(() => window.__dbg.myCar.mesh.parent === window.__dbg.WORLDS.tunel.root);
@@ -129,13 +137,13 @@ module.exports = {
     T.check('el motor, a toda velocidad: suena, muy por debajo de la música (RMS ' + eng.rms + ')', eng.rms > 0.0008 && eng.rms < 0.004 && eng.peak < 0.02, JSON.stringify(eng));
 
     // de vuelta en la cochera, para lo que sigue
-    await E(() => { const T = window.__tamachin, D = window.__dbg, C = D.myCar; T.go(C.door.x, C.door.z); T.advance(0.3); D.doAction(); T.advance(0.2); C.x = 36; C.z = -1280; C.h = Math.PI; C.place(); T.advance(0.3); });
+    await E(() => { const T = window.__tamachin, D = window.__dbg, C = D.myCar; T.go(C.door.x, C.door.z); T.advance(0.3); D.doAction(); T.advance(0.2); C.x = 22; C.z = -1284; C.h = Math.PI; C.place(); T.advance(0.3); });
 
     // guardar manejando: al recargar, sigue manejando donde iba
     await E(() => window.dispatchEvent(new Event('pagehide')));
     await page.reload(); await page.waitForFunction(() => !!window.__tamachin, null, { timeout: 30000 }); await E(() => { document.querySelector('#help').hidden = true; window.__tamachin.advance(0.5); });
     const re = await car();
-    T.check('al recargar, sigue manejando donde iba', re.state === 'drive' && Math.abs(re.x - 36) < 1 && Math.abs(re.z + 1280) < 1, JSON.stringify(re));
+    T.check('al recargar, sigue manejando donde iba', re.state === 'drive' && Math.abs(re.x - 22) < 1 && Math.abs(re.z + 1284) < 1, JSON.stringify(re));
 
     // el conejo copiloto: se sube atrás y se baja con él
     const bun = await E(() => {
